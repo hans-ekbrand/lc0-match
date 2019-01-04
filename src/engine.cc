@@ -30,7 +30,7 @@
 #include <functional>
 
 #include "engine.h"
-#include "mcts/search.h"
+#include "mcts_replace/search.h"
 #include "utils/configfile.h"
 #include "utils/logging.h"
 
@@ -92,7 +92,7 @@ const OptionId kRamLimitMbId{
     "positions have 30 possible moves. When set to 0, no RAM limit is "
     "enforced."};
 
-const size_t kAvgNodeSize = sizeof(Node) + kAvgMovesPerPosition * sizeof(Edge);
+const size_t kAvgNodeSize = sizeof(Node_revamp) + kAvgMovesPerPosition * sizeof(Edge_revamp);
 const size_t kAvgCacheItemSize =
     NNCache::GetItemStructSize() + sizeof(CachedNNRequest) +
     sizeof(CachedNNRequest::IdxAndProb) * kAvgMovesPerPosition;
@@ -150,10 +150,10 @@ void EngineController::PopulateOptions(OptionsParser* options) {
   ConfigFile::PopulateOptions(options);
 }
 
-SearchLimits EngineController::PopulateSearchLimits(
+SearchLimits_revamp EngineController::PopulateSearchLimits(
     int ply, bool is_black, const GoParams& params,
     std::chrono::steady_clock::time_point start_time) {
-  SearchLimits limits;
+  SearchLimits_revamp limits;
   int64_t move_overhead = options_.Get<int>(kMoveOverheadId.GetId());
   if (params.movetime) {
     limits.search_deadline = start_time + std::chrono::milliseconds(
@@ -313,7 +313,7 @@ void EngineController::SetupPosition(
 
   UpdateFromUciOptions();
 
-  if (!tree_) tree_ = std::make_unique<NodeTree>();
+  if (!tree_) tree_ = std::make_unique<NodeTree_revamp>();
 
   std::vector<Move> moves;
   for (const auto& move : moves_str) moves.emplace_back(move);
@@ -384,7 +384,7 @@ void EngineController::Go(const GoParams& params) {
     };
   }
 
-  search_ = std::make_unique<Search>(*tree_, network_.get(), best_move_callback,
+  search_ = std::make_unique<Search_revamp>(*tree_, network_.get(), best_move_callback,
                                      info_callback, limits, options_, &cache_,
                                      syzygy_tb_.get());
 
