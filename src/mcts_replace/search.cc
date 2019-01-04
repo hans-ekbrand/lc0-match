@@ -564,6 +564,8 @@ void SearchWorker_revamp::computeWeights2(Node_revamp* node) {
 
 // returns number of nodes added in sub tree root at current_node
 int SearchWorker_revamp::pickNodesToExtend(Node_revamp* current_node, int noof_nodes, int depth) {
+
+  if (current_node->IsTerminal()) return 0;
   
   bool const DEBUG = false;
   if (depth > full_tree_depth){
