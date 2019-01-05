@@ -819,6 +819,168 @@ int SearchWorker_revamp::pickNodesToExtend(Node_revamp* current_node, int noof_n
   return nnewnodes;
 }
 
+// returns number of nodes added in sub tree root at current_node
+int SearchWorker_revamp::pickNodesToExtend2(Node_revamp* current_node, int noof_nodes, int depth) {
+
+  if (current_node->IsTerminal()) return 0;
+  
+  bool const DEBUG = false;
+  if (depth > full_tree_depth){
+    // lock max_depth and update it
+    if(DEBUG) { LOGFILE << "New max_depth reached " << full_tree_depth << "\n"; }
+//  LOGFILE << "New max_depth reached " << full_tree_depth << "\n";
+    full_tree_depth = depth;
+  }
+
+  int orig_noof_nodes = noof_nodes;
+
+  nodestack_.push_back(current_node);
+  
+  long unsigned int widx = weights_.size();
+  computeWeights(current_node, depth); // full_tree_depth is an alternative
+  //computeWeights2(current_node);
+
+  int nw = weights_.size() - widx;
+
+  int snw = current_node->GetNumChildren() + 1;
+  if (snw > current_node->GetNumEdges()) snw--;
+  if (nw != snw) {
+    if (PRINT) LOGFILE << "nw != snw, nw: " << nw << ", snw: " << snw << "\n";
+  }
+  
+  float tw = 0.0;
+  for (int i = 0; i < nw; i++) {
+    tw += weights_[widx + i];
+    if (weights_[widx + i] < 0.0) {
+      if (PRINT) LOGFILE << "w = " << weights_[widx + i] << " < 0\n";
+    }
+  }
+  if (abs(tw - 1.0) > 1e-5) {
+    if (PRINT) LOGFILE << "tw = " << tw << "\n";
+  }
+
+  int nnewnodes = 0;
+
+  int npos = current_node->GetN() - 1;;
+  float weightpos = 1.0;
+
+  if (current_node->GetNumChildren() < current_node->GetNumEdges()) {  // there is an unexpanded edge to potentially extend
+    int idx = current_node->GetNumChildren();
+    if (round(weights_[widx + idx] * (float)(npos + noof_nodes)) >= 1) {
+      (current_node->GetEdges())[idx].CreateChild(current_node, idx);
+      nnewnodes++;
+      Node_revamp* newchild = (current_node->GetEdges())[idx].GetChild();
+      history_.Append((current_node->GetEdges())[idx].GetMove());
+      newchild->ExtendNode(&history_);
+      if (!newchild->IsTerminal()) {
+        AddNodeToComputation2();
+        minibatch_.push_back(newchild);
+
+        if (DEBUG) LOGFILE << "Adding child to batch\n";
+
+        noof_nodes--;
+      } else {
+        if (PRINT) LOGFILE << "Terminal node created\n";	
+      }
+      history_.Pop();
+    }
+    weightpos -= weights_[widx + idx];
+    nw--;
+//    weights_.pop_back();
+  }
+
+  if (noof_nodes > 0) {
+
+    for (int i = 0; i < nw; i++) {
+      float ssw = 0.0;
+      int ssnp = 0;
+      for (int j = i; j < nw; j++) {
+        float w = weights_[widx + j];
+        if (w > -0.5) {
+          ssw += w;
+          ssnp += (current_node->GetEdges())[j].GetChild()->GetN();
+        }
+      }
+      if (abs(ssw - weightpos) > 1e-5) {
+        if (PRINT) LOGFILE << "ssw: " << ssw << ", weightpos: " << weightpos << "\n";
+      }
+      if (ssnp != npos) {
+        if (PRINT) LOGFILE << "ssnp: " << ssnp << ", npos: " << npos << "\n";
+      }
+
+      float w = weights_[widx + i];
+      int n = (current_node->GetEdges())[i].GetChild()->GetN();
+
+      if (weightpos > 0.0) {
+        int ai = round((double)(noof_nodes) * w / weightpos);
+
+        if (DEBUG) LOGFILE << "Child " << i << ", ai: " << ai << "\n";
+        
+        if (ai < 0) {
+          if (PRINT) LOGFILE << "ai: " << ai << ", noof_nodes: " << noof_nodes << ", w: " << w << ", weightpos: " << weightpos;
+        }
+
+        if (ai > noof_nodes) {
+          if (PRINT) {
+          LOGFILE << "ai > noof_nodes, ai: " << ai << ", noof_nodes: " << noof_nodes << "\n";
+          LOGFILE << "ssw: " << ssw << ", weightpos: " << weightpos << "\n";
+          LOGFILE << "ssnp: " << ssnp << ", npos: " << npos << "\n";
+          LOGFILE << "n: " << n << ", w: " << w << "\n";
+          } // PRINT
+          ai = noof_nodes;
+        }
+        if (ai >= 1) {
+
+          history_.Append((current_node->GetEdges())[i].GetMove());
+
+          if (DEBUG) LOGFILE << "rec call\n";
+
+          nnewnodes += pickNodesToExtend2((current_node->GetEdges())[i].GetChild(), ai, depth+1);
+          history_.Pop();
+
+          if (DEBUG) LOGFILE << "return rec call\n";
+
+          noof_nodes -= ai;  // could alternatively be result of pickNodesToExtend call but this would favor later edges
+        }
+      }
+      npos -= n;
+      weightpos -= w;
+    }
+    
+    // noof_nodes unchanged if sub tree is exhausted (node has no edges (terminal) or all unexpanded descendants are terminal)
+    // noof_nodes > 0 if not enough nodes were added to children or no children and new child is terminal
+
+    if (PRINT) {
+      if (abs(weightpos) > 1e-5 || npos != 0) {
+        LOGFILE << "weightpos: " << weightpos << "\n";
+        LOGFILE << "npos: " << npos << "\n";
+      }
+
+      if (noof_nodes != 0 && nw > 0) {
+        LOGFILE << "noof_nodes = " << noof_nodes << "\n";
+      }
+    } // PRINT
+
+  }
+
+
+  for (int n = weights_.size() - widx; n > 0; n--) {
+    weights_.pop_back();
+  }
+
+  current_node->IncreaseN(nnewnodes);
+
+
+  if (PRINT) {
+    if (nnewnodes > orig_noof_nodes) {
+      LOGFILE << "new nodes: " << nnewnodes << ", should be: " << orig_noof_nodes << "\n";
+    }
+  } // PRINT
+
+  return nnewnodes;
+}
+
+
 void SearchWorker_revamp::retrieveNNResult(Node_revamp* node, int batchidx) {
   node->SetQ(-computation2_->GetQVal(batchidx));  // should it be negated?
 
@@ -893,7 +1055,7 @@ void SearchWorker_revamp::RunBlocking2() {
 
     //~ LOGFILE << "n: " << worker_root_->GetN() << "\n";
 
-    pickNodesToExtend(worker_root_, params_.GetMiniBatchSize(), 0);
+    pickNodesToExtend2(worker_root_, params_.GetMiniBatchSize(), 0);
 	
     //~ LOGFILE << "weights_.size(): " << weights_.size() << "\n";
     
@@ -946,7 +1108,7 @@ void SearchWorker_revamp::RunBlocking2() {
     computeWeights(worker_root_, 0); // full_tree_depth is an alternative
     //computeWeights2(worker_root_);
 
-    LOGFILE << "move   P          norm P            n   norm n      h   Q          w\n";
+    LOGFILE << "move   P          norm P            n   norm n      h   Q          w";
     for (int i = 0; i < worker_root_->GetNumChildren(); i++) {
       LOGFILE << std::fixed << std::setfill(' ') 
                 << (worker_root_->GetEdges())[i].GetMove().as_string() << " "
@@ -956,8 +1118,7 @@ void SearchWorker_revamp::RunBlocking2() {
                 << std::setw(10) << (float)(worker_root_->GetEdges())[i].GetChild()->GetN() / (float)(worker_root_->GetN() - 1) << " "
                 << std::setw(4) << (worker_root_->GetEdges())[i].GetChild()->ComputeHeight() << " "
                 << std::setw(10) << (float)(worker_root_->GetEdges())[i].GetChild()->GetQ() << " "
-                << std::setw(10) << weights_[i]
-                << "\n";
+                << std::setw(10) << weights_[i];
     }
 
     weights_.clear();
