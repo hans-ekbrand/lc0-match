@@ -899,22 +899,22 @@ void SearchWorker_revamp::RunBlocking2() {
     
     if (PRINT) LOGFILE << "Computing batch of size " << minibatch_.size() << " ..";
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(0));
-    LOGFILE << "RunNNComputation START ";
-    start_comp_time_ = std::chrono::steady_clock::now();
+    //~ std::this_thread::sleep_for(std::chrono::milliseconds(0));
+    //~ LOGFILE << "RunNNComputation START ";
+    //~ start_comp_time_ = std::chrono::steady_clock::now();
 
     computation2_->ComputeBlocking();
 
     stop_comp_time_ = std::chrono::steady_clock::now();
     auto duration = stop_comp_time_ - start_comp_time_;
-    LOGFILE << "RunNNComputation STOP nanoseconds used: " << duration.count() << "; ";
-    int idx_in_computation = minibatch_.size();
-    int duration_mu = duration.count();
-    if(duration_mu > 0){
-      float better_duration = duration_mu / 1000;
-      float nps = 1000 * idx_in_computation / better_duration;
-      LOGFILE << " nodes in last batch that were evaluated " << idx_in_computation << " nps " << 1000 * nps << "\n";
-    }
+    //~ LOGFILE << "RunNNComputation STOP nanoseconds used: " << duration.count() << "; ";
+    //~ int idx_in_computation = minibatch_.size();
+    //~ int duration_mu = duration.count();
+    //~ if(duration_mu > 0){
+      //~ float better_duration = duration_mu / 1000;
+      //~ float nps = 1000 * idx_in_computation / better_duration;
+      //~ LOGFILE << " nodes in last batch that were evaluated " << idx_in_computation << " nps " << 1000 * nps << "\n";
+    //~ }
     
     
     if (PRINT) LOGFILE << " done\n";
@@ -933,34 +933,34 @@ void SearchWorker_revamp::RunBlocking2() {
   }
 
   if (PRINT) {
-  int64_t elapsed_time = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_time).count();
-  LOGFILE << "Elapsed time when thread for node " << worker_root_ << " finished " << worker_root_->GetN() << " nodes and " << i << " computations: " << elapsed_time << "ms\n";
+    int64_t elapsed_time = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_time).count();
+    LOGFILE << "Elapsed time when thread for node " << worker_root_ << " finished " << worker_root_->GetN() << " nodes and " << i << " computations: " << elapsed_time << "ms\n";
 
-  LOGFILE << "n: " << worker_root_->GetN() << "\n";
+    LOGFILE << "n: " << worker_root_->GetN() << "\n";
 
-  float totp = 0.0;
-  for (int i = 0; i < worker_root_->GetNumChildren(); i++) {
-    totp += (worker_root_->GetEdges())[i].GetP();
-  }
+    float totp = 0.0;
+    for (int i = 0; i < worker_root_->GetNumChildren(); i++) {
+      totp += (worker_root_->GetEdges())[i].GetP();
+    }
 
-  computeWeights(worker_root_, 0); // full_tree_depth is an alternative
-  //computeWeights2(worker_root_);
+    computeWeights(worker_root_, 0); // full_tree_depth is an alternative
+    //computeWeights2(worker_root_);
 
-  LOGFILE << "move   P          norm P            n   norm n      h   Q          w\n";
-  for (int i = 0; i < worker_root_->GetNumChildren(); i++) {
-    LOGFILE << std::fixed << std::setfill(' ') 
-              << (worker_root_->GetEdges())[i].GetMove().as_string() << " "
-              << std::setw(10) << (worker_root_->GetEdges())[i].GetP() << " "
-              << std::setw(10) << (worker_root_->GetEdges())[i].GetP() / totp << " "
-              << std::setw(10) << (worker_root_->GetEdges())[i].GetChild()->GetN() << " "
-              << std::setw(10) << (float)(worker_root_->GetEdges())[i].GetChild()->GetN() / (float)(worker_root_->GetN() - 1) << " "
-              << std::setw(4) << (worker_root_->GetEdges())[i].GetChild()->ComputeHeight() << " "
-              << std::setw(10) << (float)(worker_root_->GetEdges())[i].GetChild()->GetQ() << " "
-              << std::setw(10) << weights_[i]
-              << "\n";
-  }
-  
-  weights_.clear();
+    LOGFILE << "move   P          norm P            n   norm n      h   Q          w\n";
+    for (int i = 0; i < worker_root_->GetNumChildren(); i++) {
+      LOGFILE << std::fixed << std::setfill(' ') 
+                << (worker_root_->GetEdges())[i].GetMove().as_string() << " "
+                << std::setw(10) << (worker_root_->GetEdges())[i].GetP() << " "
+                << std::setw(10) << (worker_root_->GetEdges())[i].GetP() / totp << " "
+                << std::setw(10) << (worker_root_->GetEdges())[i].GetChild()->GetN() << " "
+                << std::setw(10) << (float)(worker_root_->GetEdges())[i].GetChild()->GetN() / (float)(worker_root_->GetN() - 1) << " "
+                << std::setw(4) << (worker_root_->GetEdges())[i].GetChild()->ComputeHeight() << " "
+                << std::setw(10) << (float)(worker_root_->GetEdges())[i].GetChild()->GetQ() << " "
+                << std::setw(10) << weights_[i]
+                << "\n";
+    }
+
+    weights_.clear();
   }  // PRINT
 
   int bestidx = indexOfBiggestSubtree(search_->root_node_);
