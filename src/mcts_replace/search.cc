@@ -223,13 +223,13 @@ void Search_revamp::Abort() {
 */
 
 namespace {
-int indexOfBiggestSubtree(Node_revamp* node) {
-  int bestsize = 0;
+int indexOfHighestQEdge(Node_revamp* node) {
+  float highestq = -2.0;
   int bestidx = -1;
   for (int i = 0; i < node->GetNumChildren(); i++) {
-    int n = node->GetEdges()[i].GetChild()->GetN();
-    if (n > bestsize) {
-      bestsize = n;
+    float q = node->GetEdges()[i].GetChild()->GetQ();
+    if (q > highestq) {
+      highestq = q;
       bestidx = i;
     }
   }
@@ -917,7 +917,7 @@ void SearchWorker_revamp::RunBlocking2() {
     //~ }
     
     
-    if (PRINT) LOGFILE << " done\n";
+    //~ if (PRINT) LOGFILE << " done\n";
 
     i += minibatch_.size();  // == computation2_->GetBatchSize()
     
@@ -963,9 +963,9 @@ void SearchWorker_revamp::RunBlocking2() {
     weights_.clear();
   }  // PRINT
 
-  int bestidx = indexOfBiggestSubtree(search_->root_node_);
+  int bestidx = indexOfHighestQEdge(search_->root_node_);
   Move best_move = search_->root_node_->GetEdges()[bestidx].GetMove();
-  int ponderidx = indexOfBiggestSubtree(search_->root_node_->GetEdges()[bestidx].GetChild());
+  int ponderidx = indexOfHighestQEdge(search_->root_node_->GetEdges()[bestidx].GetChild());
   // Move ponder_move = search_->root_node_->GetEdges()[bestidx].GetChild()->GetEdges()[ponderidx].GetMove(true);
   Move ponder_move = search_->root_node_->GetEdges()[bestidx].GetChild()->GetEdges()[ponderidx].GetMove(!history_.IsBlackToMove());
   search_->best_move_callback_({best_move, ponder_move});
