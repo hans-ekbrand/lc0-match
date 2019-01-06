@@ -347,7 +347,7 @@ void SearchWorker_revamp::RunBlocking() {
   std::vector<float> SearchWorker_revamp::q_to_prob(std::vector<float> Q, int depth, float multiplier, float max_focus) {
     // rebase depth from 0 to 1
     depth++;
-    depth = sqrt(depth); // if we use full_tree_depth the distribution gets too sharp after a while
+    // depth = sqrt(depth); // if we use full_tree_depth the distribution gets too sharp after a while
     auto min_max = std::minmax_element(std::begin(Q), std::end(Q));
     float min_q = Q[min_max.first-std::begin(Q)];
     float max_q = Q[min_max.second-std::begin(Q)];
@@ -365,11 +365,11 @@ void SearchWorker_revamp::RunBlocking() {
     float c = 0;
     for(int i = 0; i < (int)Q.size(); i++){
       if(min_q < 0){
-	a[i] = (Q[i] - min_q) * (float)depth/(max_q - min_q);
-	// a[i] = (Q[i] - min_q)/(max_q - min_q);	
+	// a[i] = (Q[i] - min_q) * (float)depth/(max_q - min_q);
+	a[i] = (Q[i] - min_q)/(max_q - min_q);	
       } else {
-	a[i] = Q[i] * (float)depth/max_q;
-	// a[i] = Q[i]/max_q;
+	// a[i] = Q[i] * (float)depth/max_q;
+	a[i] = Q[i]/max_q;
       }
       b[i] = exp(multiplier * a[i]);
     }
@@ -452,8 +452,9 @@ void SearchWorker_revamp::RunBlocking() {
     // At least one child is extended, weight by Q.
 
     std::vector<float> Q_prob (n);
-    float multiplier = 2.8f;
-    float max_focus = 0.80f;    
+    // float multiplier = 2.8f;
+    float multiplier = 4.9f;    
+    float max_focus = 0.95f;    
     std::vector<float> Q (n);
 
     // Populate the vector Q, all but the last child already has it (or should have, right?)
@@ -1128,6 +1129,7 @@ void SearchWorker_revamp::RunBlocking2() {
   Move best_move = search_->root_node_->GetEdges()[bestidx].GetMove();
   int ponderidx = indexOfHighestQEdge(search_->root_node_->GetEdges()[bestidx].GetChild());
   // Move ponder_move = search_->root_node_->GetEdges()[bestidx].GetChild()->GetEdges()[ponderidx].GetMove(true);
+  // When we are to play black this fails, it returns the move from whites perspective.
   Move ponder_move = search_->root_node_->GetEdges()[bestidx].GetChild()->GetEdges()[ponderidx].GetMove(!history_.IsBlackToMove());
   search_->best_move_callback_({best_move, ponder_move});
 }
