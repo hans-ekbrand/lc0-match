@@ -44,8 +44,6 @@
 
 namespace lczero {
 
-extern std::atomic<int> full_tree_depth;
-
 struct SearchLimits_revamp {
   // Type for N in nodes is currently uint32_t, so set limit in order not to
   // overflow it.
@@ -109,10 +107,8 @@ private:
 
   Node_revamp* root_node_;
 
-  NNCache* cache_;
-
   // Fixed positions which happened before the search.
-  /*const*/ PositionHistory/*&*/ played_history_;  // not const ref so that startthreads can create top of tree so that there is a leaf for each thread
+  const PositionHistory& played_history_;  // not const ref so that startthreads can create top of tree so that there is a leaf for each thread
 
   Network* const network_;
   const SearchLimits_revamp limits_;
@@ -125,8 +121,6 @@ private:
   //const int kCacheHistoryLength;
 
   friend class SearchWorker_revamp;
-
-  void AddNodeToComputation(Node_revamp* node);
 };
 
 // Single thread worker of the search engine.
@@ -139,30 +133,31 @@ class SearchWorker_revamp {
 
   // Runs iterations while needed.
   void RunBlocking();
-  void RunBlocking2();
 
  private:
-  void AddNodeToComputation(Node_revamp* node);
-  void AddNodeToComputation2();
+  void AddNodeToComputation();
   void retrieveNNResult(Node_revamp* node, int batchidx);
   void recalcPropagatedQ(Node_revamp* node);
-  void computeWeights(Node_revamp* node, int depth);
-  void computeWeights2(Node_revamp* node);
-  int pickNodesToExtend(Node_revamp* current_node, int noof_nodes, int depth);
-  int pickNodesToExtend2(Node_revamp* current_node, int noof_nodes, int depth);
-  std::vector<float> q_to_prob(std::vector<float> Q, int d, float multiplier, float max_focus);
+  void pickNodesToExtend(Node_revamp* current_node, float global_weight);
+  void pushNewNodeCandidate(float w, Node_revamp* node, int idx);
 
   Search_revamp* const search_;
   std::vector<Node_revamp *> minibatch_;
 
-  std::vector<float> weights_;
   std::vector<float> pvals_;
   std::vector<Node_revamp *> nodestack_;
 
+  struct NewNodeCandidate {
+    float w;
+    Node_revamp* node;
+    int idx;
+  };
+  
+  std::vector<struct NewNodeCandidate> node_prio_queue_;
+
   const SearchParams& params_;
 
-  std::unique_ptr<CachingComputation> computation_;
-  std::unique_ptr<NetworkComputation> computation2_;
+  std::unique_ptr<NetworkComputation> computation_;
   // History is reset and extended by PickNodeToExtend().
   PositionHistory history_;
 

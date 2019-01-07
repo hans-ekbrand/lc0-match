@@ -275,43 +275,6 @@ void Node_revamp::ReleaseChildrenExceptOne(Node_revamp* node_to_save) {
   }
 }
 
-Node_revamp* Node_revamp::GetNextLeaf(const Node_revamp* root, PositionHistory* history) {
-  Node_revamp* node = this;
-  while (true) {
-    while (true) {
-      if (node == root) {
-//        std::cerr << "getnextleaf restarting\n";
-        break;
-      }
-      history->Pop();
-      int nedge = node->parent_->GetNumEdges();
-      if (nedge > 2) nedge = 2;
-      int idx = node->index_ + 1;
-      node = node->parent_;
-      if (idx < nedge) {
-        history->Append(node->edges_[idx].GetMove());
-        Node_revamp* child = node->edges_[idx].GetChild();
-        if (child == nullptr) {
-          node->edges_[idx].CreateChild(node, idx);
-          return node->edges_[idx].GetChild();
-        }
-        node = child;
-        break;
-      }
-    }
-    while (!node->IsTerminal()) {
-      history->Append(node->edges_[0].GetMove());
-      Node_revamp* child = node->edges_[0].GetChild();
-      if (child == nullptr) {
-        node->edges_[0].CreateChild(node, 0);
-        return node->edges_[0].GetChild();
-      }
-      node = child;
-    }
-  }
-//  return node;  // never happens
-}
-
 void Node_revamp::ExtendNode(PositionHistory* history) {
   // We don't need the mutex because other threads will see that N=0 and
   // N-in-flight=1 and will not touch this node.
@@ -333,13 +296,7 @@ void Node_revamp::ExtendNode(PositionHistory* history) {
   // Add legal moves as edges of this node.
   CreateEdges(legal_moves);
   
-  //~ int nedge = node->GetNumEdges();
-  //~ if (nedge > 2) nedge = 2;
-  //~ for (int i = 0; i < nedge; i++) {
-    //~ node->GetEdges()[i].CreateChild(node, i);
-  //~ }
-
-  //~ std::cerr << "Extended node with " << nedge << " edges\n";
+  n_extendable_ = GetNumEdges();  
 }
 
 int Node_revamp::ComputeHeight() {
@@ -349,6 +306,18 @@ int Node_revamp::ComputeHeight() {
     if (h > maxh) maxh = h;
   }
   return maxh + 1;
+}
+
+bool Node_revamp::Check() {
+  if (GetNumChildren() > GetNumEdges()) return false;
+  for (int i = 0; i < GetNumChildren(); i++) {
+    if (GetEdges()[i].GetChild() == nullptr) return false;
+    if (!GetEdges()[i].GetChild()->Check()) return false;
+  }
+  for (int i = GetNumChildren(); i < GetNumEdges(); i++) {
+    if (GetEdges()[i].GetChild() != nullptr) return false;
+  }
+  return true;
 }
 
 /////////////////////////////////////////////////////////////////////////
@@ -426,79 +395,5 @@ void NodeTree_revamp::DeallocateTree() {
   current_head_ = nullptr;
 }
 
-
-
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-/*
-
-bool NodeTree_revamp::ResetToPosition(const std::string& starting_fen,
-							   const std::vector<Move>& moves) {
-	return false;
-}
-
-
-//~ void NodeTree_revamp::MakeMove(Move move) {
-  //~ if (HeadPosition().IsBlackToMove()) move.Mirror();
-
-  //~ Node_revamp* new_head = nullptr;
-  //~ for (auto& n : current_head_->Edges()) {
-    //~ if (n.GetMove() == move) {
-      //~ new_head = n.GetOrSpawnNode(current_head_);
-      //~ break;
-    //~ }
-  //~ }
-  //~ current_head_->ReleaseChildrenExceptOne(new_head);
-  //~ current_head_ =
-      //~ new_head ? new_head : current_head_->CreateSingleChildNode(move);
-  //~ history_.Append(move);
-//~ }
-
-//~ bool NodeTree_revamp::ResetToPosition(const std::string& starting_fen,
-							   //~ const std::vector<Move>& moves) {
-  //~ ChessBoard starting_board;
-  //~ int no_capture_ply;
-  //~ int full_moves;
-  //~ starting_board.SetFromFen(starting_fen, &no_capture_ply, &full_moves);
-  //~ if (gamebegin_node_ && history_.Starting().GetBoard() != starting_board) {
-    //~ // Completely different position.
-    //~ DeallocateTree();
-  //~ }
-
-  //~ if (!gamebegin_node_) {
-    //~ gamebegin_node_ = std::make_unique<Node_revamp>(nullptr, 0);
-  //~ }
-
-  //~ history_.Reset(starting_board, no_capture_ply,
-                 //~ full_moves * 2 - (starting_board.flipped() ? 1 : 2));
-
-  //~ Node_revamp* old_head = current_head_;
-  //~ current_head_ = gamebegin_node_.get();
-  //~ bool seen_old_head = (gamebegin_node_.get() == old_head);
-  //~ for (const auto& move : moves) {
-    //~ MakeMove(move);
-    //~ if (old_head == current_head_) seen_old_head = true;
-  //~ }
-
-  //~ // MakeMove guarantees that no siblings exist; but, if we didn't see the old
-  //~ // head, it means we might have a position that was an ancestor to a
-  //~ // previously searched position, which means that the current_head_ might
-  //~ // retain old n_ and q_ (etc) data, even though its old children were
-  //~ // previously trimmed; we need to reset current_head_ in that case.
-  //~ // Also, if the current_head_ is terminal, reset that as well to allow forced
-  //~ // analysis of WDL hits, or possibly 3 fold or 50 move "draws", etc.
-  //~ if (!seen_old_head || current_head_->IsTerminal()) TrimTreeAtHead();
-
-  //~ return seen_old_head;
-//~ }
-
-//~ void NodeTree_revamp::DeallocateTree() {
-  //~ // Same as gamebegin_node_.reset(), but actual deallocation will happen in
-  //~ // GC thread.
-  //~ gNodeGc.AddToGcQueue(std::move(gamebegin_node_));
-  //~ gamebegin_node_ = nullptr;
-  //~ current_head_ = nullptr;
-//~ }
-
-*/
 
 }  // namespace lczero
