@@ -123,6 +123,8 @@ class Node_revamp {
   void SetOrigQ(float q) { orig_q_ = q; q_ = q; }
   float GetW() const { return w_; }
   void SetW(float w) { w_ = w; }
+  float GetMaxW() const { return max_w_; }
+  void SetMaxW(float w) { max_w_ = w; }
 
   // Returns whether the node is known to be draw/lose/win.
   bool IsTerminal() const { return is_terminal_; }
@@ -186,6 +188,7 @@ class Node_revamp {
   float q_ = 0.0f;
   float orig_q_ = 0.0f;
   float w_ = 0.0f;
+  float max_w_ = 0.0f;
 
   uint32_t n_ = 1;
   uint32_t n_extendable_ = 0;

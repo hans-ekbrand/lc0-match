@@ -313,7 +313,7 @@ void SearchWorker_revamp::pickNodesToExtend(Node_revamp* node, float global_weig
   for (int j = 0; j < node->GetNumChildren(); j++) {
     Node_revamp* child = node->GetEdges()[j].GetChild();
     float w = global_weight * child->GetW();
-    if (w > smallest_weight_in_queue) {
+    if (w * child->GetMaxW() > smallest_weight_in_queue) {
       history_.Append(node->GetEdges()[j].GetMove());
       pickNodesToExtend(child, w);
       history_.Pop();
@@ -359,6 +359,7 @@ void SearchWorker_revamp::retrieveNNResult(Node_revamp* node, int batchidx) {
       (node->GetEdges())[k].SetP(x);
     }
   }
+  node->SetMaxW(node->GetEdges()[0].GetP());
 }
 
 void SearchWorker_revamp::recalcPropagatedQ(Node_revamp* node) {
@@ -381,6 +382,13 @@ void SearchWorker_revamp::recalcPropagatedQ(Node_revamp* node) {
     n += node->GetEdges()[i].GetChild()->GetNExtendable();
   }
   node->SetNExtendable(n);
+
+  float max_w = node->GetNumChildren() < node->GetNumEdges() ? node->GetEdges()[node->GetNumChildren()].GetP() : 0.0;
+  for (int i = 0; i < node->GetNumChildren(); i++) {
+    float br_max_w = node->GetEdges()[i].GetChild()->GetW() * node->GetEdges()[i].GetChild()->GetMaxW();
+    if (br_max_w > max_w) max_w = br_max_w;
+  }
+  node->SetMaxW(max_w);
 }
 
 int SearchWorker_revamp::appendHistoryFromTo(Node_revamp* from, Node_revamp* to) {
@@ -428,7 +436,12 @@ void SearchWorker_revamp::RunBlocking() {
 
     pickNodesToExtend(worker_root_, 1.0);
 
-    LOGFILE << "n: " << worker_root_->GetN() << ", n_extendable: " << worker_root_->GetNExtendable() << ", queue size: " << node_prio_queue_.size() << ", lowest w: " << node_prio_queue_[0].w << ", node stack size: " << nodestack_.size();
+    LOGFILE << "n: " << worker_root_->GetN()
+            << ", n_extendable: " << worker_root_->GetNExtendable()
+            << ", queue size: " << node_prio_queue_.size()
+            << ", lowest w: " << node_prio_queue_[0].w
+            << ", node stack size: " << nodestack_.size()
+            << ", max_unexpanded_w: " << worker_root_->GetMaxW();
 
     for (unsigned int i = 0; i < node_prio_queue_.size(); i++) {
       Node_revamp* node = node_prio_queue_[i].node;
