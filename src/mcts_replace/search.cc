@@ -184,9 +184,7 @@ Search_revamp::~Search_revamp() {
 // Distribution
 //////////////////////////////////////////////////////////////////////////////
 
-namespace {
-
-float computeChildWeights(Node_revamp* node) {
+float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
   int n = node->GetNumChildren();
   
   if (n == 0) {
@@ -195,7 +193,7 @@ float computeChildWeights(Node_revamp* node) {
     double sum1 = 0.0;
     double sum2 = 0.0;
     for (int i = 0; i < n; i++) {
-      float w = exp(40.0 * node->GetEdges()[i].GetChild()->GetQ());  // <- A parameter
+      float w = exp(q_concentration_ * node->GetEdges()[i].GetChild()->GetQ());
       node->GetEdges()[i].GetChild()->SetW(w);
       sum1 += w;
       sum2 += node->GetEdges()[i].GetP();
@@ -219,7 +217,6 @@ float computeChildWeights(Node_revamp* node) {
   //~ std::cerr << ".";
 //~ }
 
-}
 
 
 //////////////////////////////////////////////////////////////////////////////
@@ -343,6 +340,9 @@ void SearchWorker_revamp::retrieveNNResult(Node_revamp* node, int batchidx) {
     if (p < 0.0) {
       LOGFILE << "p value < 0\n";
       p = 0.0;
+    }
+    if (p_concentration_ != 1.0) {
+      p = pow(p, p_concentration_);
     }
     pvals_.push_back(p);
     total += p;

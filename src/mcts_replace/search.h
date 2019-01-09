@@ -129,7 +129,7 @@ private:
 class SearchWorker_revamp {
  public:
  SearchWorker_revamp(Search_revamp* search, Node_revamp* worker_root, const SearchParams& params)
-    : search_(search), params_(params), history_(search_->played_history_), worker_root_(worker_root) {}
+    : search_(search), params_(params), q_concentration_(params.GetCpuct()), p_concentration_(params.GetPolicySoftmaxTemp()), history_(search_->played_history_), worker_root_(worker_root) {}
 
   // Runs iterations while needed.
   void RunBlocking();
@@ -141,6 +141,7 @@ class SearchWorker_revamp {
   void pickNodesToExtend(Node_revamp* current_node, float global_weight);
   void pushNewNodeCandidate(float w, Node_revamp* node, int idx);
   int appendHistoryFromTo(Node_revamp* from, Node_revamp* to);
+  float computeChildWeights(Node_revamp* node);
 
   Search_revamp* const search_;
   std::vector<Node_revamp *> minibatch_;
@@ -158,6 +159,8 @@ class SearchWorker_revamp {
   std::vector<struct NewNodeCandidate> node_prio_queue_;
 
   const SearchParams& params_;
+  float q_concentration_;
+  float p_concentration_;
 
   std::unique_ptr<NetworkComputation> computation_;
   // History is reset and extended by PickNodeToExtend().
