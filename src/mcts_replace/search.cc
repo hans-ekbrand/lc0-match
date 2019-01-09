@@ -38,6 +38,19 @@
 
 namespace lczero {
 
+// Alternatives:
+
+bool const MULTIPLE_NEW_SIBLINGS = false;
+  // If true then multiple children of the same node can be created and evaluated in the same batch.
+  //  When using this alternative the Qs of the existing children plus the Ps of all unexpanded edges must sum up to 1. This must be fullfilled by the computeChildWeights function.
+  // If true then at most the first (the one with highest network computed P) unexpanded edge is expanded in the same batch.
+  //  When using this alternative the weight of expanding next edge 1 - sum of Qs of the existing children.
+bool const INITIAL_MAX_P_IS_1 = true;
+  // If true the the max weight of a node node is set to 1
+  // If false the the max weight of a node node is set to the leftmost/highest P value
+int const DISTRIBUTION_FUNCTION = 0;
+  // 0 - Hans' distribution. Only implemented for non MULTIPLE_NEW_SIBLINGS alternative.
+  // 1 - Plain non-adaptive exponential distribution. Uses cpuct parameter as concentration parameter, so higher values give higher trees and lower give wider trees.
 
 std::string SearchLimits_revamp::DebugString() const {
   std::ostringstream ss;
@@ -184,25 +197,247 @@ Search_revamp::~Search_revamp() {
 // Distribution
 //////////////////////////////////////////////////////////////////////////////
 
+std::vector<float> SearchWorker_revamp::q_to_prob(std::vector<float> Q, int depth, float multiplier, float max_focus) {
+    // rebase depth from 0 to 1
+    depth++;
+    depth = sqrt(depth); // if we use full_tree_depth the distribution gets too sharp after a while
+    auto min_max = std::minmax_element(std::begin(Q), std::end(Q));
+    float min_q = Q[min_max.first-std::begin(Q)];
+    float max_q = Q[min_max.second-std::begin(Q)];
+    std::vector<float> q_prob (Q.size());    
+    if(max_q - min_q == 0){
+      // Return the uniform distribution
+      for(int i = 0; i < (int)Q.size(); i++){
+	q_prob[i] = 1.0f/Q.size();
+      }
+      assert(std::accumulate(q_prob.begin(), q_prob.end(), 0) == 1);      
+      return(q_prob);
+    }
+    std::vector<float> a (Q.size());
+    std::vector<float> b (Q.size());
+    float c = 0;
+    for(int i = 0; i < (int)Q.size(); i++){
+      if(min_q < 0){
+	a[i] = (Q[i] - min_q) * (float)depth/(max_q - min_q);
+	// a[i] = (Q[i] - min_q)/(max_q - min_q);	
+      } else {
+	a[i] = Q[i] * (float)depth/max_q;
+	// a[i] = Q[i]/max_q;
+      }
+      b[i] = exp(multiplier * a[i]);
+    }
+    std::for_each(b.begin(), b.end(), [&] (float f) {
+    c += f;
+});
+    for(int i = 0; i < (int)Q.size(); i++){
+      q_prob[i] = b[i]/c;
+    }
+    if(q_prob[min_max.second-std::begin(Q)] > max_focus){
+      // LOGFILE << "limiting p to max_focus because " << q_prob[min_max.second-std::begin(Q)] << " is more than " << max_focus << "\n";
+      // find index of the second best.
+      std::vector<float> q_prob_copy = q_prob;
+      // Turn the second into the best by setting the max to the min in the copy
+      // LOGFILE << "Setting the best (at: " << min_max.second-std::begin(Q) << ") to " << q_prob_copy[min_max.second-std::begin(Q)] << " to the worst: " << q_prob_copy[min_max.first-std::begin(Q)] << "\n";
+      q_prob_copy[min_max.second-std::begin(Q)] = q_prob_copy[min_max.first-std::begin(Q)] - 1.0f;
+      auto second_best = std::max_element(std::begin(q_prob_copy), std::end(q_prob_copy));
+      q_prob[min_max.second-std::begin(Q)] = max_focus;
+      // LOGFILE << "Setting the second best (at: " << second_best-std::begin(q_prob_copy) << ") " << q_prob[second_best-std::begin(q_prob_copy)] << " to the 1 - max_focus: \n";
+      q_prob[second_best-std::begin(q_prob_copy)] = 1 - max_focus;
+      // Set all the others to zero
+      for(int i = 0; i < (int)Q.size(); i++){
+	if(i != min_max.second-std::begin(Q) && i != second_best-std::begin(q_prob_copy)){
+	  q_prob[i] = 0;
+	}
+      }
+    }
+    // std::sort(q_prob.begin(), q_prob.end(), std::greater<>());
+    // if(q_prob[0] > max_focus){
+    //   LOGFILE << "limiting p to max_focus because " << q_prob[0] << " is more than " << max_focus << "\n";
+    //   // limit p to max focus, give 1 - max_focus to second best and that's it.
+    //   for(int i = 0; i < (int)Q.size(); i++){
+    // 	if(i == 1){
+    // 	  q_prob[i] = max_focus;
+    // 	} else {
+    // 	  if(i == 2){
+    // 	    q_prob[i] = 1 - max_focus;
+    // 	  } else {
+    // 	    q_prob[i] = 0;
+    // 	  }
+    // 	}
+    //   }
+    // }
+    // Does it sum to 1?
+    assert(std::accumulate(q_prob.begin(), q_prob.end(), 0) == 1);
+    return(q_prob);
+  }
+
+
 float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
-  int n = node->GetNumChildren();
-  
-  if (n == 0) {
+  switch (DISTRIBUTION_FUNCTION) {
+    case 0:  // Hans'
+    {
+
+      if (MULTIPLE_NEW_SIBLINGS) {
+        LOGFILE << "Hans' distribution is only implemented for non MULTIPLE_NEW_SIBLINGS alternative.";
+        abort();
+      }
+
+
+// computes weights for the children based on average Qs (and possibly Ps) and, if there are unexpanded edges, a weight for the first unexpanded edge (the unexpanded with highest P)
+// weights are >= 0, sum of weights is 1
+// stored in weights_, idx corresponding to index in EdgeList
+
+//  void SearchWorker_revamp::computeWeights(Node_revamp* node, int depth) {
+
+  // compute depth because this value is not known otherwise
+  // this can be optimised e.g. by storing depth in node
+  int depth = 0;
+  for (Node_revamp* nn = node; nn != worker_root_; nn = nn->GetParent()) {
+    depth++;
+  }
+
+  double sum = 0.0;
+  int n = node->GetNumChildren() + 1;
+  if (n > node->GetNumEdges()) n = node->GetNumEdges();
+
+  bool DEBUG = false;
+  // if(depth == 0){
+  //   DEBUG = true;
+  // }
+
+  // For debugging
+  bool beta_to_move = (depth % 2 != 0);
+  if(DEBUG) {
+    LOGFILE << "Depth: " << depth << "\n";
+  }
+
+  // If no child is extended, then just use P. 
+  if(n == 1 && (node->GetEdges())[0].GetChild() == nullptr){
+
     return 0.0;
+
+    //weights_.push_back(1);
+    //sum += weights_[widx + 1];
+    //if(DEBUG) {
+    //  LOGFILE << "No child extended yet, use P \n";
+    //  float p = (node->GetEdges())[0].GetP();
+    //  LOGFILE << "move: " << (node->GetEdges())[0].GetMove(beta_to_move).as_string() << " P: " << p << " \n";
+    //}
   } else {
-    double sum1 = 0.0;
-    double sum2 = 0.0;
-    for (int i = 0; i < n; i++) {
-      float w = exp(q_concentration_ * node->GetEdges()[i].GetChild()->GetQ());
-      node->GetEdges()[i].GetChild()->SetW(w);
-      sum1 += w;
-      sum2 += node->GetEdges()[i].GetP();
+    // At least one child is extended, weight by Q.
+
+    std::vector<float> Q_prob (n);
+    float multiplier = 2.8f;
+    float max_focus = 0.80f;    
+    std::vector<float> Q (n);
+
+    // Populate the vector Q, all but the last child already has it (or should have, right?)
+    for (int i = 0; i < n-1; i++) {
+      Q[i] = (node->GetEdges())[i].GetChild()->GetQ();
+      if(DEBUG){
+	float p = (node->GetEdges())[i].GetP();
+	LOGFILE << "move: " << (node->GetEdges())[i].GetMove(beta_to_move).as_string() << " P: " << p << " Q: " << Q[i] << " \n";
+      }
     }
-    sum1 = sum2 / sum1;
-    for (int i = 0; i < n; i++) {
-      node->GetEdges()[i].GetChild()->SetW(node->GetEdges()[i].GetChild()->GetW() * sum1);
+    
+    if((node->GetEdges())[n-1].GetChild() != nullptr){
+      // All children have a Q value
+      Q[n-1] = (node->GetEdges())[n-1].GetChild()->GetQ();
+    } else {
+      Q[n-1] = -0.05; // used in the rare case that q of better sibbling happens to be exactly 0.
+      // Simplistic estimate: let the ratio between the P values be the ratio of the q values too.
+      // If Q is below 1, then reverse the nominator and the denominator
+      if((node->GetEdges())[n-2].GetChild()->GetQ() > 0) {
+	Q[n-1] = (node->GetEdges())[n-2].GetChild()->GetQ() * (node->GetEdges())[n-1].GetP() / (node->GetEdges())[n-2].GetP();
+      } 
+      if((node->GetEdges())[n-2].GetChild()->GetQ() < 0) {
+	Q[n-1] = (node->GetEdges())[n-2].GetChild()->GetQ() * (node->GetEdges())[n-2].GetP() / (node->GetEdges())[n-1].GetP();	  
+      }
     }
-    return sum2;
+    if(DEBUG){
+      float p = (node->GetEdges())[n-1].GetP();
+      LOGFILE << "move: " << (node->GetEdges())[n-1].GetMove(beta_to_move).as_string() << " P: " << p << " Q: " << Q[n-1];
+      if((node->GetEdges())[n-1].GetChild() == nullptr){
+	LOGFILE << " (estimated value) \n";
+      } else {
+	LOGFILE << " \n";
+      }
+    }
+
+    Q_prob = q_to_prob(Q, full_tree_depth, multiplier, max_focus);
+
+    if((node->GetEdges())[n-1].GetChild() == nullptr){  // There is unexpanded edge
+      n--;
+    }
+
+    for(int i = 0; i < n; i++){
+      node->GetEdges()[i].GetChild()->SetW(Q_prob[i]);
+      sum += Q_prob[i];
+      // if(DEBUG){
+      // 	LOGFILE << "move: " << (node->GetEdges())[i].GetMove(beta_to_move).as_string() << " Q as prob: " << Q_prob[i] << "\n";
+      // }
+    }
+  }
+  
+  return sum;
+
+  // // Probably not needed anymore, since q_to_prob returns a vector with sum=1 and else there is only one alternative: highest P.
+  // if (sum > 0.0) {
+  //   float scale = (float)(1.0 / sum);
+  //   for (int i = 0; i < n; i++) {
+  //     weights_[widx + i] *= scale;
+  //   }
+  // } else {
+  //   float x = 1.0f / (float)n;
+  //   for (int i = 0; i < n; i++) {
+  //     weights_[widx + i] = x;
+  //   }
+  // }
+
+//}
+
+
+    } break;
+    case 1:  // Plain exponential
+    {
+      int n = node->GetNumChildren();
+      
+      if (n == 0) {
+        return 0.0;
+      } else {
+        if (MULTIPLE_NEW_SIBLINGS) {
+          double sum1 = 0.0;
+          double sum2 = 0.0;
+          for (int i = 0; i < n; i++) {
+            float w = exp(q_concentration_ * node->GetEdges()[i].GetChild()->GetQ());
+            node->GetEdges()[i].GetChild()->SetW(w);
+            sum1 += w;
+            sum2 += node->GetEdges()[i].GetP();
+          }
+          sum1 = sum2 / sum1;
+          for (int i = 0; i < n; i++) {
+            node->GetEdges()[i].GetChild()->SetW(node->GetEdges()[i].GetChild()->GetW() * sum1);
+          }
+          return sum2;
+        } else {
+          double sum1 = 0.0;
+          for (int i = 0; i < n; i++) {
+            float w = exp(q_concentration_ * node->GetEdges()[i].GetChild()->GetQ());
+            node->GetEdges()[i].GetChild()->SetW(w);
+            sum1 += w;
+          }
+          float sum2 = 1.0;
+          if (node->GetNumChildren() < node->GetNumEdges()) {
+            sum2 -= node->GetEdges()[node->GetNumChildren()].GetP();
+          }
+          sum1 = sum2 / sum1;
+          for (int i = 0; i < n; i++) {
+            node->GetEdges()[i].GetChild()->SetW(node->GetEdges()[i].GetChild()->GetW() * sum1);
+          }
+          return sum2;
+        }
+      }
+    } break;
   }
 }
 
@@ -286,37 +521,66 @@ void SearchWorker_revamp::pushNewNodeCandidate(float w, Node_revamp* node, int i
 void SearchWorker_revamp::pickNodesToExtend(Node_revamp* node, float global_weight) {
   nodestack_.push_back(node);
 
-  float smallest_weight_in_queue = -1.0;
-  if (node_prio_queue_.size() == (unsigned int)params_.GetMiniBatchSize()) {
-    smallest_weight_in_queue = node_prio_queue_[0].w;
-  }
-  float oldw = 2.0;
-  for (int i = node->GetNumChildren(); i < node->GetNumEdges(); i++) {
-    float w = global_weight * node->GetEdges()[i].GetP();
-    if (w > smallest_weight_in_queue) {
-      while (w >= oldw) {
-        w = nextafterf(w, -1.0);
-      }
-      pushNewNodeCandidate(w, node, i);
-      if (node_prio_queue_.size() == (unsigned int)params_.GetMiniBatchSize()) {
-        smallest_weight_in_queue = node_prio_queue_[0].w;
-      }
-      oldw = w;
-    } else {
-      break;
+  if (MULTIPLE_NEW_SIBLINGS) {
+
+    float smallest_weight_in_queue = -1.0;
+    if (node_prio_queue_.size() == (unsigned int)params_.GetMiniBatchSize()) {
+      smallest_weight_in_queue = node_prio_queue_[0].w;
     }
-  }
-  
-  for (int j = 0; j < node->GetNumChildren(); j++) {
-    Node_revamp* child = node->GetEdges()[j].GetChild();
-    float w = global_weight * child->GetW();
-    if (w * child->GetMaxW() > smallest_weight_in_queue) {
-      history_.Append(node->GetEdges()[j].GetMove());
-      pickNodesToExtend(child, w);
-      history_.Pop();
-      if (node_prio_queue_.size() == (unsigned int)params_.GetMiniBatchSize()) {
-        smallest_weight_in_queue = node_prio_queue_[0].w;
-      }      
+    float oldw = 2.0;
+    for (int i = node->GetNumChildren(); i < node->GetNumEdges(); i++) {
+      float w = global_weight * node->GetEdges()[i].GetP();
+      if (w > smallest_weight_in_queue) {
+        while (w >= oldw) {
+          w = nextafterf(w, -1.0);
+        }
+        pushNewNodeCandidate(w, node, i);
+        if (node_prio_queue_.size() == (unsigned int)params_.GetMiniBatchSize()) {
+          smallest_weight_in_queue = node_prio_queue_[0].w;
+        }
+        oldw = w;
+      } else {
+        break;
+      }
+    }
+    
+    for (int j = 0; j < node->GetNumChildren(); j++) {
+      Node_revamp* child = node->GetEdges()[j].GetChild();
+      float w = global_weight * child->GetW();
+      if (w * child->GetMaxW() > smallest_weight_in_queue) {
+        pickNodesToExtend(child, w);
+        if (node_prio_queue_.size() == (unsigned int)params_.GetMiniBatchSize()) {
+          smallest_weight_in_queue = node_prio_queue_[0].w;
+        }      
+      }
+    }
+  } else {  // not MULTIPLE_NEW_SIBLINGS
+
+    float smallest_weight_in_queue = -1.0;
+    if (node_prio_queue_.size() == (unsigned int)params_.GetMiniBatchSize()) {
+      smallest_weight_in_queue = node_prio_queue_[0].w;
+    }
+
+    float totw = 0.0;
+
+    for (int j = 0; j < node->GetNumChildren(); j++) {
+      Node_revamp* child = node->GetEdges()[j].GetChild();
+      float w = child->GetW();
+      totw += w;
+      w *= global_weight;
+      if (w * child->GetMaxW() > smallest_weight_in_queue) {
+        pickNodesToExtend(child, w);
+        if (node_prio_queue_.size() == (unsigned int)params_.GetMiniBatchSize()) {
+          smallest_weight_in_queue = node_prio_queue_[0].w;
+        }
+      }
+    }
+
+    if (node->GetNumChildren() < node->GetNumEdges()) {
+      totw = (1.0 - totw) * global_weight;
+      if (totw > smallest_weight_in_queue) {
+        pushNewNodeCandidate(totw, node, node->GetNumChildren());
+      }
     }
   }
 }
@@ -359,7 +623,11 @@ void SearchWorker_revamp::retrieveNNResult(Node_revamp* node, int batchidx) {
       (node->GetEdges())[k].SetP(x);
     }
   }
-  node->SetMaxW(node->GetEdges()[0].GetP());
+  if (INITIAL_MAX_P_IS_1) {
+    node->SetMaxW(1.0);
+  } else {
+    node->SetMaxW(node->GetEdges()[0].GetP());
+  }
 }
 
 void SearchWorker_revamp::recalcPropagatedQ(Node_revamp* node) {
@@ -464,6 +732,8 @@ void SearchWorker_revamp::RunBlocking() {
       for (int j = 0; j <= nappends; j++) {
         history_.Pop();
       }
+      
+      if (nappends > full_tree_depth) full_tree_depth = nappends;
 
     }
 

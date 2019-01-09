@@ -142,6 +142,7 @@ class SearchWorker_revamp {
   void pushNewNodeCandidate(float w, Node_revamp* node, int idx);
   int appendHistoryFromTo(Node_revamp* from, Node_revamp* to);
   float computeChildWeights(Node_revamp* node);
+  std::vector<float> q_to_prob(std::vector<float> Q, int depth, float multiplier, float max_focus);
 
   Search_revamp* const search_;
   std::vector<Node_revamp *> minibatch_;
@@ -149,6 +150,7 @@ class SearchWorker_revamp {
   std::vector<float> pvals_;
   std::vector<Node_revamp *> nodestack_;
   std::vector<Move> movestack_;
+  int full_tree_depth = 0;
 
   struct NewNodeCandidate {
     float w;
