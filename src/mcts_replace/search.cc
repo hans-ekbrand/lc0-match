@@ -520,11 +520,11 @@ void SearchWorker_revamp::RunBlocking() {
   }
 
   int bestidx = indexOfHighestQEdge(search_->root_node_);
-  Move best_move = search_->root_node_->GetEdges()[bestidx].GetMove();
+  Move best_move = search_->root_node_->GetEdges()[bestidx].GetMove(search_->played_history_.IsBlackToMove());
   int ponderidx = indexOfHighestQEdge(search_->root_node_->GetEdges()[bestidx].GetChild());
   // Move ponder_move = search_->root_node_->GetEdges()[bestidx].GetChild()->GetEdges()[ponderidx].GetMove(true);
   // When we are to play black this fails, it returns the move from whites perspective.
-  Move ponder_move = search_->root_node_->GetEdges()[bestidx].GetChild()->GetEdges()[ponderidx].GetMove(!history_.IsBlackToMove());
+  Move ponder_move = search_->root_node_->GetEdges()[bestidx].GetChild()->GetEdges()[ponderidx].GetMove(!search_->played_history_.IsBlackToMove());
   search_->best_move_callback_({best_move, ponder_move});
 }
 
