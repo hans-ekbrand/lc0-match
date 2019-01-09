@@ -185,13 +185,6 @@ Search_revamp::~Search_revamp() {
 //////////////////////////////////////////////////////////////////////////////
 
 namespace {
-float q_to_w(float q, float mean, float stddev) {
-  if (stddev < 1e-5) {
-    return 1.0;
-  } else {
-    return exp(3.0 * (q - mean) / stddev);
-  }
-}
 
 float computeChildWeights(Node_revamp* node) {
   int n = node->GetNumChildren();
@@ -199,22 +192,10 @@ float computeChildWeights(Node_revamp* node) {
   if (n == 0) {
     return 0.0;
   } else {
-    float mean = 0.0;
-    for (int i = 0; i < n; i++) {
-      mean += node->GetEdges()[i].GetChild()->GetQ();
-    }
-    mean /= (float)n;
-    
-    float stddev = 0.0;
-    for (int i = 0; i < n; i++) {
-      stddev += abs(node->GetEdges()[i].GetChild()->GetQ() - mean);
-    }
-    stddev /= (float)n;
-    
     double sum1 = 0.0;
     double sum2 = 0.0;
     for (int i = 0; i < n; i++) {
-      float w = q_to_w(node->GetEdges()[i].GetChild()->GetQ(), mean, stddev);
+      float w = exp(40.0 * node->GetEdges()[i].GetChild()->GetQ());  // <- A parameter
       node->GetEdges()[i].GetChild()->SetW(w);
       sum1 += w;
       sum2 += node->GetEdges()[i].GetP();
@@ -226,6 +207,7 @@ float computeChildWeights(Node_revamp* node) {
     return sum2;
   }
 }
+
 
 
 //~ void printNodePos(Node_revamp* node, Node_revamp* root) {
@@ -311,13 +293,18 @@ void SearchWorker_revamp::pickNodesToExtend(Node_revamp* node, float global_weig
   if (node_prio_queue_.size() == (unsigned int)params_.GetMiniBatchSize()) {
     smallest_weight_in_queue = node_prio_queue_[0].w;
   }
+  float oldw = 2.0;
   for (int i = node->GetNumChildren(); i < node->GetNumEdges(); i++) {
     float w = global_weight * node->GetEdges()[i].GetP();
     if (w > smallest_weight_in_queue) {
+      while (w >= oldw) {
+        w = nextafterf(w, -1.0);
+      }
       pushNewNodeCandidate(w, node, i);
       if (node_prio_queue_.size() == (unsigned int)params_.GetMiniBatchSize()) {
         smallest_weight_in_queue = node_prio_queue_[0].w;
       }
+      oldw = w;
     } else {
       break;
     }
@@ -396,6 +383,18 @@ void SearchWorker_revamp::recalcPropagatedQ(Node_revamp* node) {
   node->SetNExtendable(n);
 }
 
+int SearchWorker_revamp::appendHistoryFromTo(Node_revamp* from, Node_revamp* to) {
+  movestack_.clear();
+  while (to != from) {
+    movestack_.push_back(to->GetParent()->GetEdges()[to->GetIndex()].GetMove());
+    to = to->GetParent();
+  }
+  for (int i = movestack_.size() - 1; i >= 0; i--) {
+    history_.Append(movestack_[i]);
+  }
+  return movestack_.size();
+}
+
 void SearchWorker_revamp::RunBlocking() {
   LOGFILE << "Running thread for node " << worker_root_ << "\n";
   auto board = history_.Last().GetBoard();
@@ -427,13 +426,9 @@ void SearchWorker_revamp::RunBlocking() {
     minibatch_.clear();
     computation_ = search_->network_->NewComputation();
 
-    // LOGFILE << "n: " << worker_root_->GetN() << "\n";
-
-    std::cerr << "n: " << worker_root_->GetN() << ", n_extendable: " << worker_root_->GetNExtendable() << "\n";
-
     pickNodesToExtend(worker_root_, 1.0);
 
-    std::cerr << "queue size: " << node_prio_queue_.size() << ", lowest w: " << node_prio_queue_[0].w << ", node stack size: " << nodestack_.size() << "\n";
+    LOGFILE << "n: " << worker_root_->GetN() << ", n_extendable: " << worker_root_->GetNExtendable() << ", queue size: " << node_prio_queue_.size() << ", lowest w: " << node_prio_queue_[0].w << ", node stack size: " << nodestack_.size();
 
     for (unsigned int i = 0; i < node_prio_queue_.size(); i++) {
       Node_revamp* node = node_prio_queue_[i].node;
@@ -441,7 +436,10 @@ void SearchWorker_revamp::RunBlocking() {
       
       node->GetEdges()[idx].CreateChild(node, idx);
       Node_revamp* newchild = node->GetEdges()[idx].GetChild();
+
+      int nappends = appendHistoryFromTo(worker_root_, node);
       history_.Append(node->GetEdges()[idx].GetMove());
+
       newchild->ExtendNode(&history_);
       if (!newchild->IsTerminal()) {
         AddNodeToComputation();
@@ -449,7 +447,11 @@ void SearchWorker_revamp::RunBlocking() {
       } else {
         // LOGFILE << "Terminal node created\n";	
       }
-      history_.Pop();
+
+      for (int j = 0; j <= nappends; j++) {
+        history_.Pop();
+      }
+
     }
 
     node_prio_queue_.clear();
@@ -489,6 +491,8 @@ void SearchWorker_revamp::RunBlocking() {
 
   int64_t elapsed_time = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_time).count();
   LOGFILE << "Elapsed time when thread for node " << worker_root_ << " which has size " << worker_root_->GetN() << " nodes did " << i << " computations: " << elapsed_time << "ms";
+
+  LOGFILE << "root Q: " << worker_root_->GetQ();
 
   LOGFILE << "move   P                 n   norm n      h   Q          w";
   for (int i = 0; i < worker_root_->GetNumChildren(); i++) {

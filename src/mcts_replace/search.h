@@ -140,12 +140,14 @@ class SearchWorker_revamp {
   void recalcPropagatedQ(Node_revamp* node);
   void pickNodesToExtend(Node_revamp* current_node, float global_weight);
   void pushNewNodeCandidate(float w, Node_revamp* node, int idx);
+  int appendHistoryFromTo(Node_revamp* from, Node_revamp* to);
 
   Search_revamp* const search_;
   std::vector<Node_revamp *> minibatch_;
 
   std::vector<float> pvals_;
   std::vector<Node_revamp *> nodestack_;
+  std::vector<Move> movestack_;
 
   struct NewNodeCandidate {
     float w;
