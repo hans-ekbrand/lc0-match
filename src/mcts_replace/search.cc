@@ -633,6 +633,24 @@ void SearchWorker_revamp::retrieveNNResult(Node_revamp* node, int batchidx) {
 void SearchWorker_revamp::recalcPropagatedQ(Node_revamp* node) {
   float total_children_weight = computeChildWeights(node);
   
+  if (total_children_weight < 0.0 || total_children_weight > 1.0) {
+    std::cerr << "total_children_weight: " << total_children_weight << "\n";
+    abort();
+  }
+  float totw = 0.0;
+  for (int i = 0; i < node->GetNumChildren(); i++) {
+    float w = node->GetEdges()[i].GetChild()->GetW();
+    if (w < 0.0) {
+      std::cerr << "w: " << w << "\n";
+      abort();
+    }
+    totw += w;
+  }
+  if (abs(total_children_weight - totw) > 1e-5) {
+    std::cerr << "total_children_weight: " << total_children_weight << ", totw: " << total_children_weight << "\n";
+    abort();
+  }
+  
   float q = (1.0 - total_children_weight) * node->GetOrigQ();
   for (int i = 0; i < node->GetNumChildren(); i++) {
     q -= node->GetEdges()[i].GetChild()->GetW() * node->GetEdges()[i].GetChild()->GetQ();
