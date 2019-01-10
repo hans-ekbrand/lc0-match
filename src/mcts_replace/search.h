@@ -116,6 +116,7 @@ private:
   const SearchParams params_;
 
   BestMoveInfo::Callback best_move_callback_;
+  ThinkingInfo::Callback info_callback_;
   // External parameters
   //  const int kMiniBatchSize;
   //const int kCacheHistoryLength;
@@ -144,6 +145,8 @@ class SearchWorker_revamp {
   float computeChildWeights(Node_revamp* node);
   std::vector<float> q_to_prob(std::vector<float> Q, int depth, float multiplier, float max_focus);
 
+  void SendUciInfo();
+
   Search_revamp* const search_;
   std::vector<Node_revamp *> minibatch_;
 
@@ -151,6 +154,7 @@ class SearchWorker_revamp {
   std::vector<Node_revamp *> nodestack_;
   std::vector<Move> movestack_;
   int full_tree_depth = 0;
+  uint64_t cum_depth_ = 0;
 
   struct NewNodeCandidate {
     float w;

@@ -78,8 +78,8 @@ Search_revamp::Search_revamp(const NodeTree_revamp& tree, Network* network,
       params_(options),
       //~ start_time_(std::chrono::steady_clock::now()),
       //~ initial_visits_(root_node_->GetN()),
-      best_move_callback_(best_move_callback)
-      //~ info_callback_(info_callback),
+      best_move_callback_(best_move_callback),
+      info_callback_(info_callback)
     {}
 
 
@@ -698,6 +698,8 @@ void SearchWorker_revamp::RunBlocking() {
     i++;
   }
 
+  int ucicount = 0;
+
   while (worker_root_->GetN() < lim) {
     minibatch_.clear();
     computation_ = search_->network_->NewComputation();
@@ -734,7 +736,7 @@ void SearchWorker_revamp::RunBlocking() {
       }
       
       if (nappends > full_tree_depth) full_tree_depth = nappends;
-
+      cum_depth_ += nappends;
     }
 
     node_prio_queue_.clear();
@@ -769,6 +771,11 @@ void SearchWorker_revamp::RunBlocking() {
       Node_revamp* node = nodestack_.back();
       nodestack_.pop_back();
       recalcPropagatedQ(node);
+    }
+    
+    if (++ucicount == 4) {  // output UCI every 4th batch
+      ucicount = 0;
+      SendUciInfo();
     }
   }
 
@@ -810,6 +817,95 @@ void SearchWorker_revamp::AddNodeToComputation() {
   //computation_->AddInput(hash, std::move(planes), std::move(moves));
 }
 
+
+void SearchWorker_revamp::SendUciInfo() {
+
+  auto score_type = params_.GetScoreType();
+
+  ThinkingInfo common_info;
+  common_info.depth = cum_depth_ / worker_root_->GetN();;
+  common_info.seldepth = full_tree_depth;
+  common_info.nodes = worker_root_->GetN();
+
+
+  std::vector<ThinkingInfo> uci_infos;
+
+  int multipv = 0;
+
+  for (int i = 0; i < worker_root_->GetNumChildren(); i++) {
+    ++multipv;
+
+    uci_infos.emplace_back(common_info);
+    auto& uci_info = uci_infos.back();
+
+    float Q = worker_root_->GetEdges()[i].GetChild()->GetQ();
+    if (score_type == "centipawn") {
+      uci_info.score = 290.680623072 * tan(1.548090806 * Q);
+    } else if (score_type == "win_percentage") {
+      uci_info.score = Q * 5000 + 5000;
+    } else if (score_type == "Q") {
+      uci_info.score = Q * 10000;
+    }
+
+    if (params_.GetMultiPv() > 1) uci_info.multipv = multipv;
+    bool flip = history_.IsBlackToMove();
+    uci_info.pv.push_back(worker_root_->GetEdges()[i].GetMove(flip));
+    Node_revamp* n = worker_root_->GetEdges()[i].GetChild();
+    while (n && n->GetNumChildren() > 0) {
+      flip = !flip;
+      int bestidx = indexOfHighestQEdge(n);
+      uci_info.pv.push_back(n->GetEdges()[bestidx].GetMove(flip));
+      n = n->GetEdges()[bestidx].GetChild();
+    }    
+  }
+
+  search_->info_callback_(uci_infos);
+
+  //~ auto edges = GetBestChildrenNoTemperature(root_node_, params_.GetMultiPv());
+  //~ auto score_type = params_.GetScoreType();
+
+  //~ std::vector<ThinkingInfo> uci_infos;
+
+  //~ // Info common for all multipv variants.
+  //~ ThinkingInfo common_info;
+  //~ common_info.depth = cum_depth_ / (total_playouts_ ? total_playouts_ : 1);
+  //~ common_info.seldepth = max_depth_;
+  //~ common_info.time = GetTimeSinceStart();
+  //~ common_info.nodes = total_playouts_ + initial_visits_;
+  //~ common_info.hashfull =
+      //~ cache_->GetSize() * 1000LL / std::max(cache_->GetCapacity(), 1);
+  //~ common_info.nps =
+      //~ common_info.time ? (total_playouts_ * 1000 / common_info.time) : 0;
+  //~ common_info.tb_hits = tb_hits_.load(std::memory_order_acquire);
+
+  //~ int multipv = 0;
+  //~ for (const auto& edge : edges) {
+    //~ ++multipv;
+    //~ uci_infos.emplace_back(common_info);
+    //~ auto& uci_info = uci_infos.back();
+    //~ if (score_type == "centipawn") {
+      //~ uci_info.score = 290.680623072 * tan(1.548090806 * edge.GetQ(0));
+    //~ } else if (score_type == "win_percentage") {
+      //~ uci_info.score = edge.GetQ(0) * 5000 + 5000;
+    //~ } else if (score_type == "Q") {
+      //~ uci_info.score = edge.GetQ(0) * 10000;
+    //~ }
+    //~ if (params_.GetMultiPv() > 1) uci_info.multipv = multipv;
+    //~ bool flip = played_history_.IsBlackToMove();
+    //~ for (auto iter = edge; iter;
+         //~ iter = GetBestChildNoTemperature(iter.node()), flip = !flip) {
+      //~ uci_info.pv.push_back(iter.GetMove(flip));
+      //~ if (!iter.node()) break;  // Last edge was dangling, cannot continue.
+    //~ }
+  //~ }
+
+  //~ if (!uci_infos.empty()) last_outputted_uci_info_ = uci_infos.front();
+  //~ if (current_best_edge_ && !edges.empty()) {
+    //~ last_outputted_info_edge_ = current_best_edge_.edge();
+  //~ }
+
+  //~ info_callback_(uci_infos);
+}
 
 
 
