@@ -102,6 +102,9 @@ class Search_revamp {
 private:
   void WatchdogThread();
 
+  int64_t GetTimeSinceStart() const;
+
+
   Mutex threads_mutex_;
   std::vector<std::thread> threads_ GUARDED_BY(threads_mutex_);
 
@@ -114,6 +117,9 @@ private:
   const SearchLimits_revamp limits_;
 
   const SearchParams params_;
+
+  const std::chrono::steady_clock::time_point start_time_;
+  const int64_t initial_visits_;
 
   BestMoveInfo::Callback best_move_callback_;
   ThinkingInfo::Callback info_callback_;

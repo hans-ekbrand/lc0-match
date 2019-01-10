@@ -38,6 +38,8 @@
 
 namespace lczero {
 
+namespace {
+
 // Alternatives:
 
 bool const MULTIPLE_NEW_SIBLINGS = false;
@@ -51,6 +53,11 @@ bool const INITIAL_MAX_P_IS_1 = true;
 int const DISTRIBUTION_FUNCTION = 0;
   // 0 - Hans' distribution. Only implemented for non MULTIPLE_NEW_SIBLINGS alternative.
   // 1 - Plain non-adaptive exponential distribution. Uses cpuct parameter as concentration parameter, so higher values give higher trees and lower give wider trees.
+
+const int kUciInfoMinimumFrequencyMs = 2000;
+
+}  // namespace
+
 
 std::string SearchLimits_revamp::DebugString() const {
   std::ostringstream ss;
@@ -76,11 +83,17 @@ Search_revamp::Search_revamp(const NodeTree_revamp& tree, Network* network,
       network_(network),
       limits_(limits),
       params_(options),
-      //~ start_time_(std::chrono::steady_clock::now()),
-      //~ initial_visits_(root_node_->GetN()),
+      start_time_(std::chrono::steady_clock::now()),
+      initial_visits_(root_node_->GetN()),
       best_move_callback_(best_move_callback),
       info_callback_(info_callback)
     {}
+
+int64_t Search_revamp::GetTimeSinceStart() const {
+  return std::chrono::duration_cast<std::chrono::milliseconds>(
+             std::chrono::steady_clock::now() - start_time_)
+      .count();
+}
 
 
 void Search_revamp::StartThreads(size_t how_many) {
@@ -545,12 +558,14 @@ void SearchWorker_revamp::pickNodesToExtend(Node_revamp* node, float global_weig
     
     for (int j = 0; j < node->GetNumChildren(); j++) {
       Node_revamp* child = node->GetEdges()[j].GetChild();
-      float w = global_weight * child->GetW();
-      if (w * child->GetMaxW() > smallest_weight_in_queue) {
-        pickNodesToExtend(child, w);
-        if (node_prio_queue_.size() == (unsigned int)params_.GetMiniBatchSize()) {
-          smallest_weight_in_queue = node_prio_queue_[0].w;
-        }      
+      if (child->GetNExtendable() > 0) {
+        float w = global_weight * child->GetW();
+        if (w * child->GetMaxW() > smallest_weight_in_queue) {
+          pickNodesToExtend(child, w);
+          if (node_prio_queue_.size() == (unsigned int)params_.GetMiniBatchSize()) {
+            smallest_weight_in_queue = node_prio_queue_[0].w;
+          }
+        }
       }
     }
   } else {  // not MULTIPLE_NEW_SIBLINGS
@@ -566,11 +581,13 @@ void SearchWorker_revamp::pickNodesToExtend(Node_revamp* node, float global_weig
       Node_revamp* child = node->GetEdges()[j].GetChild();
       float w = child->GetW();
       totw += w;
-      w *= global_weight;
-      if (w * child->GetMaxW() > smallest_weight_in_queue) {
-        pickNodesToExtend(child, w);
-        if (node_prio_queue_.size() == (unsigned int)params_.GetMiniBatchSize()) {
-          smallest_weight_in_queue = node_prio_queue_[0].w;
+      if (child->GetNExtendable() > 0) {
+        w *= global_weight;
+        if (w * child->GetMaxW() > smallest_weight_in_queue) {
+          pickNodesToExtend(child, w);
+          if (node_prio_queue_.size() == (unsigned int)params_.GetMiniBatchSize()) {
+            smallest_weight_in_queue = node_prio_queue_[0].w;
+          }
         }
       }
     }
@@ -634,23 +651,25 @@ void SearchWorker_revamp::recalcPropagatedQ(Node_revamp* node) {
   if(DEBUG) LOGFILE << "calling computeChildWeights()\n";
   float total_children_weight = computeChildWeights(node);
   if(DEBUG) LOGFILE << "computeChildWeights() returned\n";
-  
-  if (total_children_weight < 0.0 || total_children_weight - 1.0 > 1e-5) {
-    std::cerr << "total_children_weight: " << total_children_weight << "\n";
-    abort();
-  }
-  float totw = 0.0;
-  for (int i = 0; i < node->GetNumChildren(); i++) {
-    float w = node->GetEdges()[i].GetChild()->GetW();
-    if (w < 0.0) {
-      std::cerr << "w: " << w << "\n";
+
+  if (DEBUG) {
+    if (total_children_weight < 0.0 || total_children_weight - 1.0 > 1e-5) {
+      std::cerr << "total_children_weight: " << total_children_weight << "\n";
       abort();
     }
-    totw += w;
-  }
-  if (abs(total_children_weight - totw) > 1e-5) {
-    std::cerr << "total_children_weight: " << total_children_weight << ", totw: " << total_children_weight << "\n";
-    abort();
+    float totw = 0.0;
+    for (int i = 0; i < node->GetNumChildren(); i++) {
+      float w = node->GetEdges()[i].GetChild()->GetW();
+      if (w < 0.0) {
+        std::cerr << "w: " << w << "\n";
+        abort();
+      }
+      totw += w;
+    }
+    if (abs(total_children_weight - totw) > 1e-5) {
+      std::cerr << "total_children_weight: " << total_children_weight << ", totw: " << total_children_weight << "\n";
+      abort();
+    }
   }
   
   float q = (1.0 - total_children_weight) * node->GetOrigQ();
@@ -719,7 +738,7 @@ void SearchWorker_revamp::RunBlocking() {
     i++;
   }
 
-  int ucicount = 0;
+  int64_t last_uci_time = 0;
 
   while (worker_root_->GetN() < lim) {
     minibatch_.clear();
@@ -789,13 +808,12 @@ void SearchWorker_revamp::RunBlocking() {
     for (int n = nodestack_.size(); n > 0; n--) {
       Node_revamp* node = nodestack_.back();
       nodestack_.pop_back();
-      if(!node->IsTerminal()){
-	recalcPropagatedQ(node);
-      }
+      recalcPropagatedQ(node);
     }
     
-    if (++ucicount == 4) {  // output UCI every 4th batch
-      ucicount = 0;
+    int64_t time = search_->GetTimeSinceStart();
+    if (time - last_uci_time > kUciInfoMinimumFrequencyMs) {
+      last_uci_time = time;
       SendUciInfo();
     }
   }
@@ -844,88 +862,60 @@ void SearchWorker_revamp::SendUciInfo() {
   auto score_type = params_.GetScoreType();
 
   ThinkingInfo common_info;
-  common_info.depth = cum_depth_ / worker_root_->GetN();;
+  if (worker_root_->GetN() > search_->initial_visits_)
+    common_info.depth = cum_depth_ / (worker_root_->GetN() - search_->initial_visits_);
   common_info.seldepth = full_tree_depth;
+  common_info.time = search_->GetTimeSinceStart();
   common_info.nodes = worker_root_->GetN();
-
+  common_info.nps =
+      common_info.time ? ((worker_root_->GetN() - search_->initial_visits_) * 1000 / common_info.time) : 0;
 
   std::vector<ThinkingInfo> uci_infos;
 
   int multipv = 0;
 
+  float prevq = 2.0;
+  int previdx = -1;
   for (int i = 0; i < worker_root_->GetNumChildren(); i++) {
+    float bestq = -2.0;
+    int bestidx = -1;
+    for (int j = 0; j < worker_root_->GetNumChildren(); j++) {
+      float q = worker_root_->GetEdges()[j].GetChild()->GetQ();
+      if (q > bestq && (q < prevq || (q == prevq && j > previdx))) {
+        bestq = q;
+        bestidx = j;
+      }
+    }
+    prevq = bestq;
+    previdx = bestidx;
+
     ++multipv;
 
     uci_infos.emplace_back(common_info);
     auto& uci_info = uci_infos.back();
 
-    float Q = worker_root_->GetEdges()[i].GetChild()->GetQ();
     if (score_type == "centipawn") {
-      uci_info.score = 290.680623072 * tan(1.548090806 * Q);
+      uci_info.score = 290.680623072 * tan(1.548090806 * bestq);
     } else if (score_type == "win_percentage") {
-      uci_info.score = Q * 5000 + 5000;
+      uci_info.score = bestq * 5000 + 5000;
     } else if (score_type == "Q") {
-      uci_info.score = Q * 10000;
+      uci_info.score = bestq * 10000;
     }
 
     if (params_.GetMultiPv() > 1) uci_info.multipv = multipv;
     bool flip = history_.IsBlackToMove();
-    uci_info.pv.push_back(worker_root_->GetEdges()[i].GetMove(flip));
-    Node_revamp* n = worker_root_->GetEdges()[i].GetChild();
+    uci_info.pv.push_back(worker_root_->GetEdges()[bestidx].GetMove(flip));
+    Node_revamp* n = worker_root_->GetEdges()[bestidx].GetChild();
     while (n && n->GetNumChildren() > 0) {
       flip = !flip;
       int bestidx = indexOfHighestQEdge(n);
       uci_info.pv.push_back(n->GetEdges()[bestidx].GetMove(flip));
       n = n->GetEdges()[bestidx].GetChild();
-    }    
+    }
   }
 
   search_->info_callback_(uci_infos);
 
-  //~ auto edges = GetBestChildrenNoTemperature(root_node_, params_.GetMultiPv());
-  //~ auto score_type = params_.GetScoreType();
-
-  //~ std::vector<ThinkingInfo> uci_infos;
-
-  //~ // Info common for all multipv variants.
-  //~ ThinkingInfo common_info;
-  //~ common_info.depth = cum_depth_ / (total_playouts_ ? total_playouts_ : 1);
-  //~ common_info.seldepth = max_depth_;
-  //~ common_info.time = GetTimeSinceStart();
-  //~ common_info.nodes = total_playouts_ + initial_visits_;
-  //~ common_info.hashfull =
-      //~ cache_->GetSize() * 1000LL / std::max(cache_->GetCapacity(), 1);
-  //~ common_info.nps =
-      //~ common_info.time ? (total_playouts_ * 1000 / common_info.time) : 0;
-  //~ common_info.tb_hits = tb_hits_.load(std::memory_order_acquire);
-
-  //~ int multipv = 0;
-  //~ for (const auto& edge : edges) {
-    //~ ++multipv;
-    //~ uci_infos.emplace_back(common_info);
-    //~ auto& uci_info = uci_infos.back();
-    //~ if (score_type == "centipawn") {
-      //~ uci_info.score = 290.680623072 * tan(1.548090806 * edge.GetQ(0));
-    //~ } else if (score_type == "win_percentage") {
-      //~ uci_info.score = edge.GetQ(0) * 5000 + 5000;
-    //~ } else if (score_type == "Q") {
-      //~ uci_info.score = edge.GetQ(0) * 10000;
-    //~ }
-    //~ if (params_.GetMultiPv() > 1) uci_info.multipv = multipv;
-    //~ bool flip = played_history_.IsBlackToMove();
-    //~ for (auto iter = edge; iter;
-         //~ iter = GetBestChildNoTemperature(iter.node()), flip = !flip) {
-      //~ uci_info.pv.push_back(iter.GetMove(flip));
-      //~ if (!iter.node()) break;  // Last edge was dangling, cannot continue.
-    //~ }
-  //~ }
-
-  //~ if (!uci_infos.empty()) last_outputted_uci_info_ = uci_infos.front();
-  //~ if (current_best_edge_ && !edges.empty()) {
-    //~ last_outputted_info_edge_ = current_best_edge_.edge();
-  //~ }
-
-  //~ info_callback_(uci_infos);
 }
 
 
