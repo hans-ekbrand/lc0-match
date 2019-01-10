@@ -198,8 +198,9 @@ Search_revamp::~Search_revamp() {
 //////////////////////////////////////////////////////////////////////////////
 
 std::vector<float> SearchWorker_revamp::q_to_prob(std::vector<float> Q, int depth, float multiplier, float max_focus) {
-    // rebase depth from 0 to 1
-    depth++;
+  bool DEBUG = false;
+  // rebase depth from 0 to 1
+  depth++;
     depth = sqrt(depth); // if we use full_tree_depth the distribution gets too sharp after a while
     auto min_max = std::minmax_element(std::begin(Q), std::end(Q));
     float min_q = Q[min_max.first-std::begin(Q)];
@@ -229,45 +230,42 @@ std::vector<float> SearchWorker_revamp::q_to_prob(std::vector<float> Q, int dept
     std::for_each(b.begin(), b.end(), [&] (float f) {
     c += f;
 });
+    float my_sum = 0;
     for(int i = 0; i < (int)Q.size(); i++){
       q_prob[i] = b[i]/c;
+      my_sum = my_sum + q_prob[i];
     }
     if(q_prob[min_max.second-std::begin(Q)] > max_focus){
-      // LOGFILE << "limiting p to max_focus because " << q_prob[min_max.second-std::begin(Q)] << " is more than " << max_focus << "\n";
+      if(DEBUG) LOGFILE << "limiting p to max_focus because " << q_prob[min_max.second-std::begin(Q)] << " is more than " << max_focus << "\n";
       // find index of the second best.
       std::vector<float> q_prob_copy = q_prob;
-      // Turn the second into the best by setting the max to the min in the copy
-      // LOGFILE << "Setting the best (at: " << min_max.second-std::begin(Q) << ") to " << q_prob_copy[min_max.second-std::begin(Q)] << " to the worst: " << q_prob_copy[min_max.first-std::begin(Q)] << "\n";
+      // Turn the second into the best by setting the max to the min - 1 in the copy to make sure it is now less than whatever the second best is.
       q_prob_copy[min_max.second-std::begin(Q)] = q_prob_copy[min_max.first-std::begin(Q)] - 1.0f;
       auto second_best = std::max_element(std::begin(q_prob_copy), std::end(q_prob_copy));
       q_prob[min_max.second-std::begin(Q)] = max_focus;
-      // LOGFILE << "Setting the second best (at: " << second_best-std::begin(q_prob_copy) << ") " << q_prob[second_best-std::begin(q_prob_copy)] << " to the 1 - max_focus: \n";
+      if(DEBUG) LOGFILE << "Setting the second best (at: " << second_best-std::begin(q_prob_copy) << ") " << q_prob[second_best-std::begin(q_prob_copy)] << " to the 1 - max_focus: \n";
       q_prob[second_best-std::begin(q_prob_copy)] = 1 - max_focus;
       // Set all the others to zero
       for(int i = 0; i < (int)Q.size(); i++){
 	if(i != min_max.second-std::begin(Q) && i != second_best-std::begin(q_prob_copy)){
 	  q_prob[i] = 0;
 	}
+	if(DEBUG) LOGFILE << "i: " << i << " q_prob[i]: " << q_prob[i] << "\n";
       }
     }
-    // std::sort(q_prob.begin(), q_prob.end(), std::greater<>());
-    // if(q_prob[0] > max_focus){
-    //   LOGFILE << "limiting p to max_focus because " << q_prob[0] << " is more than " << max_focus << "\n";
-    //   // limit p to max focus, give 1 - max_focus to second best and that's it.
-    //   for(int i = 0; i < (int)Q.size(); i++){
-    // 	if(i == 1){
-    // 	  q_prob[i] = max_focus;
-    // 	} else {
-    // 	  if(i == 2){
-    // 	    q_prob[i] = 1 - max_focus;
-    // 	  } else {
-    // 	    q_prob[i] = 0;
-    // 	  }
-    // 	}
-    //   }
-    // }
     // Does it sum to 1?
-    assert(std::accumulate(q_prob.begin(), q_prob.end(), 0) == 1);
+    assert(std::accumulate(q_prob.begin(), q_prob.end(), 0) == 1); // not sure if this ever worked.
+    if(abs(my_sum - 1) > 1e-5){ 
+      LOGFILE << "sum of q_prob: " << std::setprecision(10) << my_sum << " largest q_prob: " << q_prob[min_max.second-std::begin(Q)] << " will change that to: " << q_prob[min_max.second-std::begin(Q)] - (my_sum - 1) << "\n";
+      // Steal the extra from the best Q
+      q_prob[min_max.second-std::begin(Q)] = q_prob[min_max.second-std::begin(Q)] - (my_sum - 1);
+    }
+    // Slightly less than 1 is fine, right? Otherwise uncomment this:
+    // if(my_sum < 1.000000f){
+    //   LOGFILE << "sum of q_prob: " << std::setprecision(10) << my_sum << " largest q_prob: " << q_prob[min_max.second-std::begin(Q)] << " will change that to: " << q_prob[min_max.second-std::begin(Q)] + (1 - my_sum) << "\n";
+    //   // Steal the extra from the best Q
+    //   q_prob[min_max.second-std::begin(Q)] = q_prob[min_max.second-std::begin(Q)] + (1 - my_sum);
+    // }
     return(q_prob);
   }
 
@@ -281,7 +279,6 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
         LOGFILE << "Hans' distribution is only implemented for non MULTIPLE_NEW_SIBLINGS alternative.";
         abort();
       }
-
 
 // computes weights for the children based on average Qs (and possibly Ps) and, if there are unexpanded edges, a weight for the first unexpanded edge (the unexpanded with highest P)
 // weights are >= 0, sum of weights is 1
@@ -313,16 +310,12 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
 
   // If no child is extended, then just use P. 
   if(n == 1 && (node->GetEdges())[0].GetChild() == nullptr){
-
+    if(DEBUG) {
+     LOGFILE << "No child extended yet, use P \n";
+     float p = (node->GetEdges())[0].GetP();
+     LOGFILE << "move: " << (node->GetEdges())[0].GetMove(beta_to_move).as_string() << " P: " << p << " \n";
+    }
     return 0.0;
-
-    //weights_.push_back(1);
-    //sum += weights_[widx + 1];
-    //if(DEBUG) {
-    //  LOGFILE << "No child extended yet, use P \n";
-    //  float p = (node->GetEdges())[0].GetP();
-    //  LOGFILE << "move: " << (node->GetEdges())[0].GetMove(beta_to_move).as_string() << " P: " << p << " \n";
-    //}
   } else {
     // At least one child is extended, weight by Q.
 
@@ -331,7 +324,7 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
     float max_focus = 0.91f;    
     std::vector<float> Q (n);
 
-    // Populate the vector Q, all but the last child already has it (or should have, right?)
+    // Populate the vector Q, all but the last child already has it.
     for (int i = 0; i < n-1; i++) {
       Q[i] = (node->GetEdges())[i].GetChild()->GetQ();
       if(DEBUG){
@@ -346,7 +339,7 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
     } else {
       Q[n-1] = -0.05; // used in the rare case that q of better sibbling happens to be exactly 0.
       // Simplistic estimate: let the ratio between the P values be the ratio of the q values too.
-      // If Q is below 1, then reverse the nominator and the denominator
+      // If Q is below 0, then reverse the nominator and the denominator
       if((node->GetEdges())[n-2].GetChild()->GetQ() > 0) {
 	Q[n-1] = (node->GetEdges())[n-2].GetChild()->GetQ() * (node->GetEdges())[n-1].GetP() / (node->GetEdges())[n-2].GetP();
       } 
@@ -364,7 +357,9 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
       }
     }
 
+    if(DEBUG) LOGFILE << "calling q_to_prob()\n";
     Q_prob = q_to_prob(Q, full_tree_depth, multiplier, max_focus);
+    if(DEBUG) LOGFILE << "q_to_prob() returned \n";    
 
     if((node->GetEdges())[n-1].GetChild() == nullptr){  // There is unexpanded edge
       n--;
@@ -373,10 +368,14 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
     for(int i = 0; i < n; i++){
       node->GetEdges()[i].GetChild()->SetW(Q_prob[i]);
       sum += Q_prob[i];
-      // if(DEBUG){
-      // 	LOGFILE << "move: " << (node->GetEdges())[i].GetMove(beta_to_move).as_string() << " Q as prob: " << Q_prob[i] << "\n";
-      // }
+      if(DEBUG){
+      	LOGFILE << "move: " << (node->GetEdges())[i].GetMove(beta_to_move).as_string() << " Q as prob: " << Q_prob[i] << "\n";
+      }
     }
+  }
+
+  if(sum - 1 > 1e-5){
+    LOGFILE << "sum: " << std::setprecision(6) << sum << "\n";
   }
   
   return sum;
@@ -631,9 +630,12 @@ void SearchWorker_revamp::retrieveNNResult(Node_revamp* node, int batchidx) {
 }
 
 void SearchWorker_revamp::recalcPropagatedQ(Node_revamp* node) {
+  bool DEBUG = false;
+  if(DEBUG) LOGFILE << "calling computeChildWeights()\n";
   float total_children_weight = computeChildWeights(node);
+  if(DEBUG) LOGFILE << "computeChildWeights() returned\n";
   
-  if (total_children_weight < 0.0 || total_children_weight > 1.0) {
+  if (total_children_weight < 0.0 || total_children_weight - 1.0 > 1e-5) {
     std::cerr << "total_children_weight: " << total_children_weight << "\n";
     abort();
   }
@@ -690,9 +692,10 @@ int SearchWorker_revamp::appendHistoryFromTo(Node_revamp* from, Node_revamp* to)
 }
 
 void SearchWorker_revamp::RunBlocking() {
+  bool DEBUG = false;
   LOGFILE << "Running thread for node " << worker_root_ << "\n";
   auto board = history_.Last().GetBoard();
-  LOGFILE << "Inital board:\n" << board.DebugString();
+  if (DEBUG) LOGFILE << "Inital board:\n" << board.DebugString();
 
   const std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now();
 
@@ -745,8 +748,6 @@ void SearchWorker_revamp::RunBlocking() {
       if (!newchild->IsTerminal()) {
         AddNodeToComputation();
         minibatch_.push_back(newchild);
-      } else {
-        // LOGFILE << "Terminal node created\n";	
       }
 
       for (int j = 0; j <= nappends; j++) {
@@ -788,7 +789,9 @@ void SearchWorker_revamp::RunBlocking() {
     for (int n = nodestack_.size(); n > 0; n--) {
       Node_revamp* node = nodestack_.back();
       nodestack_.pop_back();
-      recalcPropagatedQ(node);
+      if(!node->IsTerminal()){
+	recalcPropagatedQ(node);
+      }
     }
     
     if (++ucicount == 4) {  // output UCI every 4th batch
