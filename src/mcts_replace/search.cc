@@ -218,11 +218,11 @@ std::vector<float> SearchWorker_revamp::q_to_prob(std::vector<float> Q, int dept
     float c = 0;
     for(int i = 0; i < (int)Q.size(); i++){
       if(min_q < 0){
-	a[i] = (Q[i] - min_q) * (float)depth/(max_q - min_q);
-	// a[i] = (Q[i] - min_q)/(max_q - min_q);	
+	// a[i] = (Q[i] - min_q) * (float)depth/(max_q - min_q);
+	a[i] = (Q[i] - min_q)/(max_q - min_q);	
       } else {
-	a[i] = Q[i] * (float)depth/max_q;
-	// a[i] = Q[i]/max_q;
+	// a[i] = Q[i] * (float)depth/max_q;
+	a[i] = Q[i]/max_q;
       }
       b[i] = exp(multiplier * a[i]);
     }
@@ -327,8 +327,8 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
     // At least one child is extended, weight by Q.
 
     std::vector<float> Q_prob (n);
-    float multiplier = 2.8f;
-    float max_focus = 0.80f;    
+    float multiplier = 5.0f;
+    float max_focus = 0.91f;    
     std::vector<float> Q (n);
 
     // Populate the vector Q, all but the last child already has it (or should have, right?)
