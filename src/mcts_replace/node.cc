@@ -275,7 +275,7 @@ void Node_revamp::ReleaseChildrenExceptOne(Node_revamp* node_to_save) {
   }
 }
 
-void Node_revamp::ExtendNode(PositionHistory* history) {
+void Node_revamp::ExtendNode(PositionHistory* history, bool multiple_new_siblings) {
   // We don't need the mutex because other threads will see that N=0 and
   // N-in-flight=1 and will not touch this node.
   const auto& board = history->Last().GetBoard();
@@ -296,7 +296,7 @@ void Node_revamp::ExtendNode(PositionHistory* history) {
   // Add legal moves as edges of this node.
   CreateEdges(legal_moves);
   
-  n_extendable_ = GetNumEdges();  
+  n_extendable_ = multiple_new_siblings ? GetNumEdges() : 1;
 }
 
 int Node_revamp::ComputeHeight() {
