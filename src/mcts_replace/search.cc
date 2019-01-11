@@ -54,7 +54,7 @@ int const DISTRIBUTION_FUNCTION = 0;
   // 0 - Hans' distribution. Only implemented for non MULTIPLE_NEW_SIBLINGS alternative.
   // 1 - Plain non-adaptive exponential distribution. Uses cpuct parameter as concentration parameter, so higher values give higher trees and lower give wider trees.
 
-const int kUciInfoMinimumFrequencyMs = 2000;
+const int kUciInfoMinimumFrequencyMs = 500;
 
 }  // namespace
 
@@ -333,8 +333,15 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
     // At least one child is extended, weight by Q.
 
     std::vector<float> Q_prob (n);
-    float multiplier = 5.0f;
-    float max_focus = 0.91f;    
+    auto board = history_.Last().GetBoard();
+    int n_pieces_left = (board.ours() + board.theirs()).count();
+    // float multiplier = 4.7f;
+    float a = 1.0f/600.0f;
+    float b = 1.0f/1500.0f;
+    float c = 3.0f;    
+    float multiplier = n_pieces_left * n_pieces_left * a + n_pieces_left * b + c;
+    // float max_focus = 0.85f;
+    float max_focus = 0.65 + 0.01 * n_pieces_left;
     std::vector<float> Q (n);
 
     // Populate the vector Q, all but the last child already has it.
@@ -876,7 +883,7 @@ void SearchWorker_revamp::SendUciInfo() {
 
   float prevq = 2.0;
   int previdx = -1;
-  for (int i = 0; i < worker_root_->GetNumChildren(); i++) {
+  for (int i = 0; i < worker_root_->GetNumChildren(); i++) {  
     float bestq = -2.0;
     int bestidx = -1;
     for (int j = 0; j < worker_root_->GetNumChildren(); j++) {
@@ -914,6 +921,8 @@ void SearchWorker_revamp::SendUciInfo() {
     }
   }
 
+  // reverse the order
+  std::reverse(uci_infos.begin(), uci_infos.end());
   search_->info_callback_(uci_infos);
 
 }
