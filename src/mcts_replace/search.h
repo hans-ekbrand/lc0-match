@@ -145,6 +145,7 @@ class SearchWorker_revamp {
   void AddNodeToComputation();
   void retrieveNNResult(Node_revamp* node, int batchidx);
   void recalcPropagatedQ(Node_revamp* node);
+  void pickNodesToExtendNonForking();
   void pickNodesToExtend(Node_revamp* current_node, float global_weight);
   void pushNewNodeCandidate(float w, Node_revamp* node, int idx);
   int appendHistoryFromTo(Node_revamp* from, Node_revamp* to);

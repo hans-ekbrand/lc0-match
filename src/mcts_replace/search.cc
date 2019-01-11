@@ -537,6 +537,66 @@ void SearchWorker_revamp::pushNewNodeCandidate(float w, Node_revamp* node, int i
 //  }
 }
 
+
+void SearchWorker_revamp::pickNodesToExtendNonForking() {
+  Node_revamp* node = worker_root_;
+  float global_weight = 1.0;
+
+  float smallest_weight_in_queue = -1.0;
+  if (node_prio_queue_.size() == (unsigned int)params_.GetMiniBatchSize()) {
+    smallest_weight_in_queue = node_prio_queue_[0].w;
+  }
+
+  int d = 0;
+
+  while (true) {
+    float maxw = -1.0;
+    int maxidx = -1;
+    float totw = 0.0;
+    for (int i = 0; i < node->GetNumChildren(); i++) {
+      Node_revamp* child = node->GetEdges()[i].GetChild();
+      float w = child->GetW();
+      totw += w;
+
+//      w *= child->GetMaxW();
+      w = (float)(node->GetN() + params_.GetMiniBatchSize()) * w - (float)child->GetN();  // ? node->GetN() - 1, node->GetN(), node->GetN() (- 1) + params_.GetMiniBatchSize(), node->GetN() (- 1) + params_.GetMiniBatchSize() / 2
+
+      if (w > maxw) {
+        maxw = w;
+        maxidx = i;
+      }
+    }
+
+    if (maxidx == -1) break;
+
+    LOGFILE << "maxidx: " << maxidx << ", child n_ext: " << node->GetEdges()[maxidx].GetChild()->GetNExtendable();
+
+    if ((int)node->GetEdges()[maxidx].GetChild()->GetNExtendable() < 1 * params_.GetMiniBatchSize()) break;
+
+    if (MULTIPLE_NEW_SIBLINGS) { std::cerr << "MULTIPLE_NEW_SIBLINGS not implemented for pickNodesToExtendNonForking\n";  abort(); }
+
+    if (node->GetNumChildren() < node->GetNumEdges()) {
+      totw = (1.0 - totw) * global_weight;
+      if (totw > smallest_weight_in_queue) {
+        pushNewNodeCandidate(totw, node, node->GetNumChildren());
+        if (node_prio_queue_.size() == (unsigned int)params_.GetMiniBatchSize()) {
+          smallest_weight_in_queue = node_prio_queue_[0].w;
+        }
+      }
+    }
+
+    nodestack_.push_back(node);
+    node = node->GetEdges()[maxidx].GetChild();
+    global_weight *= node->GetW();
+    d++;
+  }
+
+  LOGFILE << "Nonforking search, n_ext: " << node->GetNExtendable() << ", depth: " << d;
+
+  pickNodesToExtend(node, global_weight);
+}
+
+
 void SearchWorker_revamp::pickNodesToExtend(Node_revamp* node, float global_weight) {
   nodestack_.push_back(node);
 
@@ -755,7 +815,7 @@ void SearchWorker_revamp::RunBlocking() {
     minibatch_.clear();
     computation_ = search_->network_->NewComputation();
 
-    pickNodesToExtend(worker_root_, 1.0);
+    pickNodesToExtendNonForking();
 
     LOGFILE << "n: " << worker_root_->GetN()
             << ", n_extendable: " << worker_root_->GetNExtendable()
@@ -825,7 +885,7 @@ void SearchWorker_revamp::RunBlocking() {
     int64_t time = search_->GetTimeSinceStart();
     if (time - last_uci_time > kUciInfoMinimumFrequencyMs) {
       last_uci_time = time;
-      SendUciInfo();
+//      SendUciInfo();
     }
   }
 
