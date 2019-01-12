@@ -53,7 +53,7 @@ class Edge_revamp {
   void SetP(float val);
 
   Node_revamp* GetChild() { return child_.get(); }
-  void CreateChild(Node_revamp* parent, uint16_t index);
+  void CreateChild(Node_revamp* parent, uint16_t index, uint16_t depth);
 
   void ReleaseChild();
   void ReleaseChildIfIsNot(Node_revamp* node_to_save);
@@ -98,7 +98,7 @@ class EdgeList_revamp {
 class Node_revamp {
  public:
   // Takes pointer to a parent node and own index in a parent.
-  Node_revamp(Node_revamp* parent, uint16_t index) : parent_(parent), index_(index) {}
+ Node_revamp(Node_revamp* parent, uint16_t index, uint16_t depth) : parent_(parent), index_(index), depth_(depth) {}
 
   // Allocates a new edge and a new node. The node has to be no edges before
   // that.
@@ -132,6 +132,8 @@ class Node_revamp {
   uint16_t GetNumChildren() const { return noofchildren_; }
   Edge_revamp* GetEdges() { return edges_.get(); }
   uint16_t GetIndex() const { return index_; }
+
+  uint16_t Depth() const { return depth_; }
   
   uint32_t GetN() const { return n_; }
 //  void IncreaseN(uint32_t dn) { n_ += dn; }
@@ -196,6 +198,9 @@ class Node_revamp {
   // 2 byte fields.
   // Index of this node is parent's edge list.
   uint16_t index_;
+
+  // The number of edges between this node and root.
+  uint16_t depth_;
   
   uint16_t noofchildren_ = 0;
 

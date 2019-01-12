@@ -114,8 +114,8 @@ Move Edge_revamp::GetMove(bool as_opponent) const {
   return m;
 }
 
-void Edge_revamp::CreateChild(Node_revamp* parent, uint16_t index) {
-  child_ = std::make_unique<Node_revamp>(parent, index); parent->noofchildren_++;
+  void Edge_revamp::CreateChild(Node_revamp* parent, uint16_t index, uint16_t depth) {
+    child_ = std::make_unique<Node_revamp>(parent, index, depth); parent->noofchildren_++;
 }
 
 
@@ -202,7 +202,7 @@ Node_revamp* Node_revamp::CreateSingleChildNode(Move move) {
   assert(!edges_);
   assert(!child_);
   edges_ = EdgeList_revamp({move});
-  edges_[0].CreateChild(this, 0);
+  edges_[0].CreateChild(this, 0, 0);
   return edges_[0].GetChild();
 }
 
@@ -346,7 +346,7 @@ void NodeTree_revamp::MakeMove(Move move) {
 void NodeTree_revamp::TrimTreeAtHead() {
   // Send dependent nodes for GC instead of destroying them immediately.
   current_head_->ReleaseChildren();
-  *current_head_ = Node_revamp(current_head_->GetParent(), current_head_->index_);
+  *current_head_ = Node_revamp(current_head_->GetParent(), current_head_->index_, 0);
 }
 
 bool NodeTree_revamp::ResetToPosition(const std::string& starting_fen,
@@ -361,7 +361,7 @@ bool NodeTree_revamp::ResetToPosition(const std::string& starting_fen,
   }
 
   if (!gamebegin_node_) {
-    gamebegin_node_ = std::make_unique<Node_revamp>(nullptr, 0);
+    gamebegin_node_ = std::make_unique<Node_revamp>(nullptr, 0, 0);
   }
 
   history_.Reset(starting_board, no_capture_ply,

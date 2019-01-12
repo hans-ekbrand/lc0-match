@@ -50,7 +50,7 @@ bool const MULTIPLE_NEW_SIBLINGS = false;
 bool const INITIAL_MAX_P_IS_1 = true;
   // If true the the max weight of a node node is set to 1
   // If false the the max weight of a node node is set to the leftmost/highest P value
-int const DISTRIBUTION_FUNCTION = 0;
+int const DISTRIBUTION_FUNCTION = 1;
   // 0 - Hans' distribution. Only implemented for non MULTIPLE_NEW_SIBLINGS alternative.
   // 1 - Plain non-adaptive exponential distribution. Uses cpuct parameter as concentration parameter, so higher values give higher trees and lower give wider trees.
 
@@ -333,15 +333,16 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
     // At least one child is extended, weight by Q.
 
     std::vector<float> Q_prob (n);
+    // float multiplier = 4.7f;
+    float max_focus = 0.91f;
     auto board = history_.Last().GetBoard();
     int n_pieces_left = (board.ours() + board.theirs()).count();
-    // float multiplier = 4.7f;
-    float a = 1.0f/600.0f;
-    float b = 1.0f/1500.0f;
-    float c = 3.0f;    
+    float a = 1.0f/1000.0f;
+    float b = 1.0f/10.0f;
+    float c = 0.8f;
     float multiplier = n_pieces_left * n_pieces_left * a + n_pieces_left * b + c;
-    // float max_focus = 0.85f;
-    float max_focus = 0.65 + 0.01 * n_pieces_left;
+
+    // float max_focus = 0.65 + 0.01 * n_pieces_left;
     std::vector<float> Q (n);
 
     // Populate the vector Q, all but the last child already has it.
@@ -655,35 +656,56 @@ void SearchWorker_revamp::retrieveNNResult(Node_revamp* node, int batchidx) {
 
 void SearchWorker_revamp::recalcPropagatedQ(Node_revamp* node) {
   bool DEBUG = false;
-  if(DEBUG) LOGFILE << "calling computeChildWeights()\n";
   float total_children_weight = computeChildWeights(node);
-  if(DEBUG) LOGFILE << "computeChildWeights() returned\n";
 
-  if (DEBUG) {
-    if (total_children_weight < 0.0 || total_children_weight - 1.0 > 1e-5) {
-      std::cerr << "total_children_weight: " << total_children_weight << "\n";
-      abort();
-    }
-    float totw = 0.0;
-    for (int i = 0; i < node->GetNumChildren(); i++) {
-      float w = node->GetEdges()[i].GetChild()->GetW();
-      if (w < 0.0) {
-        std::cerr << "w: " << w << "\n";
-        abort();
-      }
-      totw += w;
-    }
-    if (abs(total_children_weight - totw) > 1e-5) {
-      std::cerr << "total_children_weight: " << total_children_weight << ", totw: " << total_children_weight << "\n";
-      abort();
-    }
+  if (total_children_weight < 0.0 || total_children_weight - 1.0 > 1e-5) {
+    std::cerr << "total_children_weight: " << total_children_weight << "\n";
+    abort();
   }
-  
-  float q = (1.0 - total_children_weight) * node->GetOrigQ();
+  float totw = 0.0;
   for (int i = 0; i < node->GetNumChildren(); i++) {
-    q -= node->GetEdges()[i].GetChild()->GetW() * node->GetEdges()[i].GetChild()->GetQ();
+    float w = node->GetEdges()[i].GetChild()->GetW();
+    if (w < 0.0) {
+      std::cerr << "w: " << w << "\n";
+      abort();
+    }
+    totw += w;
   }
-  node->SetQ(q);
+  if (abs(total_children_weight - totw) > 1e-5) {
+    std::cerr << "total_children_weight: " << total_children_weight << ", totw: " << total_children_weight << "\n";
+    abort();
+  }
+
+  // Average Q START
+  // float q = (1.0 - total_children_weight) * node->GetOrigQ();
+  // for (int i = 0; i < node->GetNumChildren(); i++) {
+  //   q -= node->GetEdges()[i].GetChild()->GetW() * node->GetEdges()[i].GetChild()->GetQ();
+  // }
+  // node->SetQ(q);
+  // Average Q STOP
+
+  // Best guaranteed Q START
+    // Current Q should be set to the inverse of Q of the child with the _highest_ Q.
+    // TODO Don't update Q if the new value would be the same as the old.
+    // Change Q only if: a new child has the highest Q, or the child that previously had the highest Q has a new Q.
+    // For now, do it quick'n'dirty: change all nodes, even it the new value is the same as the old value
+
+  std::vector<float> q_of_children (node->GetNumChildren());
+  for (int i = 0; i < node->GetNumChildren(); i++) {
+    if(node->GetEdges()[i].GetChild()->GetNumChildren() == 0){
+      q_of_children[i] = node->GetEdges()[i].GetChild()->GetOrigQ();
+    } else {
+      q_of_children[i] = node->GetEdges()[i].GetChild()->GetQ();
+    }
+  }
+
+  auto max = std::max_element(std::begin(q_of_children), std::end(q_of_children));
+  float max_q = q_of_children[max-std::begin(q_of_children)];
+  
+  if(-max_q != node->GetQ()){
+    node->SetQ(-max_q);
+  }
+  // Best guaranteed Q STOP
   
   int n = 1;
   for (int i = 0; i < node->GetNumChildren(); i++) {
@@ -763,11 +785,11 @@ void SearchWorker_revamp::RunBlocking() {
     for (unsigned int i = 0; i < node_prio_queue_.size(); i++) {
       Node_revamp* node = node_prio_queue_[i].node;
       int idx = node_prio_queue_[i].idx;
-      
-      node->GetEdges()[idx].CreateChild(node, idx);
-      Node_revamp* newchild = node->GetEdges()[idx].GetChild();
 
       int nappends = appendHistoryFromTo(worker_root_, node);
+      node->GetEdges()[idx].CreateChild(node, idx, nappends + 1);
+      Node_revamp* newchild = node->GetEdges()[idx].GetChild();
+
       history_.Append(node->GetEdges()[idx].GetMove());
 
       newchild->ExtendNode(&history_);
@@ -815,7 +837,9 @@ void SearchWorker_revamp::RunBlocking() {
     for (int n = nodestack_.size(); n > 0; n--) {
       Node_revamp* node = nodestack_.back();
       nodestack_.pop_back();
-      recalcPropagatedQ(node);
+      if(node->GetNumChildren() > 0){
+	recalcPropagatedQ(node);
+      }
     }
     
     int64_t time = search_->GetTimeSinceStart();
