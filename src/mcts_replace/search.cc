@@ -713,7 +713,11 @@ void SearchWorker_revamp::recalcPropagatedQ(Node_revamp* node) {
   }
   node->SetN(n);
 
-  n = node->GetNumEdges() - node->GetNumChildren();
+  if (MULTIPLE_NEW_SIBLINGS)
+    n = node->GetNumEdges() - node->GetNumChildren();
+  else
+    n = node->GetNumEdges() > node->GetNumChildren() ? 1 : 0;
+
   for (int i = 0; i < node->GetNumChildren(); i++) {
     n += node->GetEdges()[i].GetChild()->GetNExtendable();
   }
@@ -751,7 +755,7 @@ void SearchWorker_revamp::RunBlocking() {
   int i = 0;
 
   if (worker_root_->GetNumEdges() == 0 && !worker_root_->IsTerminal()) {  // root node not extended
-    worker_root_->ExtendNode(&history_);
+    worker_root_->ExtendNode(&history_, MULTIPLE_NEW_SIBLINGS);
     if (worker_root_->IsTerminal()) {
       LOGFILE << "Root " << worker_root_ << " is terminal, nothing to do\n";
       return;
@@ -792,7 +796,7 @@ void SearchWorker_revamp::RunBlocking() {
 
       history_.Append(node->GetEdges()[idx].GetMove());
 
-      newchild->ExtendNode(&history_);
+      newchild->ExtendNode(&history_, MULTIPLE_NEW_SIBLINGS);
       if (!newchild->IsTerminal()) {
         AddNodeToComputation();
         minibatch_.push_back(newchild);
