@@ -252,11 +252,13 @@ std::string Node_revamp::DebugString() const {
 void Node_revamp::MakeTerminal(GameResult result) {
   is_terminal_ = true;
   if (result == GameResult::DRAW) {
-    q_ = 0.0f;
+    SetOrigQ(0.0f);
   } else if (result == GameResult::WHITE_WON) {
-    q_ = 1.0f;
+    SetOrigQ(1.0f);
   } else if (result == GameResult::BLACK_WON) {
     q_ = -1.0f;
+    LOGFILE << "BLACK_WON but white made the final move.";
+    abort();
   }
 }
 

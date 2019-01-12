@@ -798,28 +798,6 @@ void SearchWorker_revamp::RunBlocking() {
       if (!newchild->IsTerminal()) {
         AddNodeToComputation();
         minibatch_.push_back(newchild);
-      } else {
-	// Assign a relevant Q. -1/0/1 for Loss/Draw/Win
-	// UNDECIDED, WHITE_WON, DRAW, BLACK_WON
-	switch ((&history_)->ComputeGameResult()) {
-	case GameResult::DRAW: { newchild->SetQ(0.0f); } break;
-	case GameResult::UNDECIDED: { } break;
-	case GameResult::WHITE_WON: {
-	  if(search_->played_history_.IsBlackToMove()) {
-	    newchild->SetOrigQ(1.0f);
-	    if(DEBUG) { LOGFILE << "Setting result to win (" << newchild->GetQ() << ") for node " << newchild->GetParent()->GetEdges()[newchild->GetIndex()].GetMove(!search_->played_history_.IsBlackToMove()).as_string() << " since white is to move and won"; }
-	  } else {
-	    newchild->SetOrigQ(-1.0f);
-	  }
-	} break;
-	case GameResult::BLACK_WON: {
-	  if(search_->played_history_.IsBlackToMove()) {
-	    newchild->SetOrigQ(1.0f);
-	  } else {
-	    newchild->SetOrigQ(-1.0f);
-	  }
-	}
-       }
       }
 
       for (int j = 0; j <= nappends; j++) {
