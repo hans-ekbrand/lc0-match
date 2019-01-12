@@ -689,7 +689,6 @@ void SearchWorker_revamp::recalcPropagatedQ(Node_revamp* node) {
     // TODO Don't update Q if the new value would be the same as the old.
     // Change Q only if: a new child has the highest Q, or the child that previously had the highest Q has a new Q.
     // For now, do it quick'n'dirty: change all nodes, even it the new value is the same as the old value
-
   std::vector<float> q_of_children (node->GetNumChildren());
   for (int i = 0; i < node->GetNumChildren(); i++) {
     if(node->GetEdges()[i].GetChild()->GetNumChildren() == 0){
@@ -698,12 +697,11 @@ void SearchWorker_revamp::recalcPropagatedQ(Node_revamp* node) {
       q_of_children[i] = node->GetEdges()[i].GetChild()->GetQ();
     }
   }
-
   auto max = std::max_element(std::begin(q_of_children), std::end(q_of_children));
   float max_q = q_of_children[max-std::begin(q_of_children)];
-  
   if(-max_q != node->GetQ()){
     node->SetQ(-max_q);
+    if(DEBUG) { LOGFILE << "Update Q to " << -max_q << " for node " << node->GetParent()->GetEdges()[node->GetIndex()].GetMove(search_->played_history_.IsBlackToMove()).as_string(); }
   }
   // Best guaranteed Q STOP
   
@@ -800,6 +798,28 @@ void SearchWorker_revamp::RunBlocking() {
       if (!newchild->IsTerminal()) {
         AddNodeToComputation();
         minibatch_.push_back(newchild);
+      } else {
+	// Assign a relevant Q. -1/0/1 for Loss/Draw/Win
+	// UNDECIDED, WHITE_WON, DRAW, BLACK_WON
+	switch ((&history_)->ComputeGameResult()) {
+	case GameResult::DRAW: { newchild->SetQ(0.0f); } break;
+	case GameResult::UNDECIDED: { } break;
+	case GameResult::WHITE_WON: {
+	  if(search_->played_history_.IsBlackToMove()) {
+	    newchild->SetOrigQ(1.0f);
+	    if(DEBUG) { LOGFILE << "Setting result to win (" << newchild->GetQ() << ") for node " << newchild->GetParent()->GetEdges()[newchild->GetIndex()].GetMove(!search_->played_history_.IsBlackToMove()).as_string() << " since white is to move and won"; }
+	  } else {
+	    newchild->SetOrigQ(-1.0f);
+	  }
+	} break;
+	case GameResult::BLACK_WON: {
+	  if(search_->played_history_.IsBlackToMove()) {
+	    newchild->SetOrigQ(1.0f);
+	  } else {
+	    newchild->SetOrigQ(-1.0f);
+	  }
+	}
+       }
       }
 
       for (int j = 0; j <= nappends; j++) {
