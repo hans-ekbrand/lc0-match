@@ -421,7 +421,7 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
     case 1:  // Plain exponential
     {
       int n = node->GetNumChildren();
-      
+      LOGFILE << "number of children: " << n;
       if (n == 0) {
         return 0.0;
       } else {
@@ -440,35 +440,91 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
           }
           return sum2;
         } else {
+	  // sum1 is the sum of the exponentiated Q:s (where Q is not OrigQ but a backpropagated Q)
           double sum1 = 0.0;
+	  double sum_of_P_of_expanded_nodes = 0.0;
           for (int i = 0; i < n; i++) {
             float w = exp(q_concentration_ * node->GetEdges()[i].GetChild()->GetQ());
             node->GetEdges()[i].GetChild()->SetW(w);
             sum1 += w;
+	    sum_of_P_of_expanded_nodes += node->GetEdges()[i].GetP();
+	    LOGFILE << "setting w for element: " << i << " to " << w;	    
           }
-          float sum2 = 1.0;
-          if (node->GetNumChildren() < node->GetNumEdges()) {
-            sum2 -= node->GetEdges()[node->GetNumChildren()].GetP();
-          }
-          sum1 = sum2 / sum1;
-          for (int i = 0; i < n; i++) {
-            node->GetEdges()[i].GetChild()->SetW(node->GetEdges()[i].GetChild()->GetW() * sum1);
-          }
-          // return sum2;
+	  // Critique of the chunk below: Whenever there are unexpanded edges, the sum of the P for the new child and the sum of the P for the already expanded nodes is less than one.
+	  // The above gives the leftovers to the expanded nodes, but why should _they_ have it? That creates an imbalance in their favor compared to the new child.
+	  // My intuition says its better to scale both the P of the new child and the sum of P for the already expanded nodes. 
+	  // sum2 what is left over when the new P of the child has been subtracted from one.
+	  
+          // float sum2 = 1.0;
+          // if (node->GetNumChildren() < node->GetNumEdges()) {
+          //   sum2 -= node->GetEdges()[node->GetNumChildren()].GetP();
+          // }
+	  // // sum1 is now a weight used to scale up the exponentiated Q:s so that they sum up to sum2.
+          // sum1 = sum2 / sum1;
+          // for (int i = 0; i < n; i++) {
+          //   node->GetEdges()[i].GetChild()->SetW(node->GetEdges()[i].GetChild()->GetW() * sum1);
+          // }
+          // // return sum2;
 
-	  std::vector<float> weighted_p_and_q(n);
-	  float sum_of_weighted_p_and_q = 0.0;
-	  float certainty_threshold = 800; // At this number of subnodes, we only select on Q.
+	  // If there are unexpanded nodes, then rescale w:s so that they sum up to sum_of_P_of_expanded_nodes
+	  // If all nodes are expanded, this would just mean * 1/1, so save time by not doing it in that case.
+	  if (node->GetNumChildren() < node->GetNumEdges()) {
+	    for (int i = 0; i < n; i++) {
+	      node->GetEdges()[i].GetChild()->SetW(node->GetEdges()[i].GetChild()->GetW() * sum_of_P_of_expanded_nodes / sum1);
+	    }
+	  }
+
+	  // We want to use P even if there is a Q available, since single Q values are always uncertain, but becomes more certain the more subnodes there is.
+	  // In UCT the choice is made using the formula (highest score gets picked):
+	  // Q + GetP() * cpuct * sqrt(max(GetN(), 1)) / (1 + GetN())
+	  // In short, Policy is weighted by sqrt(N) / N (q in their formula is OrigQ)
+	  // Looking the curve y = sqrt(x)/x, my guess it that decreases too quickly for chess, we need to explore more than that, or we will not find tactical tricks.
+	  // (in UCT the constant cpuct is multiplied to the sqrt(x)/x to the get the final factor.
+	  // Let's try x^0.7/x instead. At 100 visist the weight of policy would be 0.25, at 800 visists, the weight of policy would then be 0.13
+	  // We can of course make this a run time parameter but, for now I'll use a constant for it.
+	  
+	  std::vector<double> weighted_p_and_q(n);
+	  double sum_of_weighted_p_and_q = 0.0;
+	  double p_weight_exponent = 0.7; 
 	  for (int i = 0; i < n; i++){
-	    float relative_weight_of_q = node->GetEdges()[i].GetChild()->GetN() > certainty_threshold ? 1.0 : node->GetEdges()[i].GetChild()->GetN() / certainty_threshold;
-	    weighted_p_and_q[i] = relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() + ( 1 - relative_weight_of_q ) * node->GetEdges()[i].GetP();
+	    double relative_weight_of_p = pow(node->GetEdges()[i].GetChild()->GetN(), p_weight_exponent) / node->GetEdges()[i].GetChild()->GetN();
+	    double relative_weight_of_q = 1 - relative_weight_of_p;
+	    if(relative_weight_of_q > 0){
+	      weighted_p_and_q[i] = (relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() + relative_weight_of_p * node->GetEdges()[i].GetP()) / ((relative_weight_of_p * relative_weight_of_q) / 0.5); // The last thing here is to compensate for the decrease that comes from multiplying with (1-p) and p. We don't want to give an advantage to nodes that happen to have relative_weights close to 0.5.
+	    } else {
+	      weighted_p_and_q[i] = node->GetEdges()[i].GetP();
+	    }
+	    LOGFILE << "Weighted p and q:" << weighted_p_and_q[i];
 	    sum_of_weighted_p_and_q += weighted_p_and_q[i];
 	  }
-	  // make these sum to 1
+	  // make these sum to the sum of P of all the expanded children
+	  double final_sum_of_weights_for_the_exanded_children = 0.0; // save the final sum here, we will return it.
 	  for (int i = 0; i < n; i++){
-	    node->GetEdges()[i].GetChild()->SetW(weighted_p_and_q[i] / sum_of_weighted_p_and_q);
+	    node->GetEdges()[i].GetChild()->SetW(weighted_p_and_q[i] / sum_of_weighted_p_and_q * sum_of_P_of_expanded_nodes);
+	    final_sum_of_weights_for_the_exanded_children += node->GetEdges()[i].GetChild()->GetW();
+	    LOGFILE << "visits: " << node->GetEdges()[i].GetChild()->GetN()
+		    << " relative weight of q: " << 1 - pow(node->GetEdges()[i].GetChild()->GetN(), p_weight_exponent) / node->GetEdges()[i].GetChild()->GetN()
+		    << " P: " << node->GetEdges()[i].GetP()
+		    << " original Q: " << node->GetEdges()[i].GetChild()->GetOrigQ() 
+		    << " Q after search: " << node->GetEdges()[i].GetChild()->GetQ()
+		    << " q as prop: " << node->GetEdges()[i].GetChild()->GetW()
+		    << " sum of p for the expanded nodes: " << sum_of_P_of_expanded_nodes
+		    << " weighted sum of P and q_as_prob: " << weighted_p_and_q[i]
+		    << " (weighted sum of P and q_as_prob) divided the product of sum_of_weighted_p_and_q and sum_of_P_of_expanded_nodes: " << node->GetEdges()[i].GetChild()->GetW();
 	  }
-	  return 1.0f;
+	  if(node->GetNumChildren() < node->GetNumEdges()) {
+	    // scale the p_q_weighted part so that it toghether with the P part sums to 1
+	    double my_final_scaler = final_sum_of_weights_for_the_exanded_children + node->GetEdges()[node->GetNumChildren()].GetP();
+	    final_sum_of_weights_for_the_exanded_children = 0.0; // recalc this one
+	    for (int i = 0; i < n; i++){
+	      node->GetEdges()[i].GetChild()->SetW(node->GetEdges()[i].GetChild()->GetW() * my_final_scaler);
+	      final_sum_of_weights_for_the_exanded_children += node->GetEdges()[i].GetChild()->GetW();
+	    }
+	  } else {
+	    // All children already expanded. This should already sum up to 1.
+	    LOGFILE << "All nodes already expanded, returning " << final_sum_of_weights_for_the_exanded_children;
+	  }
+	  return final_sum_of_weights_for_the_exanded_children;
         }
       }
     } break;
@@ -672,7 +728,7 @@ void SearchWorker_revamp::recalcPropagatedQ(Node_revamp* node) {
   bool DEBUG = false;
   float total_children_weight = computeChildWeights(node);
 
-  if (total_children_weight < 0.0 || total_children_weight - 1.0 > 1e-5) {
+  if (total_children_weight < 0.0 || total_children_weight - 1.0 > 1e-4) {
     std::cerr << "total_children_weight: " << total_children_weight << "\n";
     abort();
   }
