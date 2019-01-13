@@ -454,7 +454,21 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
           for (int i = 0; i < n; i++) {
             node->GetEdges()[i].GetChild()->SetW(node->GetEdges()[i].GetChild()->GetW() * sum1);
           }
-          return sum2;
+          // return sum2;
+
+	  std::vector<float> weighted_p_and_q(n);
+	  float sum_of_weighted_p_and_q = 0.0;
+	  float certainty_threshold = 800; // At this number of subnodes, we only select on Q.
+	  for (int i = 0; i < n; i++){
+	    float relative_weight_of_q = node->GetEdges()[i].GetChild()->GetN() > certainty_threshold ? 1.0 : node->GetEdges()[i].GetChild()->GetN() / certainty_threshold;
+	    weighted_p_and_q[i] = relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() + ( 1 - relative_weight_of_q ) * node->GetEdges()[i].GetP();
+	    sum_of_weighted_p_and_q += weighted_p_and_q[i];
+	  }
+	  // make these sum to 1
+	  for (int i = 0; i < n; i++){
+	    node->GetEdges()[i].GetChild()->SetW(weighted_p_and_q[i] / sum_of_weighted_p_and_q);
+	  }
+	  return 1.0f;
         }
       }
     } break;
