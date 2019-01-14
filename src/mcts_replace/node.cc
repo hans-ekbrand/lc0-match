@@ -316,7 +316,7 @@ void Node_revamp::ReleaseChildrenExceptOne(Node_revamp* node_to_save) {
 
   // Add legal moves as edges of this node.
   CreateEdges(legal_moves);
-  
+
   n_extendable_ = multiple_new_siblings ? GetNumEdges() : 1;
 }
 

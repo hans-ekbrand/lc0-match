@@ -875,7 +875,7 @@ void SearchWorker_revamp::RunBlocking() {
       if (!newchild->IsTerminal()) {
         AddNodeToComputation();
         minibatch_.push_back(newchild);
-      }
+      } 
 
       for (int j = 0; j <= nappends; j++) {
         history_.Pop();
@@ -886,14 +886,28 @@ void SearchWorker_revamp::RunBlocking() {
     }
 
     node_prio_queue_.clear();
-    
-    LOGFILE << "Computing batch of size " << minibatch_.size();
+
+    if(minibatch_.size() == 0){
+      // E.g. child from root with best policy is terminal
+      LOGFILE << "Couldn't find any move to send to eval.";
+
+      for (int n = nodestack_.size(); n > 0; n--) {
+	Node_revamp* node = nodestack_.back();
+	nodestack_.pop_back();
+	if(node->GetNumChildren() > 0){
+	  recalcPropagatedQ(node);
+	}
+      }
+       
+      break;
+    } else {
+      LOGFILE << "Computing batch of size " << minibatch_.size();
 
     //~ std::this_thread::sleep_for(std::chrono::milliseconds(0));
     //~ LOGFILE << "RunNNComputation START ";
     //~ start_comp_time_ = std::chrono::steady_clock::now();
 
-    computation_->ComputeBlocking();
+      computation_->ComputeBlocking();
 
     // stop_comp_time_ = std::chrono::steady_clock::now();
     // auto duration = stop_comp_time_ - start_comp_time_;
@@ -907,24 +921,25 @@ void SearchWorker_revamp::RunBlocking() {
     // }
     
     
-    i += minibatch_.size();
+      i += minibatch_.size();
     
-    for (int j = 0; j < (int)minibatch_.size(); j++) {
-      retrieveNNResult(minibatch_[j], j);
-    }
-
-    for (int n = nodestack_.size(); n > 0; n--) {
-      Node_revamp* node = nodestack_.back();
-      nodestack_.pop_back();
-      if(node->GetNumChildren() > 0){
-	recalcPropagatedQ(node);
+      for (int j = 0; j < (int)minibatch_.size(); j++) {
+	retrieveNNResult(minibatch_[j], j);
       }
-    }
+
+      for (int n = nodestack_.size(); n > 0; n--) {
+	Node_revamp* node = nodestack_.back();
+	nodestack_.pop_back();
+	if(node->GetNumChildren() > 0){
+	  recalcPropagatedQ(node);
+	}
+      }
     
-    int64_t time = search_->GetTimeSinceStart();
-    if (time - last_uci_time > kUciInfoMinimumFrequencyMs) {
-      last_uci_time = time;
-      SendUciInfo();
+      int64_t time = search_->GetTimeSinceStart();
+      if (time - last_uci_time > kUciInfoMinimumFrequencyMs) {
+	last_uci_time = time;
+	SendUciInfo();
+      }
     }
   }
 
@@ -948,10 +963,13 @@ void SearchWorker_revamp::RunBlocking() {
   int bestidx = indexOfHighestQEdge(search_->root_node_);
   Move best_move = search_->root_node_->GetEdges()[bestidx].GetMove(search_->played_history_.IsBlackToMove());
   int ponderidx = indexOfHighestQEdge(search_->root_node_->GetEdges()[bestidx].GetChild());
-  // Move ponder_move = search_->root_node_->GetEdges()[bestidx].GetChild()->GetEdges()[ponderidx].GetMove(true);
-  // When we are to play black this fails, it returns the move from whites perspective.
-  Move ponder_move = search_->root_node_->GetEdges()[bestidx].GetChild()->GetEdges()[ponderidx].GetMove(!search_->played_history_.IsBlackToMove());
-  search_->best_move_callback_({best_move, ponder_move});
+  // If the move we make is terminal, then there is nothing to ponder about
+  if(!search_->root_node_->GetEdges()[bestidx].GetChild()->IsTerminal()){
+    Move ponder_move = search_->root_node_->GetEdges()[bestidx].GetChild()->GetEdges()[ponderidx].GetMove(!search_->played_history_.IsBlackToMove());
+    search_->best_move_callback_({best_move, ponder_move});    
+  } else {
+    search_->best_move_callback_({best_move});    
+  }
 }
 
 void SearchWorker_revamp::AddNodeToComputation() {
