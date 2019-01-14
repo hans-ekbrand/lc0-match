@@ -161,7 +161,7 @@ class Node_revamp {
   // For a child node, returns corresponding edge.
   Edge_revamp* GetEdgeToNode(const Node_revamp* node) const;
 
-  void ExtendNode(PositionHistory* history, bool multiple_new_siblings);
+  void ExtendNode(PositionHistory* history, bool multiple_new_siblings, Node_revamp* root_node);
 
   int ComputeHeight();
   bool Check();

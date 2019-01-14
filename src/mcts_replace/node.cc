@@ -277,7 +277,7 @@ void Node_revamp::ReleaseChildrenExceptOne(Node_revamp* node_to_save) {
   }
 }
 
-void Node_revamp::ExtendNode(PositionHistory* history, bool multiple_new_siblings) {
+  void Node_revamp::ExtendNode(PositionHistory* history, bool multiple_new_siblings, Node_revamp* root_node) {
   // We don't need the mutex because other threads will see that N=0 and
   // N-in-flight=1 and will not touch this node.
   const auto& board = history->Last().GetBoard();
@@ -293,6 +293,25 @@ void Node_revamp::ExtendNode(PositionHistory* history, bool multiple_new_sibling
       MakeTerminal(GameResult::DRAW);
     }
     return;
+  }
+
+  // We can shortcircuit these draws-by-rule only if they aren't root;
+  // if they are root, then thinking about them is the point.
+  if (this != root_node) {
+    if (!board.HasMatingMaterial()) {
+      MakeTerminal(GameResult::DRAW);
+      return;
+    }
+
+    if (history->Last().GetNoCaptureNoPawnPly() >= 100) {
+      MakeTerminal(GameResult::DRAW);
+      return;
+    }
+
+    if (history->Last().GetRepetitions() >= 2) {
+      MakeTerminal(GameResult::DRAW);
+      return;
+    }
   }
 
   // Add legal moves as edges of this node.

@@ -735,7 +735,7 @@ void SearchWorker_revamp::recalcPropagatedQ(Node_revamp* node) {
   bool DEBUG = false;
   float total_children_weight = computeChildWeights(node);
 
-  if (total_children_weight < 0.0 || total_children_weight - 1.0 > 1e-4) {
+  if (total_children_weight < 0.0 || total_children_weight - 1.0 > 1.00012) {
     std::cerr << "total_children_weight: " << total_children_weight << "\n";
     abort();
   }
@@ -748,7 +748,7 @@ void SearchWorker_revamp::recalcPropagatedQ(Node_revamp* node) {
     }
     totw += w;
   }
-  if (abs(total_children_weight - totw) > 1e-5) {
+  if (abs(total_children_weight - totw) > 1.00012) {
     std::cerr << "total_children_weight: " << total_children_weight << ", totw: " << total_children_weight << "\n";
     abort();
   }
@@ -830,7 +830,7 @@ void SearchWorker_revamp::RunBlocking() {
   int i = 0;
 
   if (worker_root_->GetNumEdges() == 0 && !worker_root_->IsTerminal()) {  // root node not extended
-    worker_root_->ExtendNode(&history_, MULTIPLE_NEW_SIBLINGS);
+    worker_root_->ExtendNode(&history_, MULTIPLE_NEW_SIBLINGS, worker_root_);
     if (worker_root_->IsTerminal()) {
       LOGFILE << "Root " << worker_root_ << " is terminal, nothing to do\n";
       return;
@@ -871,7 +871,7 @@ void SearchWorker_revamp::RunBlocking() {
 
       history_.Append(node->GetEdges()[idx].GetMove());
 
-      newchild->ExtendNode(&history_, MULTIPLE_NEW_SIBLINGS);
+      newchild->ExtendNode(&history_, MULTIPLE_NEW_SIBLINGS, worker_root_);
       if (!newchild->IsTerminal()) {
         AddNodeToComputation();
         minibatch_.push_back(newchild);
