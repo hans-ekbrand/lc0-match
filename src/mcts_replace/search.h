@@ -157,7 +157,7 @@ class SearchWorker_revamp {
   std::vector<Node_revamp *> minibatch_;
 
   std::vector<float> pvals_;
-  std::vector<Node_revamp *> nodestack_;
+  //std::vector<Node_revamp *> nodestack_;
   std::vector<Move> movestack_;
   int full_tree_depth = 0;
   uint64_t cum_depth_ = 0;
