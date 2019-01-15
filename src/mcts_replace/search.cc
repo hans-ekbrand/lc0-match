@@ -177,6 +177,21 @@ int indexOfHighestQEdge(Node_revamp* node) {
   }
   return bestidx;
 }
+
+  // Let us choose between highest Q and most visted
+  int indexOfMostVisitedEdge(Node_revamp* node) {
+  float highestn = -2.0;
+  int bestidx = -1;
+  for (int i = 0; i < node->GetNumChildren(); i++) {
+    int n = node->GetEdges()[i].GetChild()->GetN();
+    if (n > highestn) {
+      highestn = n;
+      bestidx = i;
+    }
+  }
+  return bestidx;
+}
+  
 }
 
 void Search_revamp::Wait() {
@@ -490,7 +505,7 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
 	  
 	  std::vector<double> weighted_p_and_q(n);
 	  double sum_of_weighted_p_and_q = 0.0;
-	  double p_weight_exponent = 0.7; 
+	  double p_weight_exponent = 0.6; 
 	  for (int i = 0; i < n; i++){
 	    double relative_weight_of_p = pow(node->GetEdges()[i].GetChild()->GetN(), p_weight_exponent) / ( 0.05 + node->GetEdges()[i].GetChild()->GetN()); // 0.05 is here to make Q have some influence after 1 visit.
 	    // LOGFILE << "relative_weight_of_p:" << relative_weight_of_p;
@@ -754,33 +769,33 @@ void SearchWorker_revamp::recalcPropagatedQ(Node_revamp* node) {
   }
 
   // Average Q START
-  // float q = (1.0 - total_children_weight) * node->GetOrigQ();
-  // for (int i = 0; i < node->GetNumChildren(); i++) {
-  //   q -= node->GetEdges()[i].GetChild()->GetW() * node->GetEdges()[i].GetChild()->GetQ();
-  // }
-  // node->SetQ(q);
+  float q = (1.0 - total_children_weight) * node->GetOrigQ();
+  for (int i = 0; i < node->GetNumChildren(); i++) {
+    q -= node->GetEdges()[i].GetChild()->GetW() * node->GetEdges()[i].GetChild()->GetQ();
+  }
+  node->SetQ(q);
   // Average Q STOP
 
-  // Best guaranteed Q START
-    // Current Q should be set to the inverse of Q of the child with the _highest_ Q.
-    // TODO Don't update Q if the new value would be the same as the old.
-    // Change Q only if: a new child has the highest Q, or the child that previously had the highest Q has a new Q.
-    // For now, do it quick'n'dirty: change all nodes, even it the new value is the same as the old value
-  std::vector<float> q_of_children (node->GetNumChildren());
-  for (int i = 0; i < node->GetNumChildren(); i++) {
-    if(node->GetEdges()[i].GetChild()->GetNumChildren() == 0){
-      q_of_children[i] = node->GetEdges()[i].GetChild()->GetOrigQ();
-    } else {
-      q_of_children[i] = node->GetEdges()[i].GetChild()->GetQ();
-    }
-  }
-  auto max = std::max_element(std::begin(q_of_children), std::end(q_of_children));
-  float max_q = q_of_children[max-std::begin(q_of_children)];
-  if(-max_q != node->GetQ()){
-    node->SetQ(-max_q);
-    if(DEBUG) { LOGFILE << "Update Q to " << -max_q << " for node " << node->GetParent()->GetEdges()[node->GetIndex()].GetMove(search_->played_history_.IsBlackToMove()).as_string(); }
-  }
-  // Best guaranteed Q STOP
+  // // Best guaranteed Q START
+  //   // Current Q should be set to the inverse of Q of the child with the _highest_ Q.
+  //   // TODO Don't update Q if the new value would be the same as the old.
+  //   // Change Q only if: a new child has the highest Q, or the child that previously had the highest Q has a new Q.
+  //   // For now, do it quick'n'dirty: change all nodes, even it the new value is the same as the old value
+  // std::vector<float> q_of_children (node->GetNumChildren());
+  // for (int i = 0; i < node->GetNumChildren(); i++) {
+  //   if(node->GetEdges()[i].GetChild()->GetNumChildren() == 0){
+  //     q_of_children[i] = node->GetEdges()[i].GetChild()->GetOrigQ();
+  //   } else {
+  //     q_of_children[i] = node->GetEdges()[i].GetChild()->GetQ();
+  //   }
+  // }
+  // auto max = std::max_element(std::begin(q_of_children), std::end(q_of_children));
+  // float max_q = q_of_children[max-std::begin(q_of_children)];
+  // if(-max_q != node->GetQ()){
+  //   node->SetQ(-max_q);
+  //   if(DEBUG) { LOGFILE << "Update Q to " << -max_q << " for node " << node->GetParent()->GetEdges()[node->GetIndex()].GetMove(search_->played_history_.IsBlackToMove()).as_string(); }
+  // }
+  // // Best guaranteed Q STOP
   
   int n = 1;
   for (int i = 0; i < node->GetNumChildren(); i++) {
@@ -961,8 +976,11 @@ void SearchWorker_revamp::RunBlocking() {
   }
 
   int bestidx = indexOfHighestQEdge(search_->root_node_);
+  // Let's try an mimic MCTS
+  // int bestidx = indexOfMostVisitedEdge(search_->root_node_);  
   Move best_move = search_->root_node_->GetEdges()[bestidx].GetMove(search_->played_history_.IsBlackToMove());
   int ponderidx = indexOfHighestQEdge(search_->root_node_->GetEdges()[bestidx].GetChild());
+  // int ponderidx = indexOfMostVisitedEdge(search_->root_node_->GetEdges()[bestidx].GetChild());  
   // If the move we make is terminal, then there is nothing to ponder about
   if(!search_->root_node_->GetEdges()[bestidx].GetChild()->IsTerminal()){
     Move ponder_move = search_->root_node_->GetEdges()[bestidx].GetChild()->GetEdges()[ponderidx].GetMove(!search_->played_history_.IsBlackToMove());
