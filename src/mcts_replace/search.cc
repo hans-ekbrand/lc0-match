@@ -178,19 +178,19 @@ int indexOfHighestQEdge(Node_revamp* node) {
   return bestidx;
 }
 
-  // Let us choose between highest Q and most visted
-  int indexOfMostVisitedEdge(Node_revamp* node) {
-  float highestn = -2.0;
-  int bestidx = -1;
-  for (int i = 0; i < node->GetNumChildren(); i++) {
-    int n = node->GetEdges()[i].GetChild()->GetN();
-    if (n > highestn) {
-      highestn = n;
-      bestidx = i;
-    }
-  }
-  return bestidx;
-}
+//   // Let us choose between highest Q and most visted
+//   int indexOfMostVisitedEdge(Node_revamp* node) {
+//   float highestn = -2.0;
+//   int bestidx = -1;
+//   for (int i = 0; i < node->GetNumChildren(); i++) {
+//     int n = node->GetEdges()[i].GetChild()->GetN();
+//     if (n > highestn) {
+//       highestn = n;
+//       bestidx = i;
+//     }
+//   }
+//   return bestidx;
+// }
   
 }
 
@@ -747,7 +747,7 @@ void SearchWorker_revamp::retrieveNNResult(Node_revamp* node, int batchidx) {
 }
 
 void SearchWorker_revamp::recalcPropagatedQ(Node_revamp* node) {
-  bool DEBUG = false;
+  // bool DEBUG = false;
   float total_children_weight = computeChildWeights(node);
 
   if (total_children_weight < 0.0 || total_children_weight - 1.0 > 1.00012) {
@@ -988,6 +988,7 @@ void SearchWorker_revamp::RunBlocking() {
   } else {
     search_->best_move_callback_({best_move});    
   }
+  SendMovesStats(); // --verbose-moves-stat
 }
 
 void SearchWorker_revamp::AddNodeToComputation() {
@@ -1066,6 +1067,71 @@ void SearchWorker_revamp::SendUciInfo() {
 
 }
 
+std::vector<std::string> SearchWorker_revamp::GetVerboseStats(Node_revamp* node, bool is_black_to_move) {
 
+  std::vector<std::string> infos;
+  for (int i = 0; i < node->GetNumChildren(); i++) {
+    std::ostringstream oss;
+    oss << std::fixed;
+
+    oss << std::left << std::setw(5)
+        << node->GetEdges()[i].GetMove(is_black_to_move).as_string();
+
+    oss << " (" << std::setw(4) << node->GetEdges()[i].GetMove().as_nn_index() << ")";
+
+    oss << " N: " << std::right << std::setw(7) << node->GetEdges()[i].GetChild()->GetN() << " (+"
+        << std::setw(2) << node->GetEdges()[i].GetChild()->GetN() << ") ";
+
+    oss << "(P: " << std::setw(5) << std::setprecision(2) << node->GetEdges()[i].GetP() * 100
+        << "%) ";
+
+    oss << "(Q: " << std::setw(8) << std::setprecision(5) << node->GetEdges()[i].GetChild()->GetQ()
+        << ") ";
+
+    oss << "(U: " << std::setw(6) << std::setprecision(5) << node->GetEdges()[i].GetChild()->GetQ()
+        << ") ";
+
+    oss << "(Q+U: " << std::setw(8) << std::setprecision(5)
+        << node->GetEdges()[i].GetChild()->GetQ() + node->GetEdges()[i].GetChild()->GetQ() << ") ";
+
+    oss << "(V: ";
+    optional<float> v;
+    if (node->GetEdges()[i].GetChild()->IsTerminal()) {
+      v = node->GetEdges()[i].GetChild()->GetQ();
+    } else {
+      v = node->GetEdges()[i].GetChild()->GetQ();
+    }
+    if (v) {
+      oss << std::setw(7) << std::setprecision(4) << *v;
+    } else {
+      oss << " -.----";
+    }
+    oss << ") ";
+
+    if (node->GetEdges()[i].GetChild()->IsTerminal()) oss << "(T) ";
+    infos.emplace_back(oss.str());
+  }
+  return infos;
+}
+
+void SearchWorker_revamp::SendMovesStats() {
+  const bool is_black_to_move = search_->played_history_.IsBlackToMove();
+  auto move_stats = GetVerboseStats(worker_root_, is_black_to_move);
+
+  if (params_.GetVerboseStats()) {
+    LOGFILE << "captured GetVerboseStats";
+    std::vector<ThinkingInfo> infos;
+    std::transform(move_stats.begin(), move_stats.end(),
+                   std::back_inserter(infos), [](const std::string& line) {
+                     ThinkingInfo info;
+                     info.comment = line;
+                     return info;
+                   });
+    search_->info_callback_(infos);
+  } else {
+    LOGFILE << "=== Move stats:";
+    for (const auto& line : move_stats) LOGFILE << line;
+  }
+}
 
 }  // namespace lczero

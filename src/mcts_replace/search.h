@@ -97,7 +97,7 @@ class Search_revamp {
 
   // Strings for UCI params. So that others can override defaults.
   // TODO(mooskagh) There are too many options for now. Factor out that into a
-  // separate class.
+  // separate class.  
 
 private:
   void WatchdogThread();
@@ -152,6 +152,8 @@ class SearchWorker_revamp {
   std::vector<float> q_to_prob(std::vector<float> Q, int depth, float multiplier, float max_focus);
 
   void SendUciInfo();
+  std::vector<std::string> GetVerboseStats(Node_revamp* node, bool is_black_to_move);
+  void SendMovesStats();
 
   Search_revamp* const search_;
   std::vector<Node_revamp *> minibatch_;
