@@ -835,7 +835,7 @@ int SearchWorker_revamp::appendHistoryFromTo(Node_revamp* from, Node_revamp* to)
 
 void SearchWorker_revamp::RunBlocking() {
   bool DEBUG = false;
-  LOGFILE << "Running thread for node " << worker_root_ << "\n";
+  if(DEBUG) LOGFILE << "Running thread for node " << worker_root_ << "\n";
   auto board = history_.Last().GetBoard();
   if (DEBUG) LOGFILE << "Inital board:\n" << board.DebugString();
 
@@ -959,13 +959,13 @@ void SearchWorker_revamp::RunBlocking() {
   }
 
   int64_t elapsed_time = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_time).count();
-  LOGFILE << "Elapsed time when thread for node " << worker_root_ << " which has size " << worker_root_->GetN() << " nodes did " << i << " computations: " << elapsed_time << "ms";
+  if(DEBUG) LOGFILE << "Elapsed time when thread for node " << worker_root_ << " which has size " << worker_root_->GetN() << " nodes did " << i << " computations: " << elapsed_time << "ms";
 
-  LOGFILE << "root Q: " << worker_root_->GetQ();
+  if(DEBUG) LOGFILE << "root Q: " << worker_root_->GetQ();
 
-  LOGFILE << "move   P                 n   norm n      h   Q          w";
+  if(DEBUG) LOGFILE << "move   P                 n   norm n      h   Q          w";
   for (int i = 0; i < worker_root_->GetNumChildren(); i++) {
-    LOGFILE << std::fixed << std::setfill(' ') 
+    if(DEBUG) LOGFILE << std::fixed << std::setfill(' ') 
               << (worker_root_->GetEdges())[i].GetMove().as_string() << " "
               << std::setw(10) << (worker_root_->GetEdges())[i].GetP() << " "
               << std::setw(10) << (worker_root_->GetEdges())[i].GetChild()->GetN() << " "
@@ -974,6 +974,8 @@ void SearchWorker_revamp::RunBlocking() {
               << std::setw(10) << (float)(worker_root_->GetEdges())[i].GetChild()->GetQ() << " "
               << std::setw(10) << worker_root_->GetEdges()[i].GetChild()->GetW();
   }
+
+  SendMovesStats(); // --verbose-moves-stat
 
   int bestidx = indexOfHighestQEdge(search_->root_node_);
   // Let's try an mimic MCTS
@@ -988,7 +990,6 @@ void SearchWorker_revamp::RunBlocking() {
   } else {
     search_->best_move_callback_({best_move});    
   }
-  SendMovesStats(); // --verbose-moves-stat
 }
 
 void SearchWorker_revamp::AddNodeToComputation() {
