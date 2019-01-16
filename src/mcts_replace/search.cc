@@ -975,16 +975,19 @@ void SearchWorker_revamp::RunBlocking() {
               << std::setw(10) << worker_root_->GetEdges()[i].GetChild()->GetW();
   }
 
-  SendMovesStats(); // --verbose-moves-stat
-
+  if(worker_root_->GetNumChildren() > 0){
+    SendMovesStats(); // --verbose-moves-stat
+  }
   int bestidx = indexOfHighestQEdge(search_->root_node_);
   // Let's try an mimic MCTS
   // int bestidx = indexOfMostVisitedEdge(search_->root_node_);  
   Move best_move = search_->root_node_->GetEdges()[bestidx].GetMove(search_->played_history_.IsBlackToMove());
-  int ponderidx = indexOfHighestQEdge(search_->root_node_->GetEdges()[bestidx].GetChild());
-  // int ponderidx = indexOfMostVisitedEdge(search_->root_node_->GetEdges()[bestidx].GetChild());  
+  // If only root is expanded, the stop right there
   // If the move we make is terminal, then there is nothing to ponder about
-  if(!search_->root_node_->GetEdges()[bestidx].GetChild()->IsTerminal()){
+  if(worker_root_->GetNumChildren() > 0 &&
+     !search_->root_node_->GetEdges()[bestidx].GetChild()->IsTerminal()){  
+    int ponderidx = indexOfHighestQEdge(search_->root_node_->GetEdges()[bestidx].GetChild());
+    // int ponderidx = indexOfMostVisitedEdge(search_->root_node_->GetEdges()[bestidx].GetChild());  
     Move ponder_move = search_->root_node_->GetEdges()[bestidx].GetChild()->GetEdges()[ponderidx].GetMove(!search_->played_history_.IsBlackToMove());
     search_->best_move_callback_({best_move, ponder_move});    
   } else {
