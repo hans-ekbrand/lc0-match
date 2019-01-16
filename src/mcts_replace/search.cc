@@ -1120,7 +1120,7 @@ void SearchWorker_revamp::SendMovesStats() {
   auto move_stats = GetVerboseStats(worker_root_, is_black_to_move);
 
   if (params_.GetVerboseStats()) {
-    LOGFILE << "captured GetVerboseStats";
+    // LOGFILE << "captured GetVerboseStats";
     std::vector<ThinkingInfo> infos;
     std::transform(move_stats.begin(), move_stats.end(),
                    std::back_inserter(infos), [](const std::string& line) {
