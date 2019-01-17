@@ -114,8 +114,9 @@ Move Edge_revamp::GetMove(bool as_opponent) const {
   return m;
 }
 
-  void Edge_revamp::CreateChild(Node_revamp* parent, uint16_t index, uint16_t depth) {
-    child_ = std::make_unique<Node_revamp>(parent, index, depth); parent->noofchildren_++;
+void Edge_revamp::CreateChild(Node_revamp* parent, uint16_t index, uint16_t depth) {
+  child_ = std::make_unique<Node_revamp>(parent, index, depth);
+//  parent->noofchildren_++;  // update noofchildren when node is ready (has received nn values)
 }
 
 
@@ -318,6 +319,17 @@ void Node_revamp::ReleaseChildrenExceptOne(Node_revamp* node_to_save) {
   CreateEdges(legal_moves);
 
   n_extendable_ = multiple_new_siblings ? GetNumEdges() : 1;
+}
+
+void Node_revamp::Realize() {
+  noofchildren_ = 0;
+
+  if (index_ == parent_->noofchildren_) {
+    parent_->noofchildren_++;
+    for (int i = index_ + 1; i < parent_->edges_.size() && parent_->edges_[i].GetChild() != nullptr && parent_->edges_[i].GetChild()->GetNumChildren() != 10000; i++) {
+      parent_->noofchildren_++;
+    }
+  }
 }
 
 int Node_revamp::ComputeHeight() {

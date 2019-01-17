@@ -28,16 +28,15 @@
 #pragma once
 
 #include <functional>
-#include <shared_mutex>
 #include <thread>
+#include <mutex>
 #include "chess/callbacks.h"
 #include "chess/uciloop.h"
 #include "mcts/params.h"
 #include "mcts_replace/node.h"
-#include "neural/cache.h"
 #include "neural/network.h"
+#include "neural/cache.h"
 #include "syzygy/syzygy.h"
-#include "utils/mutex.h"
 #include "utils/optional.h"
 #include "utils/optionsdict.h"
 #include "utils/optionsparser.h"
@@ -45,141 +44,139 @@
 namespace lczero {
 
 struct SearchLimits_revamp {
-  // Type for N in nodes is currently uint32_t, so set limit in order not to
-  // overflow it.
-  std::int64_t visits = 4000000000;
-  std::int64_t playouts = -1;
-  int depth = -1;
-  optional<std::chrono::steady_clock::time_point> search_deadline;
-  bool infinite = false;
-  MoveList searchmoves;
+	// Type for N in nodes is currently uint32_t, so set limit in order not to
+	// overflow it.
+	std::int64_t visits = 4000000000;
+	std::int64_t playouts = -1;
+	int depth = -1;
+	optional<std::chrono::steady_clock::time_point> search_deadline;
+	bool infinite = false;
+	MoveList searchmoves;
 
-  std::string DebugString() const;
+	std::string DebugString() const;
 };
 
 class Search_revamp {
- public:
-  Search_revamp(const NodeTree_revamp& tree, Network* network,
-         BestMoveInfo::Callback best_move_callback,
-         ThinkingInfo::Callback info_callback, const SearchLimits_revamp& limits,
-         const OptionsDict& options, NNCache* cache,
-         SyzygyTablebase* syzygy_tb);
+public:
+	Search_revamp(const NodeTree_revamp& tree, Network* network,
+		 BestMoveInfo::Callback best_move_callback,
+		 ThinkingInfo::Callback info_callback, const SearchLimits_revamp& limits,
+		 const OptionsDict& options, NNCache* cache,
+		 SyzygyTablebase* syzygy_tb);
 
-  ~Search_revamp();
+	~Search_revamp();
 
-  /* // Populates UciOptions with search parameters. */
-  /* static void PopulateUciParams(OptionsParser* options); */
+	/* // Populates UciOptions with search parameters. */
+	/* static void PopulateUciParams(OptionsParser* options); */
 
-  // Starts worker threads and returns immediately.
-  void StartThreads(size_t how_many);
+	// Starts worker threads and returns immediately.
+	void StartThreads(size_t how_many);
 
-  // Starts search with k threads and wait until it finishes.
-//  void RunBlocking(size_t threads);
+	// Starts search with k threads and wait until it finishes.
+	//  void RunBlocking(size_t threads);
 
-  // Stops search. At the end bestmove will be returned. The function is not
-  // blocking, so it returns before search is actually done.
-  void Stop();
-  // Stops search, but does not return bestmove. The function is not blocking.
-//  void Abort();
-  // Blocks until all worker thread finish.
-  void Wait();
-  // Returns whether search is active. Workers check that to see whether another
-  // search iteration is needed.
-//  bool IsSearchActive() const;
+	// Stops search. At the end bestmove will be returned. The function is not
+	// blocking, so it returns before search is actually done.
+	void Stop();
+	// Stops search, but does not return bestmove. The function is not blocking.
+	//  void Abort();
+	// Blocks until all worker thread finish.
+	void Wait();
+	// Returns whether search is active. Workers check that to see whether another
+	// search iteration is needed.
+	//  bool IsSearchActive() const;
 
-  // Returns best move, from the point of view of white player. And also ponder.
-  // May or may not use temperature, according to the settings.
-//  std::pair<Move, Move> GetBestMove() const;
-  // Returns the evaluation of the best move, WITHOUT temperature. This differs
-  // from the above function; with temperature enabled, these two functions may
-  // return results from different possible moves.
-//  float GetBestEval() const;
+	// Returns best move, from the point of view of white player. And also ponder.
+	// May or may not use temperature, according to the settings.
+	//  std::pair<Move, Move> GetBestMove() const;
+	// Returns the evaluation of the best move, WITHOUT temperature. This differs
+	// from the above function; with temperature enabled, these two functions may
+	// return results from different possible moves.
+	//  float GetBestEval() const;
 
-  // Strings for UCI params. So that others can override defaults.
-  // TODO(mooskagh) There are too many options for now. Factor out that into a
-  // separate class.
+	// Strings for UCI params. So that others can override defaults.
+	// TODO(mooskagh) There are too many options for now. Factor out that into a
+	// separate class.
 
 private:
-  void WatchdogThread();
+//	void WatchdogThread();
 
-  int64_t GetTimeSinceStart() const;
+	int64_t GetTimeSinceStart() const;
+
+	std::mutex threads_list_mutex_;
+	int n_thread_active_ = 0;
+	std::vector<std::thread> threads_;
+
+	Node_revamp* root_node_;
+
+	// Fixed positions which happened before the search.
+	const PositionHistory& played_history_;
+
+	Network* const network_;
+	const SearchLimits_revamp limits_;
+
+	const SearchParams params_;
+
+	const std::chrono::steady_clock::time_point start_time_;
+	const int64_t initial_visits_;
+
+	BestMoveInfo::Callback best_move_callback_;
+	ThinkingInfo::Callback info_callback_;
+	// External parameters
+	//  const int kMiniBatchSize;
+	//const int kCacheHistoryLength;
 
 
-  Mutex threads_mutex_;
-  std::vector<std::thread> threads_ GUARDED_BY(threads_mutex_);
 
-  Node_revamp* root_node_;
+	void AddNodeToComputation(NetworkComputation *computation);
+	void retrieveNNResult(NetworkComputation *computation, Node_revamp* node, int batchidx);
+	void recalcPropagatedQ(Node_revamp* node);
+	void pickNodesToExtend(Node_revamp* current_node, float global_weight);
+	void pushNewNodeCandidate(float w, Node_revamp* node, int idx);
+	int appendHistoryFromTo(Node_revamp* from, Node_revamp* to);
+	float computeChildWeights(Node_revamp* node);
+	std::vector<float> q_to_prob(std::vector<float> Q, int depth, float multiplier, float max_focus);
+	void SendUciInfo();
+	void ThreadLoop(int thread_id);
 
-  // Fixed positions which happened before the search.
-  const PositionHistory& played_history_;  // not const ref so that startthreads can create top of tree so that there is a leaf for each thread
+	std::mutex busy_mutex_;
 
-  Network* const network_;
-  const SearchLimits_revamp limits_;
+	std::vector<float> pvals_;
+	//std::vector<Node_revamp *> nodestack_;
+	std::vector<Move> movestack_;
+	int full_tree_depth = 0;
+	uint64_t cum_depth_ = 0;
 
-  const SearchParams params_;
+	struct NewNodeCandidate {
+		float w;
+		Node_revamp* node;
+		int idx;
+	};
 
-  const std::chrono::steady_clock::time_point start_time_;
-  const int64_t initial_visits_;
+	std::vector<struct NewNodeCandidate> node_prio_queue_;
 
-  BestMoveInfo::Callback best_move_callback_;
-  ThinkingInfo::Callback info_callback_;
-  // External parameters
-  //  const int kMiniBatchSize;
-  //const int kCacheHistoryLength;
+	float q_concentration_;
+	float p_concentration_;
 
-  friend class SearchWorker_revamp;
+	PositionHistory history_;
+
+
+	struct PropagateQueueElement {
+		int depth;
+		Node_revamp* node;
+	};
+
+	int64_t last_uci_time_ = 0;
+
+	int64_t duration_search_ = 0;
+	int64_t duration_create_ = 0;
+	int64_t duration_compute_ = 0;
+	int64_t duration_retrieve_ = 0;
+	int64_t duration_propagate_ = 0;
+	int count_iterations_ = 0;
+
 };
 
-// Single thread worker of the search engine.
-// That used to be just a function Search::Worker(), but to parallelize it
-// within one thread, have to split into stages.
-class SearchWorker_revamp {
- public:
- SearchWorker_revamp(Search_revamp* search, Node_revamp* worker_root, const SearchParams& params)
-    : search_(search), params_(params), q_concentration_(params.GetCpuct()), p_concentration_(params.GetPolicySoftmaxTemp()), history_(search_->played_history_), worker_root_(worker_root) {}
-
-  // Runs iterations while needed.
-  void RunBlocking();
-
- private:
-  void AddNodeToComputation();
-  void retrieveNNResult(Node_revamp* node, int batchidx);
-  void recalcPropagatedQ(Node_revamp* node);
-  void pickNodesToExtend(Node_revamp* current_node, float global_weight);
-  void pushNewNodeCandidate(float w, Node_revamp* node, int idx);
-  int appendHistoryFromTo(Node_revamp* from, Node_revamp* to);
-  float computeChildWeights(Node_revamp* node);
-  std::vector<float> q_to_prob(std::vector<float> Q, int depth, float multiplier, float max_focus);
-
-  void SendUciInfo();
-
-  Search_revamp* const search_;
-  std::vector<Node_revamp *> minibatch_;
-
-  std::vector<float> pvals_;
-  //std::vector<Node_revamp *> nodestack_;
-  std::vector<Move> movestack_;
-  int full_tree_depth = 0;
-  uint64_t cum_depth_ = 0;
-
-  struct NewNodeCandidate {
-    float w;
-    Node_revamp* node;
-    int idx;
-  };
-  
-  std::vector<struct NewNodeCandidate> node_prio_queue_;
-
-  const SearchParams& params_;
-  float q_concentration_;
-  float p_concentration_;
-
-  std::unique_ptr<NetworkComputation> computation_;
-  // History is reset and extended by PickNodeToExtend().
-  PositionHistory history_;
-
-  Node_revamp* worker_root_;
-};
 
 
 }  // namespace lczero

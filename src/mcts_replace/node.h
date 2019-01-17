@@ -163,6 +163,9 @@ class Node_revamp {
 
   void ExtendNode(PositionHistory* history, bool multiple_new_siblings, Node_revamp* root_node);
 
+  void ClearNumChildren() { noofchildren_ = 0; }
+  void Realize();
+
   int ComputeHeight();
   bool Check();
 
@@ -202,7 +205,7 @@ class Node_revamp {
   // The number of edges between this node and root.
   uint16_t depth_;
   
-  uint16_t noofchildren_ = 0;
+  uint16_t noofchildren_ = 10000;  // indicates that node has not retrieved nn result
 
   // 1 byte fields.
   // Whether or not this node end game (with a winning of either sides or draw).
