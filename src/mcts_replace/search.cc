@@ -572,9 +572,6 @@ float Search_revamp::computeChildWeights(Node_revamp* node) {
 
 
 
-//////////////////////////////////////////////////////////////////////////////
-// SearchWorker
-//////////////////////////////////////////////////////////////////////////////
 
 // if queue is full, w must be larger than smallest weight
 void Search_revamp::pushNewNodeCandidate(float w, Node_revamp* node, int idx) {
@@ -855,7 +852,7 @@ void Search_revamp::ThreadLoop(int thread_id) {
   bool DEBUG = false;
 
 	busy_mutex_.lock();
-	LOGFILE << "Lock " << thread_id;
+	//LOGFILE << "Lock " << thread_id;
 
 
   auto board = history_.Last().GetBoard();
@@ -892,7 +889,7 @@ void Search_revamp::ThreadLoop(int thread_id) {
 	std::priority_queue<PropagateQueueElement, std::vector<PropagateQueueElement>, decltype(cmp)> propagate_queue(cmp);
 
 
-	while (root_node_->GetN() < limits_.visits && root_node_->GetNExtendable() > 0) {
+	while (root_node_->GetN() + (n_thread_active_ - 1) * params_.GetMiniBatchSize() < limits_.visits && root_node_->GetNExtendable() > 0) {
 
 		auto start_comp_time = std::chrono::steady_clock::now();
 
@@ -912,12 +909,12 @@ void Search_revamp::ThreadLoop(int thread_id) {
 			continue;
 		}
 
-    LOGFILE << "n: " << root_node_->GetN()
-            << ", n_extendable: " << root_node_->GetNExtendable()
-            << ", queue size: " << node_prio_queue_.size()
-            << ", lowest w: " << node_prio_queue_[0].w
-//            << ", node stack size: " << nodestack_.size()
-            << ", max_unexpanded_w: " << root_node_->GetMaxW();
+    //LOGFILE << "n: " << root_node_->GetN()
+    //        << ", n_extendable: " << root_node_->GetNExtendable()
+    //        << ", queue size: " << node_prio_queue_.size()
+    //        << ", lowest w: " << node_prio_queue_[0].w
+    //        //<< ", node stack size: " << nodestack_.size()
+    //        << ", max_unexpanded_w: " << root_node_->GetMaxW();
 
 
 		start_comp_time = std::chrono::steady_clock::now();
@@ -957,10 +954,10 @@ void Search_revamp::ThreadLoop(int thread_id) {
 		duration_create_ += (stop_comp_time - start_comp_time).count();
 
 
-		LOGFILE << "Computing batch of size " << minibatch.size();
+		//LOGFILE << "Computing batch of size " << minibatch.size();
 
 
-		LOGFILE << "Unlock " << thread_id;
+		//LOGFILE << "Unlock " << thread_id;
 		busy_mutex_.unlock();
 
     // std::this_thread::sleep_for(std::chrono::milliseconds(0));
@@ -971,7 +968,7 @@ void Search_revamp::ThreadLoop(int thread_id) {
 		stop_comp_time = std::chrono::steady_clock::now();
 
 		busy_mutex_.lock();
-		LOGFILE << "Lock " << thread_id;
+		//LOGFILE << "Lock " << thread_id;
 
 		duration_compute_ += (stop_comp_time - start_comp_time).count();
     
@@ -1019,13 +1016,13 @@ void Search_revamp::ThreadLoop(int thread_id) {
 		duration_propagate_ += (stop_comp_time - start_comp_time).count();
 		count_iterations_++;
 
-		LOGFILE << "Recalcs: " << countrecalc;
+		//LOGFILE << "Recalcs: " << countrecalc;
 
 	
 		int64_t time = GetTimeSinceStart();
 		if (time - last_uci_time_ > kUciInfoMinimumFrequencyMs) {
 			last_uci_time_ = time;
-//			SendUciInfo();
+			SendUciInfo();
 		}
   }
 
@@ -1086,7 +1083,7 @@ void Search_revamp::ThreadLoop(int thread_id) {
 	n_thread_active_--;
 	threads_list_mutex_.unlock();
 
-	LOGFILE << "Unlock " << thread_id;
+	//LOGFILE << "Unlock " << thread_id;
 	busy_mutex_.unlock();
 }
 
