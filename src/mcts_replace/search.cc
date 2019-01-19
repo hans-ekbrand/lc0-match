@@ -505,7 +505,8 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
 	  
 	  std::vector<double> weighted_p_and_q(n);
 	  double sum_of_weighted_p_and_q = 0.0;
-	  double p_weight_exponent = 0.7; 
+	  // double p_weight_exponent = 0.7071068;
+	  double p_weight_exponent = 0.7;
 	  for (int i = 0; i < n; i++){
 	    double relative_weight_of_p = pow(node->GetEdges()[i].GetChild()->GetN(), p_weight_exponent) / ( 0.05 + node->GetEdges()[i].GetChild()->GetN()); // 0.05 is here to make Q have some influence after 1 visit.
 	    // LOGFILE << "relative_weight_of_p:" << relative_weight_of_p;
@@ -975,6 +976,8 @@ void SearchWorker_revamp::RunBlocking() {
               << std::setw(10) << worker_root_->GetEdges()[i].GetChild()->GetW();
   }
 
+  SendUciInfo();
+
   if(worker_root_->GetNumChildren() > 0){
     SendMovesStats(); // --verbose-moves-stat
   }
@@ -985,13 +988,14 @@ void SearchWorker_revamp::RunBlocking() {
   // If only root is expanded, the stop right there
   // If the move we make is terminal, then there is nothing to ponder about
   if(worker_root_->GetNumChildren() > 0 &&
-     !search_->root_node_->GetEdges()[bestidx].GetChild()->IsTerminal()){  
+     !search_->root_node_->GetEdges()[bestidx].GetChild()->IsTerminal()){
     int ponderidx = indexOfHighestQEdge(search_->root_node_->GetEdges()[bestidx].GetChild());
     // int ponderidx = indexOfMostVisitedEdge(search_->root_node_->GetEdges()[bestidx].GetChild());  
     Move ponder_move = search_->root_node_->GetEdges()[bestidx].GetChild()->GetEdges()[ponderidx].GetMove(!search_->played_history_.IsBlackToMove());
     search_->best_move_callback_({best_move, ponder_move});    
   } else {
-    search_->best_move_callback_({best_move});    
+    // corner case Best move is not a child, but has policy, send move 0
+    search_->best_move_callback_({search_->root_node_->GetEdges()[0].GetMove(search_->played_history_.IsBlackToMove())});
   }
 }
 
