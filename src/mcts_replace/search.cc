@@ -506,7 +506,8 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
 	  std::vector<double> weighted_p_and_q(n);
 	  double sum_of_weighted_p_and_q = 0.0;
 	  // double p_weight_exponent = 0.7071068;
-	  double p_weight_exponent = 0.7;
+	  // double p_weight_exponent = 0.7;
+	  double p_weight_exponent = 0.6;
 	  for (int i = 0; i < n; i++){
 	    double relative_weight_of_p = pow(node->GetEdges()[i].GetChild()->GetN(), p_weight_exponent) / ( 0.05 + node->GetEdges()[i].GetChild()->GetN()); // 0.05 is here to make Q have some influence after 1 visit.
 	    // LOGFILE << "relative_weight_of_p:" << relative_weight_of_p;
