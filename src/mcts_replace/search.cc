@@ -1033,13 +1033,14 @@ void Search_revamp::ThreadLoop(int thread_id) {
 	if (nt == 1) {  // this is the last thread
 		int64_t elapsed_time = GetTimeSinceStart();
 		//LOGFILE << "Elapsed time when thread for node " << root_node_ << " which has size " << root_node_->GetN() << " nodes did " << i << " computations: " << elapsed_time << "ms";
-		LOGFILE << "Elapsed time for " << root_node_->GetN() << " nodes: " << elapsed_time << "ms";
+		if(DEBUG) LOGFILE << "Elapsed time for " << root_node_->GetN() << " nodes: " << elapsed_time << "ms";
 
-		LOGFILE << "root Q: " << root_node_->GetQ();
+		if(DEBUG) LOGFILE << "root Q: " << root_node_->GetQ();
 
-		LOGFILE << "move   P                 n   norm n      h   Q          w";
-		for (int i = 0; i < root_node_->GetNumChildren(); i++) {
-			LOGFILE << std::fixed << std::setfill(' ') 
+		if(DEBUG) LOGFILE << "move   P                 n   norm n      h   Q          w";
+		if(DEBUG) {
+		  for (int i = 0; i < root_node_->GetNumChildren(); i++) {
+		    LOGFILE << std::fixed << std::setfill(' ') 
 								<< (root_node_->GetEdges())[i].GetMove().as_string() << " "
 								<< std::setw(10) << (root_node_->GetEdges())[i].GetP() << " "
 								<< std::setw(10) << (root_node_->GetEdges())[i].GetChild()->GetN() << " "
@@ -1049,20 +1050,20 @@ void Search_revamp::ThreadLoop(int thread_id) {
 								<< std::setw(10) << root_node_->GetEdges()[i].GetChild()->GetW();
 		}
 
-		LOGFILE << "search: " << duration_search_ / count_iterations_
+		  LOGFILE << "search: " << duration_search_ / count_iterations_
 						<< ", create: " << duration_create_ / count_iterations_
 						<< ", compute: " << duration_compute_ / count_iterations_
 						<< ", retrieve: " << duration_retrieve_ / count_iterations_
 						<< ", propagate: " << duration_propagate_ / count_iterations_;
 
-		int64_t dur_sum = (duration_search_ + duration_create_ + duration_compute_ + duration_retrieve_ + duration_propagate_) / 1000;
+		  int64_t dur_sum = (duration_search_ + duration_create_ + duration_compute_ + duration_retrieve_ + duration_propagate_) / 1000;
 
-		LOGFILE << "search: " << duration_search_ / dur_sum
+		  LOGFILE << "search: " << duration_search_ / dur_sum
 						<< ", create: " << duration_create_ / dur_sum
 						<< ", compute: " << duration_compute_ / dur_sum
 						<< ", retrieve: " << duration_retrieve_ / dur_sum
 						<< ", propagate: " << duration_propagate_ / dur_sum;
-
+		}
 
 		int bestidx = indexOfHighestQEdge(root_node_);
 		// Let's try an mimic MCTS
