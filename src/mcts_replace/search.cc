@@ -84,6 +84,7 @@ Search_revamp::Search_revamp(const NodeTree_revamp& tree, Network* network,
       info_callback_(info_callback),
       q_concentration_(params_.GetCpuct()),
       p_concentration_(params_.GetPolicySoftmaxTemp()),
+      policy_weight_exponent_(params_.GetFpuValue()),
       history_(played_history_)
     {}
 
@@ -338,11 +339,8 @@ float Search_revamp::computeChildWeights(Node_revamp* node) {
       
     std::vector<double> weighted_p_and_q(n);
     double sum_of_weighted_p_and_q = 0.0;
-    // double p_weight_exponent = 0.7071068;
-    // double p_weight_exponent = 0.7;
-    double p_weight_exponent = 0.6;
     for (int i = 0; i < n; i++){
-      double relative_weight_of_p = pow(node->GetEdges()[i].GetChild()->GetN(), p_weight_exponent) / ( 0.05 + node->GetEdges()[i].GetChild()->GetN()); // 0.05 is here to make Q have some influence after 1 visit.
+      double relative_weight_of_p = pow(node->GetEdges()[i].GetChild()->GetN(), policy_weight_exponent_) / ( 0.05 + node->GetEdges()[i].GetChild()->GetN()); // 0.05 is here to make Q have some influence after 1 visit.
       // LOGFILE << "relative_weight_of_p:" << relative_weight_of_p;
       double relative_weight_of_q = 1 - relative_weight_of_p;
       // LOGFILE << "relative_weight_of_q:" << relative_weight_of_q;	    
@@ -892,24 +890,27 @@ void Search_revamp::ThreadLoop(int thread_id) {
     // 	      << ", propagate: " << duration_propagate_ / dur_sum;
     // }
 
-    int bestidx = indexOfHighestQEdge(root_node_);
-    // Let's try an mimic MCTS
-    // int bestidx = indexOfMostVisitedEdge(root_node_);  
-    Move best_move = root_node_->GetEdges()[bestidx].GetMove(played_history_.IsBlackToMove());
-    // If only root is expanded, the stop right there
-    // If the move we make is terminal, then there is nothing to ponder about
-    if(root_node_->GetNumChildren() > 0 &&
-     !root_node_->GetEdges()[bestidx].GetChild()->IsTerminal()){
-      int ponderidx = indexOfHighestQEdge(root_node_->GetEdges()[bestidx].GetChild());
-      Move ponder_move = root_node_->GetEdges()[bestidx].GetChild()->GetEdges()[ponderidx].GetMove(!played_history_.IsBlackToMove());
-      best_move_callback_({best_move, ponder_move});    
-    } else {
-      if(root_node_->GetNumChildren() == 0){
-	// corner case Best move is not a child, but has policy, send move 0
-	best_move_callback_({root_node_->GetEdges()[0].GetMove(played_history_.IsBlackToMove())});
+    if(!limits_.infinite) {
+      // OK to send bestmove (not pondering and not go infinite)
+      int bestidx = indexOfHighestQEdge(root_node_);
+      // Let's try an mimic MCTS
+      // int bestidx = indexOfMostVisitedEdge(root_node_);  
+      Move best_move = root_node_->GetEdges()[bestidx].GetMove(played_history_.IsBlackToMove());
+      // If only root is expanded, the stop right there
+      // If the move we make is terminal, then there is nothing to ponder about
+      if(root_node_->GetNumChildren() > 0 &&
+	 !root_node_->GetEdges()[bestidx].GetChild()->IsTerminal()){
+	int ponderidx = indexOfHighestQEdge(root_node_->GetEdges()[bestidx].GetChild());
+	Move ponder_move = root_node_->GetEdges()[bestidx].GetChild()->GetEdges()[ponderidx].GetMove(!played_history_.IsBlackToMove());
+	best_move_callback_({best_move, ponder_move});    
       } else {
-	// The move we make must be terminal, don't ponder.
-	best_move_callback_({best_move});
+	if(root_node_->GetNumChildren() == 0){
+	  // corner case Best move is not a child, but has policy, send move 0
+	  best_move_callback_({root_node_->GetEdges()[0].GetMove(played_history_.IsBlackToMove())});
+	} else {
+	  // The move we make must be terminal, don't ponder.
+	  best_move_callback_({best_move});
+	}
       }
     }
   }

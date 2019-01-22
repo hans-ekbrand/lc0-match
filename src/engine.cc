@@ -326,6 +326,7 @@ void EngineController::Go(const GoParams& params) {
   // hence have the same start time like this behaves, or should we check start
   // time hasn't changed since last call to go and capture the new start time
   // now?
+  LOGFILE << "Go!";
   auto start_time = move_start_time_;
   go_params_ = params;
 
@@ -336,6 +337,7 @@ void EngineController::Go(const GoParams& params) {
   // not.
   if (current_position_) {
     if (params.ponder && !current_position_->moves.empty()) {
+      LOGFILE << "Ponder requested!";
       std::vector<std::string> moves(current_position_->moves);
       std::string ponder_move = moves.back();
       moves.pop_back();
@@ -397,6 +399,8 @@ void EngineController::Go(const GoParams& params) {
 
 void EngineController::PonderHit() {
   move_start_time_ = std::chrono::steady_clock::now();
+  LOGFILE << "Ponderhit captured! Will stop search and the initiate a normal search";
+  if (search_) search_->Stop();
   go_params_.ponder = false;
   Go(go_params_);
 }

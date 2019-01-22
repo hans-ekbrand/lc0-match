@@ -158,6 +158,7 @@ private:
 
 	float q_concentration_;
 	float p_concentration_;
+	float policy_weight_exponent_; // weight of policy relative to weight of q: pow(n, pwe)/n where n is the number of subnodes of the current node.
 
 	PositionHistory history_;
 
