@@ -347,9 +347,10 @@ bool Node_revamp::Check() {
     if (GetEdges()[i].GetChild() == nullptr) return false;
     if (!GetEdges()[i].GetChild()->Check()) return false;
   }
-  for (int i = GetNumChildren(); i < GetNumEdges(); i++) {
-    if (GetEdges()[i].GetChild() != nullptr) return false;
-  }
+  //for (int i = GetNumChildren(); i < GetNumEdges(); i++) {
+  //  if (GetEdges()[i].GetChild() != nullptr) return false;
+  //}
+  if (GetN() <= 0) return false;
   return true;
 }
 

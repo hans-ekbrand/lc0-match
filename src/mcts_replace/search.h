@@ -138,12 +138,14 @@ private:
 	std::vector<float> q_to_prob(std::vector<float> Q, int depth, float multiplier, float max_focus);
 	void SendUciInfo();
 	void ThreadLoop(int thread_id);
+	void HelperThreadLoop(int helper_thread_id, std::mutex* lock, bool *stop);
 
 	std::mutex busy_mutex_;
 
 	std::vector<float> pvals_;
 	//std::vector<Node_revamp *> nodestack_;
 	std::vector<Move> movestack_;
+	std::vector<float> global_weight_stack_;
 	int full_tree_depth = 0;
 	uint64_t cum_depth_ = 0;
 
@@ -154,6 +156,7 @@ private:
 	};
 
 	std::vector<struct NewNodeCandidate> node_prio_queue_;
+
 
 	float q_concentration_;
 	float p_concentration_;

@@ -32,6 +32,7 @@
 #include <math.h>
 #include <iomanip>
 #include <queue>
+#include <set>
 #include <atomic> // global depth is an atomic int
 #include <numeric> // accumulate()
 
@@ -56,6 +57,8 @@ int const DISTRIBUTION_FUNCTION = 1;
   // 1 - Plain non-adaptive exponential distribution. Uses cpuct parameter as concentration parameter, so higher values give higher trees and lower give wider trees.
 
 const int kUciInfoMinimumFrequencyMs = 500;
+
+int const N_HELPER_THREADS = 0;
 
 }  // namespace
 
@@ -103,11 +106,10 @@ int64_t Search_revamp::GetTimeSinceStart() const {
 void Search_revamp::StartThreads(size_t how_many) {
 	threads_list_mutex_.lock();
   for (int i = 0; i < (int)how_many; i++) {
-		int thread_id = n_thread_active_;
     n_thread_active_++;
-    threads_.emplace_back([this, thread_id]()
+    threads_.emplace_back([this, i]()
       {
-        ThreadLoop(thread_id);
+        ThreadLoop(i);
       }
     );
   }
@@ -634,6 +636,143 @@ void Search_revamp::pushNewNodeCandidate(float w, Node_revamp* node, int idx) {
 }
 
 void Search_revamp::pickNodesToExtend(Node_revamp* node, float global_weight) {
+
+
+	struct SearchQueueElement {
+		float max_w;
+		float global_w;
+		Node_revamp* node;
+		int idx;
+	};
+
+	//~ static auto cmpsq = [](SearchQueueElement left, SearchQueueElement right) { return left.max_w < right.max_w;};
+	//~ static std::priority_queue<SearchQueueElement, std::vector<SearchQueueElement>, decltype(cmpsq)> search_queue(cmpsq);
+	static auto cmpsq = [](SearchQueueElement left, SearchQueueElement right) { return left.max_w > right.max_w;};
+	static std::set<SearchQueueElement, decltype(cmpsq)> search_queue(cmpsq);
+
+	//~ bool emptySearchQueue() { return search_queue_.empty(); }
+	//~ void clearSearchQueue() { while (!search_queue_.empty()) search_queue_.pop(); }
+	//~ void pushSearchElt(SearchQueueElement elt) { search_queue_.push(); }
+	//~ SearchQueueElement popSearchElt() { auto elt = search_queue_.top(); search_queue_.pop(); return elt; }
+
+
+
+	if (MULTIPLE_NEW_SIBLINGS) {
+		std::cerr << "Not implemented\n"; abort();
+	}
+
+	//~ search_queue.push({root_node_->GetMaxW(), 1.0, root_node_, -1});
+	search_queue.insert({root_node_->GetMaxW(), 1.0, root_node_, -1});
+
+	int i = 0;
+
+	while (!search_queue.empty()) {
+		i++;
+		//~ auto elt = search_queue.top();
+		//~ search_queue.pop();
+		auto elt = *search_queue.begin();
+		search_queue.erase(search_queue.begin());
+
+		Node_revamp* node = elt.node;
+		if (elt.idx == -1) {  // it's a node
+			float totw = 0.0;
+			for (int j = 0; j < node->GetNumChildren(); j++) {
+				totw += node->GetEdges()[j].GetChild()->GetW();
+			}
+
+			if (node->GetNumChildren() < node->GetNumEdges()) {
+				if (node->GetEdges()[node->GetNumChildren()].GetChild() == nullptr) {  // edge not busy
+					totw = (1.0 - totw) * elt.global_w;
+					//~ search_queue.push({totw, 0.0, node, node->GetNumChildren()});  // then global_w field is don't care
+					if (search_queue.size() < (unsigned int)params_.GetMiniBatchSize() - node_prio_queue_.size() ||
+					    totw > (*(--search_queue.end())).max_w) {
+						search_queue.insert({totw, 0.0, node, node->GetNumChildren()});  // then global_w field is don't care
+					}
+					if (search_queue.size() >= (unsigned int)params_.GetMiniBatchSize() - node_prio_queue_.size()) search_queue.erase(--search_queue.end());
+				}
+			}
+
+			for (int j = 0; j < node->GetNumChildren(); j++) {
+				Node_revamp* child = node->GetEdges()[j].GetChild();
+				if (child->GetNExtendable() > 0) {
+					float w = child->GetW() * elt.global_w;
+					//~ search_queue.push({w * child->GetMaxW(), w, child, -1});
+					if (search_queue.size() < (unsigned int)params_.GetMiniBatchSize() - node_prio_queue_.size() ||
+					    totw > (*(--search_queue.end())).max_w) {
+						search_queue.insert({w * child->GetMaxW(), w, child, -1});
+					}
+					if (search_queue.size() >= (unsigned int)params_.GetMiniBatchSize() - node_prio_queue_.size()) search_queue.erase(--search_queue.end());
+				}
+			}
+
+		} else {  // it's an unexpanded edge
+			node_prio_queue_.push_back({0.0, node, elt.idx});  // the w field is don't care
+			if (node_prio_queue_.size() == (unsigned int)params_.GetMiniBatchSize()) break;
+		}
+	}
+
+	LOGFILE << "picknodes: nodes: " << i << ", queue size: " << search_queue.size();
+
+	//clearSearchQueue();
+	//~ while (!search_queue.empty()) search_queue.pop();
+	search_queue.clear();
+
+
+
+/*
+	float smallest_weight_in_queue = -1.0;
+
+	while (true) {
+		if (MULTIPLE_NEW_SIBLINGS) {
+			std::cerr << "Not implemented\n"; abort();
+		} else {  // not MULTIPLE_NEW_SIBLINGS
+			float totw = 0.0;
+			for (int j = 0; j < node->GetNumChildren(); j++) {
+				totw += node->GetEdges()[j].GetChild()->GetW();
+			}
+
+			if (node->GetNumChildren() < node->GetNumEdges()) {
+				if (node->GetEdges()[node->GetNumChildren()].GetChild() == nullptr) {  // edge not busy
+					totw = (1.0 - totw) * global_weight;
+					if (totw > smallest_weight_in_queue) {
+						pushNewNodeCandidate(totw, node, node->GetNumChildren());
+						if (node_prio_queue_.size() == (unsigned int)params_.GetMiniBatchSize()) {
+							smallest_weight_in_queue = node_prio_queue_[0].w;
+						}
+					}
+				}
+			}
+		}
+		
+		int idx = 0;
+		while (true) {
+			if (idx == node->GetNumChildren()) {
+				if (node == root_node_) break;
+				idx = node->GetIndex() + 1;
+				node = node->GetParent();
+				global_weight = global_weight_stack_.back();
+				global_weight_stack_.pop_back();
+				continue;
+			}
+
+      Node_revamp* child = node->GetEdges()[idx].GetChild();
+      if (child->GetNExtendable() > 0) {
+        float w = child->GetW() * global_weight;
+        if (w * child->GetMaxW() > smallest_weight_in_queue) {
+					node = child;
+					global_weight_stack_.push_back(global_weight);
+					global_weight = w;
+					break;
+        }
+      }
+			idx++;
+		}
+		if (node == root_node_) break;
+	}
+*/
+
+
+/*
 //  nodestack_.push_back(node);
 
   if (MULTIPLE_NEW_SIBLINGS) {
@@ -681,13 +820,26 @@ void Search_revamp::pickNodesToExtend(Node_revamp* node, float global_weight) {
     }
 
     float totw = 0.0;
+    for (int j = 0; j < node->GetNumChildren(); j++) {
+      totw += node->GetEdges()[j].GetChild()->GetW();
+    }
+
+    if (node->GetNumChildren() < node->GetNumEdges()) {
+			if (node->GetEdges()[node->GetNumChildren()].GetChild() == nullptr) {  // edge not busy
+				totw = (1.0 - totw) * global_weight;
+				if (totw > smallest_weight_in_queue) {
+					pushNewNodeCandidate(totw, node, node->GetNumChildren());
+          if (node_prio_queue_.size() == (unsigned int)params_.GetMiniBatchSize()) {
+            smallest_weight_in_queue = node_prio_queue_[0].w;
+          }
+				}
+			}
+    }
 
     for (int j = 0; j < node->GetNumChildren(); j++) {
       Node_revamp* child = node->GetEdges()[j].GetChild();
-      float w = child->GetW();
-      totw += w;
       if (child->GetNExtendable() > 0) {
-        w *= global_weight;
+        float w = child->GetW() * global_weight;
         if (w * child->GetMaxW() > smallest_weight_in_queue) {
           pickNodesToExtend(child, w);
           if (node_prio_queue_.size() == (unsigned int)params_.GetMiniBatchSize()) {
@@ -697,15 +849,38 @@ void Search_revamp::pickNodesToExtend(Node_revamp* node, float global_weight) {
       }
     }
 
-    if (node->GetNumChildren() < node->GetNumEdges()) {
-			if (node->GetEdges()[node->GetNumChildren()].GetChild() == nullptr) {  // edge not busy
-				totw = (1.0 - totw) * global_weight;
-				if (totw > smallest_weight_in_queue) {
-					pushNewNodeCandidate(totw, node, node->GetNumChildren());
-				}
-			}
-    }
+    //~ float smallest_weight_in_queue = -1.0;
+    //~ if (node_prio_queue_.size() == (unsigned int)params_.GetMiniBatchSize()) {
+      //~ smallest_weight_in_queue = node_prio_queue_[0].w;
+    //~ }
+
+    //~ float totw = 0.0;
+
+    //~ for (int j = 0; j < node->GetNumChildren(); j++) {
+      //~ Node_revamp* child = node->GetEdges()[j].GetChild();
+      //~ float w = child->GetW();
+      //~ totw += w;
+      //~ if (child->GetNExtendable() > 0) {
+        //~ w *= global_weight;
+        //~ if (w * child->GetMaxW() > smallest_weight_in_queue) {
+          //~ pickNodesToExtend(child, w);
+          //~ if (node_prio_queue_.size() == (unsigned int)params_.GetMiniBatchSize()) {
+            //~ smallest_weight_in_queue = node_prio_queue_[0].w;
+          //~ }
+        //~ }
+      //~ }
+    //~ }
+
+    //~ if (node->GetNumChildren() < node->GetNumEdges()) {
+			//~ if (node->GetEdges()[node->GetNumChildren()].GetChild() == nullptr) {  // edge not busy
+				//~ totw = (1.0 - totw) * global_weight;
+				//~ if (totw > smallest_weight_in_queue) {
+					//~ pushNewNodeCandidate(totw, node, node->GetNumChildren());
+				//~ }
+			//~ }
+    //~ }
   }
+*/
 }
   
 
@@ -855,6 +1030,21 @@ void Search_revamp::ThreadLoop(int thread_id) {
 	//LOGFILE << "Lock " << thread_id;
 
 
+	bool helper_threads_stop = false;
+	std::vector<std::mutex *> helper_thread_locks;
+	std::vector<std::thread> helper_threads;
+	for (int j = 0; j < N_HELPER_THREADS; j++) {
+		helper_thread_locks.push_back(new std::mutex());
+		helper_thread_locks[j]->lock();
+		std::mutex *lock = helper_thread_locks[j];
+    helper_threads.emplace_back([this, j, lock, &helper_threads_stop]()
+      {
+        HelperThreadLoop(j, lock, &helper_threads_stop);
+      }
+    );
+  }
+
+
   auto board = history_.Last().GetBoard();
   if (DEBUG) LOGFILE << "Inital board:\n" << board.DebugString();
 
@@ -909,12 +1099,12 @@ void Search_revamp::ThreadLoop(int thread_id) {
 			continue;
 		}
 
-    //LOGFILE << "n: " << root_node_->GetN()
-    //        << ", n_extendable: " << root_node_->GetNExtendable()
-    //        << ", queue size: " << node_prio_queue_.size()
-    //        << ", lowest w: " << node_prio_queue_[0].w
-    //        //<< ", node stack size: " << nodestack_.size()
-    //        << ", max_unexpanded_w: " << root_node_->GetMaxW();
+    LOGFILE << "n: " << root_node_->GetN()
+            << ", n_extendable: " << root_node_->GetNExtendable()
+            << ", queue size: " << node_prio_queue_.size()
+            << ", lowest w: " << node_prio_queue_[0].w
+            //<< ", node stack size: " << nodestack_.size()
+            << ", max_unexpanded_w: " << root_node_->GetMaxW();
 
 
 		start_comp_time = std::chrono::steady_clock::now();
@@ -944,7 +1134,9 @@ void Search_revamp::ThreadLoop(int thread_id) {
 			}
 
 			propagate_queue.push({nappends, node});
-      
+			// not checking and setting N = 0 (see code that propagates below) here means duplicates can exist in the queue if MULTIPLE_NEW_SIBLINGS = true
+			// but checking for duplicates that way does not work with multiple threads because N values are not restored until after the nn-computation (and meanwhile other threads can run)
+
 			if (nappends > full_tree_depth) full_tree_depth = nappends;
 			cum_depth_ += nappends;
 		}
@@ -954,7 +1146,7 @@ void Search_revamp::ThreadLoop(int thread_id) {
 		duration_create_ += (stop_comp_time - start_comp_time).count();
 
 
-		//LOGFILE << "Computing batch of size " << minibatch.size();
+		LOGFILE << "Computing batch of size " << minibatch.size();
 
 
 		//LOGFILE << "Unlock " << thread_id;
@@ -1000,9 +1192,16 @@ void Search_revamp::ThreadLoop(int thread_id) {
 			recalcPropagatedQ(elt.node);
 			countrecalc++;
 			if (elt.node != root_node_) {
-				propagate_queue.push({elt.depth - 1, elt.node->GetParent()});
+				Node_revamp* parent = elt.node->GetParent();
+				if (parent->GetN() != 0) {
+					// check and set N to avoid duplicates in queue
+					parent->SetN(0);
+					propagate_queue.push({elt.depth - 1, parent});
+				}
 			}
 		}
+
+		//if (!root_node_->Check()) LOGFILE << "Tree corrupt";
 
 		//~ for (int n = nodestack_.size(); n > 0; n--) {
 //~ Node_revamp* node = nodestack_.back();
@@ -1016,14 +1215,26 @@ void Search_revamp::ThreadLoop(int thread_id) {
 		duration_propagate_ += (stop_comp_time - start_comp_time).count();
 		count_iterations_++;
 
-		//LOGFILE << "Recalcs: " << countrecalc;
+		LOGFILE << "Recalcs: " << countrecalc;
 
 	
 		int64_t time = GetTimeSinceStart();
 		if (time - last_uci_time_ > kUciInfoMinimumFrequencyMs) {
 			last_uci_time_ = time;
-			SendUciInfo();
+			//SendUciInfo();
 		}
+
+		//LOGFILE << "Allowing helper threads to help";
+		for (int j = 0; j < (int)helper_thread_locks.size(); j++) {
+			helper_thread_locks[j]->unlock();
+		}
+		
+		//LOGFILE << "Working myself.";
+
+		for (int j = 0; j < (int)helper_thread_locks.size(); j++) {
+			helper_thread_locks[j]->lock();
+		}
+		//LOGFILE << "Disallowed helper threads to help";
   }
 
 	threads_list_mutex_.lock();
@@ -1083,9 +1294,33 @@ void Search_revamp::ThreadLoop(int thread_id) {
 	n_thread_active_--;
 	threads_list_mutex_.unlock();
 
+	helper_threads_stop = true;
+  while (!helper_threads.empty()) {
+		helper_thread_locks.back()->unlock();
+		helper_threads.back().join();
+		delete helper_thread_locks.back();
+		helper_thread_locks.pop_back();
+		helper_threads.pop_back();
+  }
+
 	//LOGFILE << "Unlock " << thread_id;
 	busy_mutex_.unlock();
 }
+
+void Search_revamp::HelperThreadLoop(int helper_thread_id, std::mutex* lock, bool *stop) {
+	while (true) {
+		lock->lock();
+		if (*stop) break;
+		LOGFILE << "Helper thread helping: " << helper_thread_id;
+		lock->unlock();
+		std::this_thread::yield();
+	}
+	LOGFILE << "Helper thread end: " << helper_thread_id;
+	lock->unlock();
+}
+
+
+
 
 void Search_revamp::AddNodeToComputation(NetworkComputation *computation) {
   // auto hash = history_.HashLast(params_.GetCacheHistoryLength() + 1);
