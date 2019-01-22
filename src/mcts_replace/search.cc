@@ -909,6 +909,13 @@ void Search_revamp::ThreadLoop(int thread_id) {
       continue;
     }
 
+    if(minibatch.size() == 0){
+      LOGFILE << "Couldn't find any nodes to evaluate";
+      break;
+    }
+       
+	
+
     //LOGFILE << "n: " << root_node_->GetN()
     //        << ", n_extendable: " << root_node_->GetNExtendable()
     //        << ", queue size: " << node_prio_queue_.size()
@@ -954,7 +961,7 @@ void Search_revamp::ThreadLoop(int thread_id) {
     duration_create_ += (stop_comp_time - start_comp_time).count();
 
 
-    //LOGFILE << "Computing batch of size " << minibatch.size();
+    if(DEBUG) LOGFILE << "Computing batch of size " << minibatch.size();
 
 
     //LOGFILE << "Unlock " << thread_id;
@@ -1033,37 +1040,39 @@ void Search_revamp::ThreadLoop(int thread_id) {
   if (nt == 1) {  // this is the last thread
     int64_t elapsed_time = GetTimeSinceStart();
     //LOGFILE << "Elapsed time when thread for node " << root_node_ << " which has size " << root_node_->GetN() << " nodes did " << i << " computations: " << elapsed_time << "ms";
-    if(DEBUG){
-      LOGFILE << "Elapsed time for " << root_node_->GetN() << " nodes: " << elapsed_time << "ms";
-      LOGFILE << "root Q: " << root_node_->GetQ();
-      LOGFILE << "move   P                 n   norm n      h   Q          w";
-      for (int i = 0; i < root_node_->GetNumChildren(); i++) {
-	LOGFILE << std::fixed << std::setfill(' ') 
-		<< (root_node_->GetEdges())[i].GetMove().as_string() << " "
-		<< std::setw(10) << (root_node_->GetEdges())[i].GetP() << " "
-		<< std::setw(10) << (root_node_->GetEdges())[i].GetChild()->GetN() << " "
-		<< std::setw(10) << (float)(root_node_->GetEdges())[i].GetChild()->GetN() / (float)(root_node_->GetN() - 1) << " "
-		<< std::setw(4) << (root_node_->GetEdges())[i].GetChild()->ComputeHeight() << " "
-		<< std::setw(10) << (float)(root_node_->GetEdges())[i].GetChild()->GetQ() << " "
-		<< std::setw(10) << root_node_->GetEdges()[i].GetChild()->GetW();
-      }
 
-      LOGFILE << "search: " << duration_search_ / count_iterations_
-	      << ", create: " << duration_create_ / count_iterations_
-	      << ", compute: " << duration_compute_ / count_iterations_
-	      << ", retrieve: " << duration_retrieve_ / count_iterations_
-	      << ", propagate: " << duration_propagate_ / count_iterations_;
+    // if(DEBUG){
+    //   LOGFILE << "Elapsed time for " << root_node_->GetN() << " nodes: " << elapsed_time << "ms";
+    //   LOGFILE << "root Q: " << root_node_->GetQ();
+    //   LOGFILE << "move   P                 n   norm n      h   Q          w";
+    //   for (int i = 0; i < root_node_->GetNumChildren(); i++) {
+    // 	LOGFILE << std::fixed << std::setfill(' ') 
+    // 		<< (root_node_->GetEdges())[i].GetMove().as_string() << " "
+    // 		<< std::setw(10) << (root_node_->GetEdges())[i].GetP() << " "
+    // 		<< std::setw(10) << (root_node_->GetEdges())[i].GetChild()->GetN() << " "
+    // 		<< std::setw(10) << (float)(root_node_->GetEdges())[i].GetChild()->GetN() / (float)(root_node_->GetN() - 1) << " "
+    // 		<< std::setw(4) << (root_node_->GetEdges())[i].GetChild()->ComputeHeight() << " "
+    // 		<< std::setw(10) << (float)(root_node_->GetEdges())[i].GetChild()->GetQ() << " "
+    // 		<< std::setw(10) << root_node_->GetEdges()[i].GetChild()->GetW();
+    //   }
 
-      int64_t dur_sum = (duration_search_ + duration_create_ + duration_compute_ + duration_retrieve_ + duration_propagate_) / 1000;
+    //   LOGFILE << "search: " << duration_search_ / count_iterations_
+    // 	      << ", create: " << duration_create_ / count_iterations_
+    // 	      << ", compute: " << duration_compute_ / count_iterations_
+    // 	      << ", retrieve: " << duration_retrieve_ / count_iterations_
+    // 	      << ", propagate: " << duration_propagate_ / count_iterations_;
 
-      LOGFILE << "search: " << duration_search_ / dur_sum
-	      << ", create: " << duration_create_ / dur_sum
-	      << ", compute: " << duration_compute_ / dur_sum
-	      << ", retrieve: " << duration_retrieve_ / dur_sum
-	      << ", propagate: " << duration_propagate_ / dur_sum;
-    }
+    //   int64_t dur_sum = (duration_search_ + duration_create_ + duration_compute_ + duration_retrieve_ + duration_propagate_) / 1000;
+
+    //   LOGFILE << "search: " << duration_search_ / dur_sum
+    // 	      << ", create: " << duration_create_ / dur_sum
+    // 	      << ", compute: " << duration_compute_ / dur_sum
+    // 	      << ", retrieve: " << duration_retrieve_ / dur_sum
+    // 	      << ", propagate: " << duration_propagate_ / dur_sum;
+    // }
 
 
+    LOGFILE << "1";
     int bestidx = indexOfHighestQEdge(root_node_);
     // Let's try an mimic MCTS
     // int bestidx = indexOfMostVisitedEdge(root_node_);  
@@ -1084,7 +1093,9 @@ void Search_revamp::ThreadLoop(int thread_id) {
 	best_move_callback_({best_move});
       }
     }
+    LOGFILE << "2";
   }
+  LOGFILE << "3";
 
   threads_list_mutex_.lock();
   n_thread_active_--;
