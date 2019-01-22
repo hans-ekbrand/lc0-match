@@ -909,13 +909,6 @@ void Search_revamp::ThreadLoop(int thread_id) {
       continue;
     }
 
-    if(minibatch.size() == 0){
-      LOGFILE << "Couldn't find any nodes to evaluate";
-      break;
-    }
-       
-	
-
     //LOGFILE << "n: " << root_node_->GetN()
     //        << ", n_extendable: " << root_node_->GetNExtendable()
     //        << ", queue size: " << node_prio_queue_.size()
@@ -956,6 +949,12 @@ void Search_revamp::ThreadLoop(int thread_id) {
       cum_depth_ += nappends;
     }
     node_prio_queue_.clear();
+
+    if(minibatch.size() == 0){
+      LOGFILE << "Couldn't find any nodes to evaluate";
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));      
+      continue;
+    }
 
     stop_comp_time = std::chrono::steady_clock::now();
     duration_create_ += (stop_comp_time - start_comp_time).count();
