@@ -709,7 +709,11 @@ void Search_revamp::ThreadLoop(int thread_id) {
   auto cmp = [](PropagateQueueElement left, PropagateQueueElement right) { return left.depth < right.depth;};
   std::priority_queue<PropagateQueueElement, std::vector<PropagateQueueElement>, decltype(cmp)> propagate_queue(cmp);
 
-  while (root_node_->GetN() + (n_thread_active_ - 1) * params_.GetMiniBatchSize() < limits_.visits && root_node_->GetNExtendable() > 0) {
+  int unsuccessful_trials_to_find_nodes_to_evaluate = 0;
+
+  while (root_node_->GetN() + (n_thread_active_ - 1) * params_.GetMiniBatchSize() < limits_.visits &&
+	 root_node_->GetNExtendable() > 0 &&
+	 unsuccessful_trials_to_find_nodes_to_evaluate <= 10) {
 
     auto start_comp_time = std::chrono::steady_clock::now();
 
@@ -772,6 +776,7 @@ void Search_revamp::ThreadLoop(int thread_id) {
 
     if(minibatch.size() == 0){
       LOGFILE << "Couldn't find any nodes to evaluate";
+      unsuccessful_trials_to_find_nodes_to_evaluate++;
       std::this_thread::sleep_for(std::chrono::milliseconds(10));      
       continue;
     }
