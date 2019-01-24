@@ -130,6 +130,8 @@ class Node_revamp {
   bool IsTerminal() const { return is_terminal_; }
   uint16_t GetNumEdges() const { return edges_.size(); }
   uint16_t GetNumChildren() const { return noofchildren_; }
+  int16_t GetBestIdx() const { return best_idx_; }
+  void SetBestIdx(int16_t idx) { best_idx_ = idx; }
   Edge_revamp* GetEdges() { return edges_.get(); }
   uint16_t GetIndex() const { return index_; }
 
@@ -206,6 +208,7 @@ class Node_revamp {
   uint16_t depth_;
   
   uint16_t noofchildren_ = 10000;  // indicates that node has not retrieved nn result
+  int16_t best_idx_ = -1;  // index to child where unexpanded edge with highest global weight is
 
   // 1 byte fields.
   // Whether or not this node end game (with a winning of either sides or draw).

@@ -30,6 +30,7 @@
 #include <functional>
 #include <thread>
 #include <mutex>
+#include <queue>
 #include "chess/callbacks.h"
 #include "chess/uciloop.h"
 #include "mcts/params.h"
@@ -107,6 +108,9 @@ private:
 	int n_thread_active_ = 0;
 	std::vector<std::thread> threads_;
 
+	int helper_threads_mode_ = 0;
+
+
 	Node_revamp* root_node_;
 
 	// Fixed positions which happened before the search.
@@ -128,26 +132,23 @@ private:
 
 
 
-	void AddNodeToComputation(NetworkComputation *computation);
-	void retrieveNNResult(NetworkComputation *computation, Node_revamp* node, int batchidx);
+	void AddNodeToComputation(PositionHistory *history);
+	void retrieveNNResult(Node_revamp* node, int batchidx);
 	void recalcPropagatedQ(Node_revamp* node);
 	void pickNodesToExtend(Node_revamp* current_node, float global_weight);
 	void pushNewNodeCandidate(float w, Node_revamp* node, int idx);
-	int appendHistoryFromTo(Node_revamp* from, Node_revamp* to);
+	int appendHistoryFromTo(std::vector<Move> *movestack, PositionHistory *history, Node_revamp* from, Node_revamp* to);
 	float computeChildWeights(Node_revamp* node);
 	std::vector<float> q_to_prob(std::vector<float> Q, int depth, float multiplier, float max_focus);
 	void SendUciInfo();
 	void ThreadLoop(int thread_id);
-	void HelperThreadLoop(int helper_thread_id, std::mutex* lock, bool *stop);
+	void HelperThreadLoop(int helper_thread_id, std::mutex* lock);
 
 	std::mutex busy_mutex_;
 
 	std::vector<float> pvals_;
 	//std::vector<Node_revamp *> nodestack_;
-	std::vector<Move> movestack_;
 	std::vector<float> global_weight_stack_;
-	int full_tree_depth = 0;
-	uint64_t cum_depth_ = 0;
 
 	struct NewNodeCandidate {
 		float w;
@@ -156,18 +157,32 @@ private:
 	};
 
 	std::vector<struct NewNodeCandidate> node_prio_queue_;
+  int node_prio_queue_nextelt_ = 0;
+  std::mutex node_prio_queue_lock_;
 
+	std::unique_ptr<NetworkComputation> computation_;
+	std::mutex computation_lock_;
 
-	float q_concentration_;
-	float p_concentration_;
-
-	PositionHistory history_;
-
+	std::vector<Node_revamp *> minibatch_;
+	std::mutex minibatch_lock_;
 
 	struct PropagateQueueElement {
 		int depth;
 		Node_revamp* node;
 	};
+
+	std::vector<PropagateQueueElement> propagate_list_;
+	std::mutex propagate_list_lock_;
+
+	int full_tree_depth_ = 0;
+	uint64_t cum_depth_ = 0;
+	std::mutex counters_lock_;
+
+	//std::mutex qq_lock_;
+
+	float q_concentration_;
+	float p_concentration_;
+
 
 	int64_t last_uci_time_ = 0;
 
@@ -176,6 +191,9 @@ private:
 	int64_t duration_compute_ = 0;
 	int64_t duration_retrieve_ = 0;
 	int64_t duration_propagate_ = 0;
+
+	int64_t duration_node_prio_queue_lock_ = 0;
+
 	int count_iterations_ = 0;
 
 };
