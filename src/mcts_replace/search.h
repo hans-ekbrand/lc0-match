@@ -143,6 +143,7 @@ private:
 	void SendUciInfo();
 	void ThreadLoop(int thread_id);
 	void HelperThreadLoop(int helper_thread_id, std::mutex* lock);
+	int retrieve_n_propagate();
 
 	std::mutex busy_mutex_;
 
@@ -173,6 +174,9 @@ private:
 
 	std::vector<PropagateQueueElement> propagate_list_;
 	std::mutex propagate_list_lock_;
+
+	std::unordered_map<Node_revamp*, uint16_t> branching_;
+	std::mutex branching_lock_;
 
 	int full_tree_depth_ = 0;
 	uint64_t cum_depth_ = 0;
