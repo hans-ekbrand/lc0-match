@@ -102,11 +102,6 @@ int64_t Search_revamp::GetTimeSinceStart() const {
 
 
 void Search_revamp::StartThreads(size_t how_many) {
-	if (branching_[root_node_] != 0) {
-		std::cerr << "new map elements are not set to 0";
-		abort();
-	}
-	branching_.erase(root_node_);
 
 	threads_list_mutex_.lock();
   for (int i = 0; i < (int)how_many; i++) {
@@ -578,7 +573,7 @@ float Search_revamp::computeChildWeights(Node_revamp* node) {
 
 
 
-
+/*
 // if queue is full, w must be larger than smallest weight
 void Search_revamp::pushNewNodeCandidate(float w, Node_revamp* node, int idx) {
   if (node_prio_queue_.size() < (unsigned int)params_.GetMiniBatchSize()) {
@@ -638,8 +633,56 @@ void Search_revamp::pushNewNodeCandidate(float w, Node_revamp* node, int idx) {
 //    }
 //  }
 }
+*/
 
-void Search_revamp::pickNodesToExtend(Node_revamp* _node, float _global_weight) {
+void Search_revamp::buildJunctionRTree() {
+	//LOGFILE << "new_nodes.size(): " << new_nodes_.size();
+	//LOGFILE << "new node parent: " << new_nodes_[0].parent << ", root: " << root_node_ << ", nf: " << (int)new_nodes_[0].parent->GetBranchingInFlight();
+
+	for (int i = new_nodes_.size() - 1; i >= 0; i--) {
+		Node_revamp* node = new_nodes_[i].parent;
+		uint16_t* parent_ptr = &new_nodes_[i].junction;
+		while (true) {
+			while (node->GetBranchingInFlight() == 1) {
+				if (node == root_node_) {
+					*parent_ptr = 0xFFFF;
+					break;
+				}
+				node = node->GetParent();
+			}
+			if (*parent_ptr == 0xFFFF) break;
+			uint16_t &junc_idx = junction_of_node_[node];
+			if (junc_idx == 0) {
+				uint16_t new_junc_idx = junctions_.size();
+				*parent_ptr = new_junc_idx;
+				junctions_.push_back({node, 0, node->GetBranchingInFlight()});
+				junc_idx = new_junc_idx + 1;
+				parent_ptr = &junctions_[new_junc_idx].parent;
+				if (node == root_node_) {
+					*parent_ptr = 0xFFFF;
+					break;
+				}
+				node = node->GetParent();
+			} else {
+				*parent_ptr = junc_idx - 1;
+				break;
+			}
+		}
+	}
+
+	for (int i = new_nodes_.size() - 1; i >= 0; i--) {
+		Node_revamp* node = new_nodes_[i].parent;
+		while (node->GetBranchingInFlight() > 0) {
+			node->SetBranchingInFlight(0);
+			if (node == root_node_) break;
+			node = node->GetParent();
+		}
+	}
+
+	//LOGFILE << "junctions_.size(): " << junctions_.size() << ", juncidx: " << new_nodes_[0].junction;
+}
+
+void Search_revamp::pickNodesToExtend() {
 
   
 	Node_revamp* node;
@@ -658,9 +701,9 @@ void Search_revamp::pickNodesToExtend(Node_revamp* _node, float _global_weight) 
 				if (nidx < node->GetNumEdges()) {
 					if (node->GetEdges()[nidx].GetChild() == nullptr) {  // edge not busy
 						node->GetEdges()[nidx].CreateChild(node, nidx, 0);  // depth incorrect, but is it used?
-						node_prio_queue_lock_.lock();
-						node_prio_queue_.push_back({0.0, node, node->GetNumChildren()});  // the w field is don't care
-						node_prio_queue_lock_.unlock();
+						new_nodes_list_lock_.lock();
+						new_nodes_.push_back({node, nidx, 0});
+						new_nodes_list_lock_.unlock();
 						break;
 					} else {
 						LOGFILE << "picknodestoextend exhausted, nodes visited: " << nodes_visited;
@@ -696,11 +739,11 @@ void Search_revamp::pickNodesToExtend(Node_revamp* _node, float _global_weight) 
 			node->SetBestIdx(max_idx);
 
 			if (update_branching) {
-				int b = branching_[node];
-				if (b == 0) {
-					branching_[node] = 1;
+				uint8_t n = node->GetBranchingInFlight();
+				if (n == 0) {
+					node->SetBranchingInFlight(1);
 				} else {
-					branching_[node] = b + 1;
+					node->SetBranchingInFlight(n + 1);
 					update_branching = false;
 				}
 			}
@@ -1126,9 +1169,12 @@ void Search_revamp::ThreadLoop(int thread_id) {
     );
   }
 
+	for (int n = params_.GetMiniBatchSize(); n > 0; n--) {
+		junction_locks_.push_back(new std::mutex());
+	}
 
-  auto board = history.Last().GetBoard();
-  if (DEBUG) LOGFILE << "Inital board:\n" << board.DebugString();
+//  auto board = history.Last().GetBoard();
+//  if (DEBUG) LOGFILE << "Inital board:\n" << board.DebugString();
 
 //  const std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now();
 
@@ -1140,7 +1186,7 @@ void Search_revamp::ThreadLoop(int thread_id) {
     root_node_->ExtendNode(&history, MULTIPLE_NEW_SIBLINGS, root_node_);
     if (root_node_->IsTerminal()) {
       LOGFILE << "Root " << root_node_ << " is terminal, nothing to do\n";
-      return;
+      abort();
     }
     computation_ = network_->NewComputation();
     AddNodeToComputation(&history);
@@ -1153,15 +1199,15 @@ void Search_revamp::ThreadLoop(int thread_id) {
     //i++;
   }
 
-	auto cmp = [](PropagateQueueElement left, PropagateQueueElement right) { return left.depth < right.depth;};
-	std::priority_queue<PropagateQueueElement, std::vector<PropagateQueueElement>, decltype(cmp)> propagate_queue(cmp);
+//	auto cmp = [](PropagateQueueElement left, PropagateQueueElement right) { return left.depth < right.depth;};
+//	std::priority_queue<PropagateQueueElement, std::vector<PropagateQueueElement>, decltype(cmp)> propagate_queue(cmp);
 
 
 	while (root_node_->GetN() + (n_thread_active_ - 1) * params_.GetMiniBatchSize() < limits_.visits && root_node_->GetNExtendable() > 0) {
 
-		helper_threads_mode_ = 1;
 		computation_ = network_->NewComputation();
 
+		helper_threads_mode_ = 1;
 		//LOGFILE << "Allowing helper threads to help";
 		for (int j = 0; j < (int)helper_thread_locks.size(); j++) {
 			helper_thread_locks[j]->unlock();
@@ -1171,139 +1217,15 @@ void Search_revamp::ThreadLoop(int thread_id) {
 		//auto start_comp_time2 = start_comp_time;
 
 		//LOGFILE << "Working myself.";
-    pickNodesToExtend(root_node_, 1.0);
+    pickNodesToExtend();
 
-		auto stop_comp_time = std::chrono::steady_clock::now();
-		duration_search_ += (stop_comp_time - start_comp_time).count();
+		helper_threads_mode_ = 2;  // from now no new nodes will be added
 
-		helper_threads_mode_ = 2;
-
-
-    LOGFILE << "n: " << root_node_->GetN()
-            << ", n_extendable: " << root_node_->GetNExtendable()
-            << ", queue size: " << node_prio_queue_.size()
-            << ", lowest w: " << node_prio_queue_[0].w
-            //<< ", node stack size: " << nodestack_.size()
-            << ", max_unexpanded_w: " << root_node_->GetMaxW();
-
-
-		start_comp_time = std::chrono::steady_clock::now();
-
-		int count = 0;
-		while (true) {
-			//qq_lock_.lock();
-
-			node_prio_queue_lock_.lock();
-
-			int i = node_prio_queue_nextelt_;
-			if (i == (int)node_prio_queue_.size()) {
-				node_prio_queue_lock_.unlock();
-				//qq_lock_.unlock();
-
-				break;
+		if (new_nodes_.size() == 0) {  // no new nodes found, but there may exist unextended edges unavailable due to business
+			for (int j = 0; j < (int)helper_thread_locks.size(); j++) {
+				helper_thread_locks[j]->lock();
 			}
 
-			node_prio_queue_nextelt_++;
-			Node_revamp* node = node_prio_queue_[i].node;
-			int idx = node_prio_queue_[i].idx;
-			node_prio_queue_lock_.unlock();
-
-			count++;
-
-			int nappends = appendHistoryFromTo(&movestack, &history, root_node_, node);
-//			node->GetEdges()[idx].CreateChild(node, idx, nappends + 1);
-			Node_revamp* newchild = node->GetEdges()[idx].GetChild();
-
-			history.Append(node->GetEdges()[idx].GetMove());
-
-			newchild->ExtendNode(&history, MULTIPLE_NEW_SIBLINGS, root_node_);
-
-			if (!newchild->IsTerminal()) {
-
-				//AddNodeToComputation(&history);
-				auto planes = EncodePositionForNN(history, 8, params_.GetHistoryFill());
-
-				//start_comp_time2 = std::chrono::steady_clock::now();
-
-				computation_lock_.lock();
-
-				//stop_comp_time = std::chrono::steady_clock::now();
-				//duration_node_prio_queue_lock_ += (stop_comp_time - start_comp_time2).count();
-
-				computation_->AddInput(std::move(planes));
-
-
-				//minibatch_lock_.lock();
-				minibatch_.push_back(newchild);
-				//minibatch_lock_.unlock();
-				computation_lock_.unlock();
-
-			} else {  // is terminal
-				newchild->Realize();
-			}
-
-			for (int j = 0; j <= nappends; j++) {
-				history.Pop();
-			}
-
-			propagate_list_lock_.lock();
-			propagate_list_.push_back({nappends, node});
-			propagate_list_lock_.unlock();
-			//qq_lock_.unlock();
-			// not checking and setting N = 0 (see code that propagates below) here means duplicates can exist in the queue if MULTIPLE_NEW_SIBLINGS = true
-			// but checking for duplicates that way does not work with multiple threads because N values are not restored until after the nn-computation (and meanwhile other threads can run)
-
-			counters_lock_.lock();
-			if (nappends > full_tree_depth_) full_tree_depth_ = nappends;
-			cum_depth_ += nappends;
-			counters_lock_.unlock();
-
-		}
-
-
-		LOGFILE << "main thread did " << count;
-
-
-		//~ for (unsigned int i = 0; i < node_prio_queue_.size(); i++) {
-			//~ Node_revamp* node = node_prio_queue_[i].node;
-			//~ int idx = node_prio_queue_[i].idx;
-
-			//~ int nappends = appendHistoryFromTo(root_node_, node);
-//~ //			node->GetEdges()[idx].CreateChild(node, idx, nappends + 1);
-			//~ Node_revamp* newchild = node->GetEdges()[idx].GetChild();
-
-			//~ history_.Append(node->GetEdges()[idx].GetMove());
-
-			//~ newchild->ExtendNode(&history_, MULTIPLE_NEW_SIBLINGS, root_node_);
-			//~ if (!newchild->IsTerminal()) {
-				//~ AddNodeToComputation(computation.get());
-				//~ minibatch.push_back(newchild);
-			//~ } else {  // is terminal
-				//~ newchild->Realize();
-			//~ }
-
-			//~ for (int j = 0; j <= nappends; j++) {
-				//~ history_.Pop();
-			//~ }
-
-			//~ propagate_queue.push({nappends, node});
-			//~ // not checking and setting N = 0 (see code that propagates below) here means duplicates can exist in the queue if MULTIPLE_NEW_SIBLINGS = true
-			//~ // but checking for duplicates that way does not work with multiple threads because N values are not restored until after the nn-computation (and meanwhile other threads can run)
-
-			//~ if (nappends > full_tree_depth) full_tree_depth = nappends;
-			//~ cum_depth_ += nappends;
-		//~ }
-
-		for (int j = 0; j < (int)helper_thread_locks.size(); j++) {
-			helper_thread_locks[j]->lock();
-		}
-		//LOGFILE << "Disallowed helper threads to help";
-
-		stop_comp_time = std::chrono::steady_clock::now();
-		duration_create_ += (stop_comp_time - start_comp_time).count();
-
-
-		if (node_prio_queue_.size() == 0) {  // no new nodes found, but there may exist unextended edges unavailable due to business
 			busy_mutex_.unlock();
 
 			std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -1313,17 +1235,64 @@ void Search_revamp::ThreadLoop(int thread_id) {
 			continue;
 		}
 
+		buildJunctionRTree();
+
+		junction_of_node_.clear();
+
+		auto stop_comp_time = std::chrono::steady_clock::now();
+		duration_search_ += (stop_comp_time - start_comp_time).count();
+
+    LOGFILE << "n: " << root_node_->GetN()
+            << ", n_extendable: " << root_node_->GetNExtendable()
+            << ", new_nodes size: " << new_nodes_.size();
+            //<< ", highest w: " << new_nodes_[new_nodes_.size() - 1].w
+            //<< ", node stack size: " << nodestack_.size()
+            //<< ", max_unexpanded_w: " << new_nodes_[0];
+
+
+		start_comp_time = std::chrono::steady_clock::now();
+
+		int count = extendTree(&movestack, &history);
+
+		LOGFILE << "main thread did " << count;
+
+		for (int j = 0; j < (int)helper_thread_locks.size(); j++) {
+			helper_thread_locks[j]->lock();
+		}
+
+		if (non_computation_new_nodes_.size() > 0) {
+			std::cerr << "terminal node!!";
+		}
+		for (int i = (int)non_computation_new_nodes_.size() - 1; i >= 0; i--) {
+			uint32_t juncidx = new_nodes_[non_computation_new_nodes_[i].new_nodes_idx].junction;
+			while (juncidx != 0xFFFF) {
+				junctions_[juncidx].children_count--;
+				if (junctions_[juncidx].children_count > 0) break;
+				juncidx = junctions_[juncidx].parent;
+			}
+			Node_revamp* node = non_computation_new_nodes_[i].node;
+			while (true) {
+				node = node->GetParent();
+				recalcPropagatedQ(node);
+				if (node == root_node_) break;
+			}
+		}
+
+		non_computation_new_nodes_.clear();
+
+		stop_comp_time = std::chrono::steady_clock::now();
+		duration_create_ += (stop_comp_time - start_comp_time).count();
+
+
 		//~ if (minibatch_.size() < propagate_list_.size()) {
 			//~ std::cerr << "minibatch_.size() < propagate_list_.size(): " << minibatch_.size() << " < " << propagate_list_.size() << "\n";
 			//~ abort();
 		//~ }
 
-		node_prio_queue_.clear();
-		node_prio_queue_nextelt_ = 0;
+		new_nodes_list_shared_idx_ = 0;
 
 
 		LOGFILE << "Computing batch of size " << minibatch_.size();
-
 
 		//LOGFILE << "Unlock " << thread_id;
 		busy_mutex_.unlock();
@@ -1342,13 +1311,13 @@ void Search_revamp::ThreadLoop(int thread_id) {
 
 		//i += minibatch.size();
 
-		LOGFILE << "Propagate count: " << branching_.size();
+		LOGFILE << "Junction count: " << junctions_.size();
 
 		start_comp_time = std::chrono::steady_clock::now();
 
 		for (int j = 0; j < (int)minibatch_.size(); j++) {
-			minibatch_[j]->Realize();
-			retrieveNNResult(minibatch_[j], j);
+			minibatch_[j].node->Realize();
+			retrieveNNResult(minibatch_[j].node, j);
 		}
 
 		stop_comp_time = std::chrono::steady_clock::now();
@@ -1361,7 +1330,11 @@ void Search_revamp::ThreadLoop(int thread_id) {
 
 		start_comp_time = std::chrono::steady_clock::now();
 
-		int pcount = retrieve_n_propagate();
+		int pcount = propagate();
+
+		for (int j = 0; j < (int)helper_thread_locks.size(); j++) {
+			helper_thread_locks[j]->lock();
+		}
 
 		stop_comp_time = std::chrono::steady_clock::now();
 		duration_propagate_ += (stop_comp_time - start_comp_time).count();
@@ -1369,17 +1342,14 @@ void Search_revamp::ThreadLoop(int thread_id) {
 
 		LOGFILE << "main thread did " << pcount;
 
-
-		for (int j = 0; j < (int)helper_thread_locks.size(); j++) {
-			helper_thread_locks[j]->lock();
-		}
-
 		minibatch_.clear();
-		node_prio_queue_nextelt_ = 0;
+		minibatch_list_shared_idx_ = 0;
 
-		branching_.clear();
+		junctions_.clear();
 
-		propagate_list_.clear();
+		new_nodes_.clear();
+
+//		propagate_list_.clear();
 
 		//~ for (int j = 0; j < (int)minibatch_.size(); j++) {
 			//~ minibatch_[j]->Realize();
@@ -1497,6 +1467,11 @@ void Search_revamp::ThreadLoop(int thread_id) {
 	n_thread_active_--;
 	threads_list_mutex_.unlock();
 
+	while (!junction_locks_.empty()) {
+		delete junction_locks_.back();
+		junction_locks_.pop_back();
+	}
+
 	helper_threads_mode_ = -1;
   while (!helper_threads.empty()) {
 		helper_thread_locks.back()->unlock();
@@ -1510,72 +1485,49 @@ void Search_revamp::ThreadLoop(int thread_id) {
 	busy_mutex_.unlock();
 }
 
-int Search_revamp::retrieve_n_propagate() {
+int Search_revamp::propagate() {
 	int count = 0;
 
-	auto start_comp_time = std::chrono::steady_clock::now();
-	auto stop_comp_time = std::chrono::steady_clock::now();
+	//auto start_comp_time = std::chrono::steady_clock::now();
+	//auto stop_comp_time = std::chrono::steady_clock::now();
 
 	while (true) {
-		node_prio_queue_lock_.lock();
+		minibatch_lock_.lock();
 
-		int j = node_prio_queue_nextelt_;
-		if (j == (int)propagate_list_.size()) {
-			node_prio_queue_lock_.unlock();
+		int j = minibatch_list_shared_idx_;
+		if (j == (int)minibatch_.size()) {
+			minibatch_lock_.unlock();
 			break;
 		}
-		node_prio_queue_nextelt_++;
-		node_prio_queue_lock_.unlock();
+		minibatch_list_shared_idx_++;
+		minibatch_lock_.unlock();
 
-		Node_revamp* node = propagate_list_[j].node;
-		Node_revamp* pause_node;
+		Node_revamp* node = minibatch_[j].node->GetParent();
+		uint16_t juncidx = new_nodes_[minibatch_[j].new_nodes_idx].junction;
 
-		//~ node->Realize();
-		//~ retrieveNNResult(node, j);
+		//LOGFILE << "node: " << node << ", juncidx: " << juncidx;
 
-//		node = node->GetParent();
-
-		while (true) {
-//			start_comp_time = std::chrono::steady_clock::now();
-			branching_lock_.lock();
-//			stop_comp_time = std::chrono::steady_clock::now();
-//			duration_node_prio_queue_lock_ += (stop_comp_time - start_comp_time).count();
-
-			int b = --branching_[node];
-			if (b > 0) {
-				branching_lock_.unlock();
-				break;
-			}
-
-			pause_node = node;
-
-			while (true) {
-				if (pause_node == root_node_) {
-					pause_node = nullptr;
-					break;
-				}
-				pause_node = pause_node->GetParent();
-
-				uint16_t &br = branching_[pause_node];
-				if (br > 1) {
-					break;
-				}
-				br--;
-			}
-
-			branching_lock_.unlock();
-
-			while (node != pause_node) {
+		while (juncidx != 0xFFFF) {
+			while (node != junctions_[juncidx].node) {
 				recalcPropagatedQ(node);
 				count++;
-				if (node == root_node_) {
-					node = nullptr;
-					break;
-				}
 				node = node->GetParent();
 			}
-			if (node == nullptr) break;
+			junction_locks_[juncidx]->lock();
+			int children_count = --junctions_[juncidx].children_count;
+			junction_locks_[juncidx]->unlock();
+			if (children_count > 0) break;
+			juncidx = junctions_[juncidx].parent;
 		}
+		if (juncidx == 0xFFFF) {
+			while (true) {
+				recalcPropagatedQ(node);
+				count++;
+				if (node == root_node_) break;
+				node = node->GetParent();
+			}
+		}
+	}
 
 		//~ while (true) {
 			//~ node = node->GetParent();
@@ -1596,6 +1548,72 @@ int Search_revamp::retrieve_n_propagate() {
 			//~ count++;
 			//~ if (node == root_node_) break;
 		//~ }
+	//}
+	return count;
+}
+
+int Search_revamp::extendTree(std::vector<Move> *movestack, PositionHistory *history) {
+	int count = 0;
+	while (true) {
+		new_nodes_list_lock_.lock();
+
+		int i = new_nodes_list_shared_idx_;
+		if (i == (int)new_nodes_.size()) {
+			new_nodes_list_lock_.unlock();
+			if (helper_threads_mode_ == 1) {
+				std::this_thread::yield();
+				std::this_thread::sleep_for(std::chrono::microseconds(20));
+				continue;
+			} else {
+				break;
+			}
+		}
+		new_nodes_list_shared_idx_++;
+		new_nodes_list_lock_.unlock();
+
+		Node_revamp* node = new_nodes_[i].parent;
+		int idx = new_nodes_[i].idx;
+
+		count++;
+
+		int nappends = appendHistoryFromTo(movestack, history, root_node_, node);
+		Node_revamp* newchild = node->GetEdges()[idx].GetChild();
+
+		history->Append(node->GetEdges()[idx].GetMove());
+
+		newchild->ExtendNode(history, MULTIPLE_NEW_SIBLINGS, root_node_);
+
+		if (!newchild->IsTerminal()) {
+
+			//AddNodeToComputation(&history);
+			auto planes = EncodePositionForNN(*history, 8, params_.GetHistoryFill());
+
+			computation_lock_.lock();
+			computation_->AddInput(std::move(planes));
+			minibatch_.push_back({newchild, (uint16_t)i});
+			//LOGFILE << "minibatch add: " << new_nodes_[i].junction;
+			computation_lock_.unlock();
+
+		} else {  // is terminal
+			newchild->Realize();
+
+			non_computation_lock_.lock();
+			non_computation_new_nodes_.push_back({newchild, (uint16_t)i});
+			non_computation_lock_.unlock();
+		}
+
+		for (int j = 0; j <= nappends; j++) {
+			history->Pop();
+		}
+
+		// not checking and setting N = 0 (see code that propagates below) here means duplicates can exist in the queue if MULTIPLE_NEW_SIBLINGS = true
+		// but checking for duplicates that way does not work with multiple threads because N values are not restored until after the nn-computation (and meanwhile other threads can run)
+
+		counters_lock_.lock();
+		if (nappends > full_tree_depth_) full_tree_depth_ = nappends;
+		cum_depth_ += nappends;
+		counters_lock_.unlock();
+
 	}
 	return count;
 }
@@ -1613,79 +1631,11 @@ void Search_revamp::HelperThreadLoop(int helper_thread_id, std::mutex* lock) {
 		lock->lock();
 
 		if (helper_threads_mode_ == 1 || helper_threads_mode_ == 2) {
-			int count = 0;
-
-			while (true) {
-				//qq_lock_.lock();
-
-//				start_comp_time = std::chrono::steady_clock::now();
-				node_prio_queue_lock_.lock();
-//				stop_comp_time = std::chrono::steady_clock::now();
-//				duration_node_prio_queue_lock_ += (stop_comp_time - start_comp_time).count();
-
-				int i = node_prio_queue_nextelt_;
-				if (i == (int)node_prio_queue_.size()) {
-					node_prio_queue_lock_.unlock();
-					//qq_lock_.unlock();
-					if (helper_threads_mode_ == 2) {
-						if (count > 0) LOGFILE << "helper thread " << helper_thread_id << " did " << count;
-						break;
-					} else {
-						std::this_thread::yield();
-						std::this_thread::sleep_for(std::chrono::microseconds(20));
-						continue;
-					}
-				}
-				node_prio_queue_nextelt_++;
-				Node_revamp* node = node_prio_queue_[i].node;
-				int idx = node_prio_queue_[i].idx;
-				node_prio_queue_lock_.unlock();
-
-				count++;
-
-				int nappends = appendHistoryFromTo(&movestack, &history, root_node_, node);
-	//			node->GetEdges()[idx].CreateChild(node, idx, nappends + 1);
-				Node_revamp* newchild = node->GetEdges()[idx].GetChild();
-
-				history.Append(node->GetEdges()[idx].GetMove());
-
-				newchild->ExtendNode(&history, MULTIPLE_NEW_SIBLINGS, root_node_);
-				if (!newchild->IsTerminal()) {
-
-					//AddNodeToComputation(&history);
-					auto planes = EncodePositionForNN(history, 8, params_.GetHistoryFill());
-
-					computation_lock_.lock();
-
-					computation_->AddInput(std::move(planes));
-
-					//minibatch_lock_.lock();
-					minibatch_.push_back(newchild);
-					//minibatch_lock_.unlock();
-					computation_lock_.unlock();
-				} else {  // is terminal
-					newchild->Realize();
-				}
-
-				for (int j = 0; j <= nappends; j++) {
-					history.Pop();
-				}
-
-				propagate_list_lock_.lock();
-				propagate_list_.push_back({nappends, node});
-				propagate_list_lock_.unlock();
-				// not checking and setting N = 0 (see code that propagates below) here means duplicates can exist in the queue if MULTIPLE_NEW_SIBLINGS = true
-				// but checking for duplicates that way does not work with multiple threads because N values are not restored until after the nn-computation (and meanwhile other threads can run)
-				//qq_lock_.unlock();
-
-				counters_lock_.lock();
-				if (nappends > full_tree_depth_) full_tree_depth_ = nappends;
-				cum_depth_ += nappends;
-				counters_lock_.unlock();
-			}
+			int count = extendTree(&movestack, &history);
+			if (count > 0) LOGFILE << "helper thread " << helper_thread_id << " did " << count;
 		} else {
 			if (helper_threads_mode_ == 3) {
-				int count = retrieve_n_propagate();
+				int count = propagate();
 				LOGFILE << "helper thread " << helper_thread_id << " did " << count;
 			} else
 				if (helper_threads_mode_ == -1) {

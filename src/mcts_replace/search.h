@@ -135,7 +135,7 @@ private:
 	void AddNodeToComputation(PositionHistory *history);
 	void retrieveNNResult(Node_revamp* node, int batchidx);
 	void recalcPropagatedQ(Node_revamp* node);
-	void pickNodesToExtend(Node_revamp* current_node, float global_weight);
+	void pickNodesToExtend();
 	void pushNewNodeCandidate(float w, Node_revamp* node, int idx);
 	int appendHistoryFromTo(std::vector<Move> *movestack, PositionHistory *history, Node_revamp* from, Node_revamp* to);
 	float computeChildWeights(Node_revamp* node);
@@ -143,7 +143,10 @@ private:
 	void SendUciInfo();
 	void ThreadLoop(int thread_id);
 	void HelperThreadLoop(int helper_thread_id, std::mutex* lock);
-	int retrieve_n_propagate();
+	int propagate();
+	int extendTree(std::vector<Move> *movestack, PositionHistory *history);
+	void buildJunctionRTree();
+
 
 	std::mutex busy_mutex_;
 
@@ -151,32 +154,52 @@ private:
 	//std::vector<Node_revamp *> nodestack_;
 	std::vector<float> global_weight_stack_;
 
-	struct NewNodeCandidate {
-		float w;
-		Node_revamp* node;
+	struct NewNode {
+		Node_revamp* parent;
 		int idx;
+		uint16_t junction;
 	};
 
-	std::vector<struct NewNodeCandidate> node_prio_queue_;
-  int node_prio_queue_nextelt_ = 0;
-  std::mutex node_prio_queue_lock_;
+	std::vector<struct NewNode> new_nodes_;
+	int new_nodes_list_shared_idx_ = 0;
+	std::mutex new_nodes_list_lock_;
 
 	std::unique_ptr<NetworkComputation> computation_;
 	std::mutex computation_lock_;
 
-	std::vector<Node_revamp *> minibatch_;
-	std::mutex minibatch_lock_;
-
-	struct PropagateQueueElement {
-		int depth;
-		Node_revamp* node;
+	struct Junction {
+		Node_revamp *node;
+		uint16_t parent;
+		uint8_t children_count;
 	};
 
-	std::vector<PropagateQueueElement> propagate_list_;
-	std::mutex propagate_list_lock_;
+	struct NewNode2 {
+		Node_revamp* node;
+		uint16_t new_nodes_idx;
+	};
 
-	std::unordered_map<Node_revamp*, uint16_t> branching_;
-	std::mutex branching_lock_;
+	std::vector<NewNode2> minibatch_;
+	int minibatch_list_shared_idx_;
+	std::mutex minibatch_lock_;
+
+	std::vector<Junction> junctions_;
+	std::vector<std::mutex *> junction_locks_;
+
+	std::unordered_map<Node_revamp*, uint16_t> junction_of_node_;
+
+	std::vector<NewNode2> non_computation_new_nodes_;
+	std::mutex non_computation_lock_;
+
+	//~ struct PropagateQueueElement {
+		//~ int depth;
+		//~ Node_revamp* node;
+	//~ };
+
+//	std::vector<Node_revamp*> propagate_list_;
+//	std::mutex propagate_list_lock_;
+
+//	std::unordered_map<Node_revamp*, uint16_t> branching_;
+//	std::mutex branching_lock_;
 
 	int full_tree_depth_ = 0;
 	uint64_t cum_depth_ = 0;
