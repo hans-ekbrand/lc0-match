@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2019 Hans Ekbrand, Fredrik Lindblad and The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -45,7 +45,7 @@ class Edge_revamp {
  public:
   // Returns move from the point of view of the player making it (if as_opponent
   // is false) or as opponent (if as_opponent is true).
-  Move GetMove(bool as_opponent = false) const;
+  Move GetMove(bool as_opponent) const;
 
   // Returns or sets value of Move policy prior returned from the neural net
   // (but can be changed by adding Dirichlet noise). Must be in [0,1].
@@ -53,7 +53,7 @@ class Edge_revamp {
   void SetP(float val);
 
   Node_revamp* GetChild() { return child_.get(); }
-  void CreateChild(Node_revamp* parent, uint16_t index, uint16_t depth);
+  void CreateChild(Node_revamp* parent, uint16_t index);
 
   void ReleaseChild();
   void ReleaseChildIfIsNot(Node_revamp* node_to_save);
@@ -62,8 +62,6 @@ class Edge_revamp {
   std::string DebugString() const;
 
  private:
-  void SetMove(Move move) { move_ = move; }
-
   // Move corresponding to this node. From the point of view of a player,
   // i.e. black's e7e5 is stored as e2e4.
   // Root node contains move a1a1.
@@ -78,7 +76,10 @@ class Edge_revamp {
 
   friend class EdgeList_revamp;
   friend class Node_revamp;
+  friend class NodeTree_revamp;
+	friend class SearchWorker_revamp;
 };
+
 
 // Array of Edges.
 class EdgeList_revamp {
@@ -95,10 +96,11 @@ class EdgeList_revamp {
   uint16_t size_ = 0;
 };
 
+
 class Node_revamp {
  public:
   // Takes pointer to a parent node and own index in a parent.
- Node_revamp(Node_revamp* parent, uint16_t index, uint16_t depth) : parent_(parent), index_(index), depth_(depth) {}
+ Node_revamp(Node_revamp* parent, uint16_t index) : parent_(parent), index_(index) {}
 
   // Allocates a new edge and a new node. The node has to be no edges before
   // that.
@@ -111,9 +113,6 @@ class Node_revamp {
 
   // Gets parent node.
   Node_revamp* GetParent() const { return parent_; }
-
-  // Returns whether a node has children.
-  bool HasChildren() const { return edges_; }
 
   // Returns node eval, i.e. average subtree V for non-terminal node and -1/0/1
   // for terminal nodes.
@@ -130,6 +129,7 @@ class Node_revamp {
 
   // Returns whether the node is known to be draw/lose/win.
   bool IsTerminal() const { return is_terminal_; }
+
   uint16_t GetNumEdges() const { return edges_.size(); }
   uint16_t GetNumChildren() const { return noofchildren_; }
   int16_t GetBestIdx() const { return best_idx_; }
@@ -137,24 +137,13 @@ class Node_revamp {
   Edge_revamp* GetEdges() { return edges_.get(); }
   uint16_t GetIndex() const { return index_; }
 
-  uint16_t Depth() const { return depth_; }
-  
   uint32_t GetN() const { return n_; }
-//  void IncreaseN(uint32_t dn) { n_ += dn; }
   void SetN(uint32_t n) { n_ = n; }
   uint32_t GetNExtendable() const { return n_extendable_; }
-//  void ChangeNExtendable(uint32_t dn) { n_extendable_ += dn; }
   void SetNExtendable(uint32_t n) { n_extendable_ = n; }
 
   // Makes the node terminal and sets it's score.
   void MakeTerminal(GameResult result);
-
-  // Updates max depth, if new depth is larger.
-  void UpdateMaxDepth(int depth);
-
-  // Calculates the full depth if new depth is larger, updates it, returns
-  // in depth parameter, and returns true if it was indeed updated.
-  bool UpdateFullDepth(uint16_t* depth);
 
   // Deletes all children.
   void ReleaseChildren();
@@ -162,64 +151,58 @@ class Node_revamp {
   // Deletes all children except one.
   void ReleaseChildrenExceptOne(Node_revamp* node);
 
-  // For a child node, returns corresponding edge.
-  Edge_revamp* GetEdgeToNode(const Node_revamp* node) const;
-
   void ExtendNode(PositionHistory* history, bool multiple_new_siblings, Node_revamp* root_node);
 
   void ClearNumChildren() { noofchildren_ = 0; }
   void Realize();
 
-  int ComputeHeight();
-  bool Check();
+//  int ComputeHeight();
+//  bool Check();
 
   // Debug information about the node.
   std::string DebugString() const;
 
- private:
-  // To minimize the number of padding bytes and to avoid having unnecessary
-  // padding when new fields are added, we arrange the fields by size, largest
-  // to smallest.
+private:
+	// To minimize the number of padding bytes and to avoid having unnecessary
+	// padding when new fields are added, we arrange the fields by size, largest
+	// to smallest.
 
-  // TODO: shrink the padding on this somehow? It takes 16 bytes even though
-  // only 10 are real! Maybe even merge it into this class??
-  EdgeList_revamp edges_;
+	// TODO: shrink the padding on this somehow? It takes 16 bytes even though
+	// only 10 are real! Maybe even merge it into this class??
+	EdgeList_revamp edges_;
 
-  // 8 byte fields.
-  // Pointer to a parent node. nullptr for the root.
-  Node_revamp* parent_ = nullptr;
+	// 8 byte fields.
+	// Pointer to a parent node. nullptr for the root.
+	Node_revamp* parent_ = nullptr;
 
-  // 4 byte fields.
-  // Average value (from value head of neural network) of all visited nodes in
-  // subtree. For terminal nodes, eval is stored. This is from the perspective
-  // of the player who "just" moved to reach this position, rather than from the
-  // perspective of the player-to-move for the position.
-  float q_ = 0.0f;
-  float orig_q_ = 0.0f;
-  float w_ = 0.0f;
-  float max_w_ = 0.0f;
+	// 4 byte fields.
+	// Average value (from value head of neural network) of all visited nodes in
+	// subtree. For terminal nodes, eval is stored. This is from the perspective
+	// of the player who "just" moved to reach this position, rather than from the
+	// perspective of the player-to-move for the position.
+	float q_ = 0.0f;
+	float orig_q_ = 0.0f;
+	float w_ = 0.0f;
+	float max_w_ = 0.0f;
 
-  uint32_t n_ = 1;
-  uint32_t n_extendable_ = 0;
+	uint32_t n_ = 1;
+	uint32_t n_extendable_ = 0;
 
-  // 2 byte fields.
-  // Index of this node is parent's edge list.
-  uint16_t index_;
+	// 2 byte fields.
+	// Index of this node is parent's edge list.
+	uint16_t index_;
 
-  // The number of edges between this node and root.
-  uint16_t depth_;
-  
-  uint16_t noofchildren_ = 10000;  // indicates that node has not retrieved nn result
-  int16_t best_idx_ = -1;  // index to child where unexpanded edge with highest global weight is
+	uint16_t noofchildren_ = 10000;  // indicates that node has not retrieved nn result
+	int16_t best_idx_ = -1;  // index to child where unexpanded edge with highest global weight is
 
-  // 1 byte fields.
-  // Whether or not this node end game (with a winning of either sides or draw).
-  bool is_terminal_ = false;
-  uint8_t branching_in_flight_ = 0;
+	// 1 byte fields.
+	// Whether or not this node end game (with a winning of either sides or draw).
+	bool is_terminal_ = false;
+	uint8_t branching_in_flight_ = 0;
+//	uint8_t next_unexpanded_edge_ = 0;
 
-  // TODO(mooskagh) Unfriend NodeTree_revamp.
-  friend class NodeTree_revamp;
-  friend class Edge_revamp;
+	friend class NodeTree_revamp;
+	friend class Edge_revamp;
 };
 
 class NodeTree_revamp {

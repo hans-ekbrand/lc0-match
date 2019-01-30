@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2019 Hans Ekbrand, Fredrik Lindblad and The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -114,8 +114,8 @@ Move Edge_revamp::GetMove(bool as_opponent) const {
   return m;
 }
 
-void Edge_revamp::CreateChild(Node_revamp* parent, uint16_t index, uint16_t depth) {
-  child_ = std::make_unique<Node_revamp>(parent, index, depth);
+void Edge_revamp::CreateChild(Node_revamp* parent, uint16_t index) {
+  child_ = std::make_unique<Node_revamp>(parent, index);
 //  parent->noofchildren_++;  // update noofchildren when node is ready (has received nn values)
 }
 
@@ -192,7 +192,7 @@ std::string Edge_revamp::DebugString() const {
 EdgeList_revamp::EdgeList_revamp(MoveList moves)
     : edges_(std::make_unique<Edge_revamp[]>(moves.size())), size_(moves.size()) {
   auto* edge = edges_.get();
-  for (auto move : moves) edge++->SetMove(move);
+  for (auto move : moves) edge++->move_ = move;
 }
 
 /////////////////////////////////////////////////////////////////////////
@@ -203,7 +203,7 @@ Node_revamp* Node_revamp::CreateSingleChildNode(Move move) {
   assert(!edges_);
   assert(!child_);
   edges_ = EdgeList_revamp({move});
-  edges_[0].CreateChild(this, 0, 0);
+  edges_[0].CreateChild(this, 0);
   return edges_[0].GetChild();
 }
 
@@ -235,12 +235,6 @@ void Node_revamp::SortEdgesByPValue() {
   }
 }
 
-
-Edge_revamp* Node_revamp::GetEdgeToNode(const Node_revamp* node) const {
-  assert(node->parent_ == this);
-  assert(node->index_ < edges_.size());
-  return &edges_[node->index_];
-}
 
 std::string Node_revamp::DebugString() const {
   std::ostringstream oss;
@@ -327,31 +321,10 @@ void Node_revamp::Realize() {
   if (index_ == parent_->noofchildren_) {
     parent_->noofchildren_++;
     for (int i = index_ + 1; i < parent_->edges_.size() && parent_->edges_[i].GetChild() != nullptr && parent_->edges_[i].GetChild()->GetNumChildren() != 10000; i++) {
+//    for (int i = index_ + 1; i < parent_->next_unexpanded_edge_ && parent_->edges_[i].GetChild()->GetNumChildren() != 10000; i++) {
       parent_->noofchildren_++;
     }
   }
-}
-
-int Node_revamp::ComputeHeight() {
-  int maxh = 0;
-  for (int i = 0; i < GetNumChildren(); i++) {
-    int h = GetEdges()[i].GetChild()->ComputeHeight();
-    if (h > maxh) maxh = h;
-  }
-  return maxh + 1;
-}
-
-bool Node_revamp::Check() {
-  if (GetNumChildren() > GetNumEdges()) return false;
-  for (int i = 0; i < GetNumChildren(); i++) {
-    if (GetEdges()[i].GetChild() == nullptr) return false;
-    if (!GetEdges()[i].GetChild()->Check()) return false;
-  }
-  //for (int i = GetNumChildren(); i < GetNumEdges(); i++) {
-  //  if (GetEdges()[i].GetChild() != nullptr) return false;
-  //}
-  if (GetN() <= 0) return false;
-  return true;
 }
 
 /////////////////////////////////////////////////////////////////////////
@@ -366,7 +339,7 @@ void NodeTree_revamp::MakeMove(Move move) {
   for (int i = 0; i < nedges; i++) {
     auto& n = current_head_->edges_[i];
 //  for (auto& n : current_head_->Edges()) {
-    if (n.GetMove() == move) {
+    if (n.move_ == move) {
       new_head = n.GetChild();  // is this always non-null? must it be?
       break;
     }
@@ -380,7 +353,7 @@ void NodeTree_revamp::MakeMove(Move move) {
 void NodeTree_revamp::TrimTreeAtHead() {
   // Send dependent nodes for GC instead of destroying them immediately.
   current_head_->ReleaseChildren();
-  *current_head_ = Node_revamp(current_head_->GetParent(), current_head_->index_, 0);
+  *current_head_ = Node_revamp(current_head_->GetParent(), current_head_->index_);
 }
 
 bool NodeTree_revamp::ResetToPosition(const std::string& starting_fen,
@@ -395,7 +368,7 @@ bool NodeTree_revamp::ResetToPosition(const std::string& starting_fen,
   }
 
   if (!gamebegin_node_) {
-    gamebegin_node_ = std::make_unique<Node_revamp>(nullptr, 0, 0);
+    gamebegin_node_ = std::make_unique<Node_revamp>(nullptr, 0);
   }
 
   history_.Reset(starting_board, no_capture_ply,
