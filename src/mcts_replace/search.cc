@@ -56,7 +56,7 @@ const int kUciInfoMinimumFrequencyMs = 500;
 
 int const N_HELPER_THREADS = 2;
 
-bool const LOG_RUNNING_INFO = true;
+bool const LOG_RUNNING_INFO = false;
 
 }  // namespace
 
@@ -1030,7 +1030,7 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 		int64_t time = search_->GetTimeSinceStart();
 		if (time - search_->last_uci_time_ > kUciInfoMinimumFrequencyMs) {
 			search_->last_uci_time_ = time;
-			//search_->SendUciInfo();
+			search_->SendUciInfo();
 		}
 
   }
