@@ -152,6 +152,7 @@ public:
 		p_concentration_(search->params_.GetPolicySoftmaxTemp()),
 		batch_size_(search->params_.GetMiniBatchSize()),
 		history_fill_(search->params_.GetHistoryFill()),
+		played_history_length_(search_->played_history_.GetLength()),
 		root_node_(search->root_node_) {}
 
 	void ThreadLoop(int thread_id);
@@ -191,10 +192,11 @@ private:
 
 	Search_revamp *search_;
 
-	float q_concentration_;
-	float p_concentration_;
-	int batch_size_;
-	FillEmptyHistory history_fill_;
+	const float q_concentration_;
+	const float p_concentration_;
+	const int batch_size_;
+	const FillEmptyHistory history_fill_;
+	const int played_history_length_;
 
 	Node_revamp* root_node_;
 
@@ -202,7 +204,9 @@ private:
 	std::unique_ptr<NetworkComputation> computation_;
 	std::mutex computation_lock_;  // SearchWorker instance not needed, move to Search?
 
-	std::vector<struct NewNode> new_nodes_;
+	//std::vector<NewNode> new_nodes_;
+	NewNode *new_nodes_;
+	int new_nodes_size_ = 0;
 	int new_nodes_list_shared_idx_ = 0;  // SearchWorker instance not needed, move to Search?
 	std::mutex new_nodes_list_lock_;  // SearchWorker instance not needed, move to Search?
 
@@ -216,6 +220,7 @@ private:
 
 	std::vector<NewNode2> minibatch_;
 	int minibatch_list_shared_idx_ = 0;  // SearchWorker instance not needed, move to Search?
+	int minibatch_amount_retrieved_ = 0;  // SearchWorker instance not needed, move to Search?
 	std::mutex minibatch_lock_;  // SearchWorker instance not needed, move to Search?
 
 	std::vector<float> pvals_;  // SearchWorker instance not needed, move to Search?

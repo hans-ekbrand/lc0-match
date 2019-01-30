@@ -56,7 +56,7 @@ const int kUciInfoMinimumFrequencyMs = 500;
 
 int const N_HELPER_THREADS = 2;
 
-bool const LOG_RUNNING_INFO = false;
+bool const LOG_RUNNING_INFO = true;
 
 }  // namespace
 
@@ -419,9 +419,10 @@ void SearchWorker_revamp::pickNodesToExtend() {
 				if (nidx < node->GetNumEdges()) {
 					if (node->GetEdges()[nidx].GetChild() == nullptr) {  // edge not busy
 						node->GetEdges()[nidx].CreateChild(node, nidx);
-						new_nodes_list_lock_.lock();
-						new_nodes_.push_back({node, nidx, 0});
-						new_nodes_list_lock_.unlock();
+						//new_nodes_list_lock_.lock();
+						//new_nodes_.push_back({node, nidx, 0});
+						//new_nodes_list_lock_.unlock();
+						new_nodes_[new_nodes_size_++] = {node, nidx, 0};
 						break;
 					} else {
 //						LOGFILE << "picknodestoextend exhausted, nodes visited: " << nodes_visited;
@@ -477,7 +478,8 @@ void SearchWorker_revamp::pickNodesToExtend() {
 
 
 void SearchWorker_revamp::buildJunctionRTree() {
-	for (int i = new_nodes_.size() - 1; i >= 0; i--) {
+//	for (int i = new_nodes_.size() - 1; i >= 0; i--) {
+	for (int i = new_nodes_size_ - 1; i >= 0; i--) {
 		Node_revamp* node = new_nodes_[i].parent;
 		uint16_t* parent_ptr = &new_nodes_[i].junction;
 		while (true) {
@@ -508,7 +510,8 @@ void SearchWorker_revamp::buildJunctionRTree() {
 		}
 	}
 
-	for (int i = new_nodes_.size() - 1; i >= 0; i--) {
+//	for (int i = new_nodes_.size() - 1; i >= 0; i--) {
+	for (int i = new_nodes_size_ - 1; i >= 0; i--) {
 		Node_revamp* node = new_nodes_[i].parent;
 		while (node->GetBranchingInFlight() > 0) {
 			node->SetBranchingInFlight(0);
@@ -555,7 +558,8 @@ int SearchWorker_revamp::extendTree(std::vector<Move> *movestack, PositionHistor
 		new_nodes_list_lock_.lock();
 
 		int i = new_nodes_list_shared_idx_;
-		if (i == (int)new_nodes_.size()) {
+//		if (i == (int)new_nodes_.size()) {
+		if (i == (int)new_nodes_size_) {
 			new_nodes_list_lock_.unlock();
 			if (helper_threads_mode_ == 1) {
 				std::this_thread::yield();
@@ -565,8 +569,12 @@ int SearchWorker_revamp::extendTree(std::vector<Move> *movestack, PositionHistor
 				break;
 			}
 		}
-		new_nodes_list_shared_idx_++;
+		int n = new_nodes_size_ - i;
+		if (n > 5) n = 5;
+		new_nodes_list_shared_idx_ += n;
 		new_nodes_list_lock_.unlock();
+
+		for (; n > 0; n--, i++) {
 
 		Node_revamp* node = new_nodes_[i].parent;
 		int idx = new_nodes_[i].idx;
@@ -599,15 +607,18 @@ int SearchWorker_revamp::extendTree(std::vector<Move> *movestack, PositionHistor
 			non_computation_lock_.unlock();
 		}
 
-		for (int j = 0; j <= nappends; j++) {
-			history->Pop();
-		}
+		history->Trim(played_history_length_);
+		//for (int j = 0; j <= nappends; j++) {
+		//	history->Pop();
+		//}
 
 		// not checking and setting N = 0 (see code that propagates below) here means duplicates can exist in the queue if MULTIPLE_NEW_SIBLINGS = true
 		// but checking for duplicates that way does not work with multiple threads because N values are not restored until after the nn-computation (and meanwhile other threads can run)
 
 		if (nappends > full_tree_depth) full_tree_depth = nappends;
 		cum_depth += nappends;
+
+		}
 	}
 
 	search_->counters_lock_.lock();
@@ -711,10 +722,10 @@ void SearchWorker_revamp::recalcPropagatedQ(Node_revamp* node) {
   else
     n = node->GetNumEdges() > first_non_created_child_idx ? 1 : 0;
 
-  for (int i = 0; i < node->GetNumChildren(); i++) {
-    n += node->GetEdges()[i].GetChild()->GetNExtendable();
-  }
-  node->SetNExtendable(n);
+//  for (int i = 0; i < node->GetNumChildren(); i++) {
+//    n += node->GetEdges()[i].GetChild()->GetNExtendable();
+//  }
+//  node->SetNExtendable(n);
 
   int16_t max_idx = -1;
   float max_w = first_non_created_child_idx < node->GetNumEdges() ? node->GetEdges()[first_non_created_child_idx].GetP() : 0.0;
@@ -738,15 +749,23 @@ int SearchWorker_revamp::propagate() {
 
 	while (true) {
 		minibatch_lock_.lock();
-
 		int j = minibatch_list_shared_idx_;
-		if (j == (int)minibatch_.size()) {
+		if (j == minibatch_amount_retrieved_) {
 			minibatch_lock_.unlock();
-			break;
+			if (helper_threads_mode_ == 3) {
+				std::this_thread::yield();
+				std::this_thread::sleep_for(std::chrono::microseconds(20));
+				continue;
+			} else {
+				break;
+			}
 		}
-		minibatch_list_shared_idx_++;
+		int n = minibatch_amount_retrieved_ - j;
+		if (n > 5) n = 5;
+		minibatch_list_shared_idx_ += n;
 		minibatch_lock_.unlock();
 
+		for (; n > 0; n--, j++) {
 		Node_revamp* node = minibatch_[j].node->GetParent();
 		uint16_t juncidx = new_nodes_[minibatch_[j].new_nodes_idx].junction;
 
@@ -771,6 +790,7 @@ int SearchWorker_revamp::propagate() {
 				if (node == root_node_) break;
 				node = node->GetParent();
 			}
+		}
 		}
 	}
 
@@ -802,8 +822,9 @@ int SearchWorker_revamp::propagate() {
 void SearchWorker_revamp::ThreadLoop(int thread_id) {
 
 	PositionHistory history(search_->played_history_);
-
 	std::vector<Move> movestack;
+
+	new_nodes_ = new NewNode[batch_size_];
 
 	search_->busy_mutex_.lock();
 	if (LOG_RUNNING_INFO) LOGFILE << "Working thread: " << thread_id;
@@ -857,7 +878,7 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 
 	uint32_t visits = search_->limits_.visits;
 
-	while (root_node_->GetN() + (search_->n_thread_active_ - 1) * batch_size_ < visits && root_node_->GetNExtendable() > 0) {
+	while (root_node_->GetN() + (search_->n_thread_active_ - 1) * batch_size_ < visits/* && root_node_->GetNExtendable() > 0*/) {
 
 		computation_ = search_->network_->NewComputation();
 
@@ -875,7 +896,8 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 
 		helper_threads_mode_ = 2;  // from now no new nodes will be added
 
-		if (new_nodes_.size() == 0) {  // no new nodes found, but there may exist unextended edges unavailable due to business
+//		if (new_nodes_.size() == 0) {  // no new nodes found, but there may exist unextended edges unavailable due to business
+		if (new_nodes_size_ == 0) {  // no new nodes found, but there may exist unextended edges unavailable due to business
 			for (int j = 0; j < (int)helper_thread_locks.size(); j++) {
 				helper_thread_locks[j]->lock();
 			}
@@ -938,7 +960,8 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 
 		if (LOG_RUNNING_INFO) LOGFILE
 						<< "n: " << root_node_->GetN()
-						<< ", new_nodes_ size: " << new_nodes_.size()
+//						<< ", new_nodes_ size: " << new_nodes_.size()
+						<< ", new_nodes_ size: " << new_nodes_size_
 						<< ", minibatch_ size: " << minibatch_.size()
 						<< ", junctions_ size: " << junctions_.size();
 						//<< ", highest w: " << new_nodes_[new_nodes_.size() - 1].w
@@ -965,18 +988,21 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 
 		start_comp_time = std::chrono::steady_clock::now();
 
+		helper_threads_mode_ = 3;
+		for (int j = 0; j < (int)helper_thread_locks.size(); j++) {
+			helper_thread_locks[j]->unlock();
+		}
+
 		for (int j = 0; j < (int)minibatch_.size(); j++) {
 			minibatch_[j].node->Realize();
 			retrieveNNResult(minibatch_[j].node, j);
+			minibatch_amount_retrieved_++;
 		}
 
 		stop_comp_time = std::chrono::steady_clock::now();
 		search_->duration_retrieve_ += (stop_comp_time - start_comp_time).count();
 
-		helper_threads_mode_ = 3;
-		for (int j = 0; j < (int)helper_thread_locks.size(); j++) {
-			helper_thread_locks[j]->unlock();
-		}
+		helper_threads_mode_ = 4;
 
 		start_comp_time = std::chrono::steady_clock::now();
 
@@ -994,15 +1020,17 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 
 		minibatch_.clear();
 		minibatch_list_shared_idx_ = 0;
+		minibatch_amount_retrieved_ = 0;
 
 		junctions_.clear();
 
-		new_nodes_.clear();
+		//new_nodes_.clear();
+		new_nodes_size_ = 0;
 
 		int64_t time = search_->GetTimeSinceStart();
 		if (time - search_->last_uci_time_ > kUciInfoMinimumFrequencyMs) {
 			search_->last_uci_time_ = time;
-			search_->SendUciInfo();
+			//search_->SendUciInfo();
 		}
 
   }
@@ -1073,6 +1101,8 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 		helper_threads.pop_back();
   }
 
+	delete[] new_nodes_;
+
 	//LOGFILE << "Unlock " << thread_id;
 	search_->busy_mutex_.unlock();
 }
@@ -1089,7 +1119,7 @@ void SearchWorker_revamp::HelperThreadLoop(int helper_thread_id, std::mutex* loc
 			int count = extendTree(&movestack, &history);
 			if (LOG_RUNNING_INFO) if (count > 0) LOGFILE << "helper thread " << helper_thread_id << " did new nodes: " << count;
 		} else {
-			if (helper_threads_mode_ == 3) {
+			if (helper_threads_mode_ == 3 || helper_threads_mode_ == 4) {
 				int count = propagate();
 				if (LOG_RUNNING_INFO) LOGFILE << "helper thread " << helper_thread_id << " did propagates: " << count;
 			} else

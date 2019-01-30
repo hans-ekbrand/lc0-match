@@ -139,8 +139,8 @@ class Node_revamp {
 
   uint32_t GetN() const { return n_; }
   void SetN(uint32_t n) { n_ = n; }
-  uint32_t GetNExtendable() const { return n_extendable_; }
-  void SetNExtendable(uint32_t n) { n_extendable_ = n; }
+  //uint32_t GetNExtendable() const { return n_extendable_; }
+  //void SetNExtendable(uint32_t n) { n_extendable_ = n; }
 
   // Makes the node terminal and sets it's score.
   void MakeTerminal(GameResult result);
@@ -186,7 +186,7 @@ private:
 	float max_w_ = 0.0f;
 
 	uint32_t n_ = 1;
-	uint32_t n_extendable_ = 0;
+	//uint32_t n_extendable_ = 0;
 
 	// 2 byte fields.
 	// Index of this node is parent's edge list.
