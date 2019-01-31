@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2019 Hans Ekbrand, Fredrik Lindblad and The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -30,6 +30,7 @@
 #include <functional>
 #include <thread>
 #include <mutex>
+#include <queue>
 #include "chess/callbacks.h"
 #include "chess/uciloop.h"
 #include "mcts/params.h"
@@ -97,11 +98,13 @@ public:
 	// Strings for UCI params. So that others can override defaults.
 	// TODO(mooskagh) There are too many options for now. Factor out that into a
 	// separate class.
+	void SendMovesStats();
 
 private:
-//	void WatchdogThread();
 
 	int64_t GetTimeSinceStart() const;
+	void SendUciInfo();
+
 
 	std::mutex threads_list_mutex_;
 	int n_thread_active_ = 0;
@@ -122,51 +125,12 @@ private:
 
 	BestMoveInfo::Callback best_move_callback_;
 	ThinkingInfo::Callback info_callback_;
-	// External parameters
-	//  const int kMiniBatchSize;
-	//const int kCacheHistoryLength;
-
-	void AddNodeToComputation(NetworkComputation *computation);
-	void retrieveNNResult(NetworkComputation *computation, Node_revamp* node, int batchidx);
-	void recalcPropagatedQ(Node_revamp* node);
-	void pickNodesToExtend(Node_revamp* current_node, float global_weight);
-	void pushNewNodeCandidate(float w, Node_revamp* node, int idx);
-	int appendHistoryFromTo(Node_revamp* from, Node_revamp* to);
-	float computeChildWeights(Node_revamp* node);
-	std::vector<float> q_to_prob(std::vector<float> Q, int depth, float multiplier, float max_focus);
-	void SendUciInfo();
-	std::vector<std::string> GetVerboseStats(Node_revamp* node, bool is_black_to_move);
-	void SendMovesStats();
-	
-	void ThreadLoop(int thread_id);
 
 	std::mutex busy_mutex_;
 
-	std::vector<float> pvals_;
-	//std::vector<Node_revamp *> nodestack_;
-	std::vector<Move> movestack_;
-	int full_tree_depth = 0;
+	int full_tree_depth_ = 0;
 	uint64_t cum_depth_ = 0;
-
-	struct NewNodeCandidate {
-		float w;
-		Node_revamp* node;
-		int idx;
-	};
-
-	std::vector<struct NewNodeCandidate> node_prio_queue_;
-
-	float q_concentration_;
-	float p_concentration_;
-	float policy_weight_exponent_; // weight of policy relative to weight of q: pow(n, pwe)/n where n is the number of subnodes of the current node.
-
-	PositionHistory history_;
-
-
-	struct PropagateQueueElement {
-		int depth;
-		Node_revamp* node;
-	};
+	std::mutex counters_lock_;
 
 	int64_t last_uci_time_ = 0;
 
@@ -175,10 +139,104 @@ private:
 	int64_t duration_compute_ = 0;
 	int64_t duration_retrieve_ = 0;
 	int64_t duration_propagate_ = 0;
+	//int64_t duration_node_prio_queue_lock_ = 0;
 	int count_iterations_ = 0;
 
+	friend class SearchWorker_revamp;
 };
 
+class SearchWorker_revamp {
+public:
+	SearchWorker_revamp(Search_revamp *search) :
+		search_(search),
+		q_concentration_(search->params_.GetCpuct()),
+		p_concentration_(search->params_.GetPolicySoftmaxTemp()),
+		policy_weight_exponent_(search->params_.GetFpuValue()),
+		batch_size_(search->params_.GetMiniBatchSize()),
+		history_fill_(search->params_.GetHistoryFill()),
+		played_history_length_(search_->played_history_.GetLength()),
+		root_node_(search->root_node_) {}
+
+	void ThreadLoop(int thread_id);
+	void HelperThreadLoop(int helper_thread_id, std::mutex* lock);
+
+
+private:
+
+	struct NewNode {
+		Node_revamp* parent;
+		int idx;
+		uint16_t junction;
+	};
+
+	struct Junction {
+		Node_revamp *node;
+		uint16_t parent;
+		uint8_t children_count;
+	};
+
+	struct NewNode2 {
+		Node_revamp* node;
+		uint16_t new_nodes_idx;
+	};
+
+	void AddNodeToComputation(PositionHistory *history);
+	void retrieveNNResult(Node_revamp* node, int batchidx);
+	void recalcPropagatedQ(Node_revamp* node);
+	void pickNodesToExtend();
+	int appendHistoryFromTo(std::vector<Move> *movestack, PositionHistory *history, Node_revamp* from, Node_revamp* to);
+	float computeChildWeights(Node_revamp* node);
+	int propagate();
+	int extendTree(std::vector<Move> *movestack, PositionHistory *history);
+	void buildJunctionRTree();
+
+	/* void pushNewNodeCandidate(float w, Node_revamp* node, int idx); */
+	std::vector<float> q_to_prob(std::vector<float> Q, int depth, float multiplier, float max_focus);
+	void SendUciInfo();
+	std::vector<std::string> GetVerboseStats(Node_revamp* node, bool is_black_to_move);
+	void SendMovesStats();
+
+
+
+	Search_revamp *search_;
+
+	const float q_concentration_;
+	const float p_concentration_;
+	const float policy_weight_exponent_; // weight of policy relative to weight of q: pow(n, pwe)/n where n is the number of subnodes of the current node.	
+	const int batch_size_;
+	const FillEmptyHistory history_fill_;
+	const int played_history_length_;
+
+	Node_revamp* root_node_;
+
+
+	std::unique_ptr<NetworkComputation> computation_;
+	std::mutex computation_lock_;  // SearchWorker instance not needed, move to Search?
+
+	//std::vector<NewNode> new_nodes_;
+	NewNode *new_nodes_;
+	int new_nodes_size_ = 0;
+	int new_nodes_list_shared_idx_ = 0;  // SearchWorker instance not needed, move to Search?
+	std::mutex new_nodes_list_lock_;  // SearchWorker instance not needed, move to Search?
+
+	std::unordered_map<Node_revamp*, uint16_t> junction_of_node_;  // SearchWorker instance not needed, move to Search?
+
+	std::vector<Junction> junctions_;
+	std::vector<std::mutex *> junction_locks_;  // SearchWorker instance not needed, move to Search?
+
+	std::vector<NewNode2> non_computation_new_nodes_;  // SearchWorker instance not needed, move to Search?
+	std::mutex non_computation_lock_;  // SearchWorker instance not needed, move to Search?
+
+	std::vector<NewNode2> minibatch_;
+	int minibatch_list_shared_idx_ = 0;  // SearchWorker instance not needed, move to Search?
+	int minibatch_amount_retrieved_ = 0;  // SearchWorker instance not needed, move to Search?
+	std::mutex minibatch_lock_;  // SearchWorker instance not needed, move to Search?
+
+	std::vector<float> pvals_;  // SearchWorker instance not needed, move to Search?
+
+	int helper_threads_mode_ = 0;  // SearchWorker instance not needed, move to Search?
+
+};
 
 
 }  // namespace lczero
