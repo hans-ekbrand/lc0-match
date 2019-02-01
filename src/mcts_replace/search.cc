@@ -271,83 +271,10 @@ void Search_revamp::SendUciInfo() {
   info_callback_(uci_infos);
 
 }
-  
+
 //////////////////////////////////////////////////////////////////////////////
 // Distribution
 //////////////////////////////////////////////////////////////////////////////
-
-std::vector<float> SearchWorker_revamp::q_to_prob(std::vector<float> Q, int depth, float multiplier, float max_focus) {
-  bool DEBUG = false;
-  // rebase depth from 0 to 1
-  depth++;
-    depth = sqrt(depth); // if we use full_tree_depth the distribution gets too sharp after a while
-    auto min_max = std::minmax_element(std::begin(Q), std::end(Q));
-    float min_q = Q[min_max.first-std::begin(Q)];
-    float max_q = Q[min_max.second-std::begin(Q)];
-    std::vector<float> q_prob (Q.size());    
-    if(max_q - min_q == 0){
-      // Return the uniform distribution
-      for(int i = 0; i < (int)Q.size(); i++){
-	q_prob[i] = 1.0f/Q.size();
-      }
-      assert(std::accumulate(q_prob.begin(), q_prob.end(), 0) == 1);      
-      return(q_prob);
-    }
-    std::vector<float> a (Q.size());
-    std::vector<float> b (Q.size());
-    float c = 0;
-    for(int i = 0; i < (int)Q.size(); i++){
-      if(min_q < 0){
-	// a[i] = (Q[i] - min_q) * (float)depth/(max_q - min_q);
-	a[i] = (Q[i] - min_q)/(max_q - min_q);	
-      } else {
-	// a[i] = Q[i] * (float)depth/max_q;
-	a[i] = Q[i]/max_q;
-      }
-      b[i] = exp(multiplier * a[i]);
-    }
-    std::for_each(b.begin(), b.end(), [&] (float f) {
-    c += f;
-});
-    float my_sum = 0;
-    for(int i = 0; i < (int)Q.size(); i++){
-      q_prob[i] = b[i]/c;
-      my_sum = my_sum + q_prob[i];
-    }
-    if(q_prob[min_max.second-std::begin(Q)] > max_focus){
-      if(DEBUG) LOGFILE << "limiting p to max_focus because " << q_prob[min_max.second-std::begin(Q)] << " is more than " << max_focus << "\n";
-      // find index of the second best.
-      std::vector<float> q_prob_copy = q_prob;
-      // Turn the second into the best by setting the max to the min - 1 in the copy to make sure it is now less than whatever the second best is.
-      q_prob_copy[min_max.second-std::begin(Q)] = q_prob_copy[min_max.first-std::begin(Q)] - 1.0f;
-      auto second_best = std::max_element(std::begin(q_prob_copy), std::end(q_prob_copy));
-      q_prob[min_max.second-std::begin(Q)] = max_focus;
-      if(DEBUG) LOGFILE << "Setting the second best (at: " << second_best-std::begin(q_prob_copy) << ") " << q_prob[second_best-std::begin(q_prob_copy)] << " to the 1 - max_focus: \n";
-      q_prob[second_best-std::begin(q_prob_copy)] = 1 - max_focus;
-      // Set all the others to zero
-      for(int i = 0; i < (int)Q.size(); i++){
-	if(i != min_max.second-std::begin(Q) && i != second_best-std::begin(q_prob_copy)){
-	  q_prob[i] = 0;
-	}
-	if(DEBUG) LOGFILE << "i: " << i << " q_prob[i]: " << q_prob[i] << "\n";
-      }
-    }
-    // Does it sum to 1?
-    assert(std::accumulate(q_prob.begin(), q_prob.end(), 0) == 1); // not sure if this ever worked.
-    if(abs(my_sum - 1) > 1e-5){ 
-      LOGFILE << "sum of q_prob: " << std::setprecision(10) << my_sum << " largest q_prob: " << q_prob[min_max.second-std::begin(Q)] << " will change that to: " << q_prob[min_max.second-std::begin(Q)] - (my_sum - 1) << "\n";
-      // Steal the extra from the best Q
-      q_prob[min_max.second-std::begin(Q)] = q_prob[min_max.second-std::begin(Q)] - (my_sum - 1);
-    }
-    // Slightly less than 1 is fine, right? Otherwise uncomment this:
-    // if(my_sum < 1.000000f){
-    //   LOGFILE << "sum of q_prob: " << std::setprecision(10) << my_sum << " largest q_prob: " << q_prob[min_max.second-std::begin(Q)] << " will change that to: " << q_prob[min_max.second-std::begin(Q)] + (1 - my_sum) << "\n";
-    //   // Steal the extra from the best Q
-    //   q_prob[min_max.second-std::begin(Q)] = q_prob[min_max.second-std::begin(Q)] + (1 - my_sum);
-    // }
-    return(q_prob);
-  }
-
 
 float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
   int n = node->GetNumChildren();
@@ -372,12 +299,12 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
     }
     // factor for normalising w:s so their sum matches sum_of_P_of_expanded_nodes
     double normalise_to_sum_of_p = sum_of_P_of_expanded_nodes / sum_of_w_of_expanded_nodes;
-      
+
     for (int i = 0; i < n; i++) {
       // LOGFILE << "normalising w for element: " << i << " from " << node->GetEdges()[i].GetChild()->GetW() << " to " << node->GetEdges()[i].GetChild()->GetW() * normalise_to_sum_of_p << " since sum_of_P_expanded_nodes is " << sum_of_P_of_expanded_nodes;
       node->GetEdges()[i].GetChild()->SetW(node->GetEdges()[i].GetChild()->GetW() * normalise_to_sum_of_p );
     }
-	    
+
     // We want to use P even if there is a Q available, since single Q values are always uncertain, but becomes more certain the more subnodes there is.
     // In UCT the choice is made using the formula (highest score gets picked):
     // Q + GetP() * cpuct * sqrt(max(GetN(), 1)) / (1 + GetN())
@@ -386,7 +313,7 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
     // (in UCT the constant cpuct is multiplied to the sqrt(x)/x to the get the final factor.
     // Let's try x^0.7/x instead. At 100 visist the weight of policy would be 0.25, at 800 visists, the weight of policy would then be 0.13
     // We can of course make this a run time parameter but, for now I'll use a constant for it.
-      
+
     std::vector<double> weighted_p_and_q(n);
     double sum_of_weighted_p_and_q = 0.0;
     for (int i = 0; i < n; i++){
@@ -395,9 +322,9 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
       double relative_weight_of_q = 1 - relative_weight_of_p;
       // LOGFILE << "relative_weight_of_q:" << relative_weight_of_q;	    
       if(relative_weight_of_q > 0){
-	weighted_p_and_q[i] = (relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() + relative_weight_of_p * node->GetEdges()[i].GetP()) ; 
+        weighted_p_and_q[i] = (relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() + relative_weight_of_p * node->GetEdges()[i].GetP()) ; 
       } else {
-	weighted_p_and_q[i] = node->GetEdges()[i].GetP();
+        weighted_p_and_q[i] = node->GetEdges()[i].GetP();
       }
       // LOGFILE << "Weighted p and q:" << weighted_p_and_q[i];
       sum_of_weighted_p_and_q += weighted_p_and_q[i];
@@ -417,12 +344,17 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
       // 	    << " (weighted sum of P and q_as_prob) divided the product of sum_of_weighted_p_and_q and sum_of_P_of_expanded_nodes: " << node->GetEdges()[i].GetChild()->GetW();
     }
     if (!MULTIPLE_NEW_SIBLINGS) {
-      // scale the p_q_weighted part so that it toghether with the P part _of one new sibling_ sums to 1
-      double my_final_scaler = final_sum_of_weights_for_the_exanded_children + node->GetEdges()[node->GetNumChildren()].GetP();
-      final_sum_of_weights_for_the_exanded_children = 0.0; // recalc this one
-      for (int i = 0; i < n; i++){
-	node->GetEdges()[i].GetChild()->SetW(node->GetEdges()[i].GetChild()->GetW() / my_final_scaler);
-	final_sum_of_weights_for_the_exanded_children += node->GetEdges()[i].GetChild()->GetW();
+      if(node->GetNumChildren() < node->GetNumEdges()) {
+        // scale the p_q_weighted part so that it toghether with the P part _of one new sibling_ sums to 1
+        double my_final_scaler = final_sum_of_weights_for_the_exanded_children + node->GetEdges()[node->GetNumChildren()].GetP();
+        final_sum_of_weights_for_the_exanded_children = 0.0; // recalc this one
+        for (int i = 0; i < n; i++){
+          node->GetEdges()[i].GetChild()->SetW(node->GetEdges()[i].GetChild()->GetW() / my_final_scaler);
+          final_sum_of_weights_for_the_exanded_children += node->GetEdges()[i].GetChild()->GetW();
+        }
+      } else {
+        // All children already expanded. This should already sum up to 1.
+        // LOGFILE << "All nodes already expanded, returning " << final_sum_of_weights_for_the_exanded_children;
       }
     }
     return final_sum_of_weights_for_the_exanded_children;
@@ -705,23 +637,23 @@ void SearchWorker_revamp::retrieveNNResult(Node_revamp* node, int batchidx) {
 void SearchWorker_revamp::recalcPropagatedQ(Node_revamp* node) {
   float total_children_weight = computeChildWeights(node);
 
-  if (total_children_weight < 0.0 || total_children_weight - 1.0 > 1.00012) {
-    std::cerr << "total_children_weight: " << total_children_weight << "\n";
-    abort();
-  }
-  float totw = 0.0;
-  for (int i = 0; i < node->GetNumChildren(); i++) {
-    float w = node->GetEdges()[i].GetChild()->GetW();
-    if (w < 0.0) {
-      std::cerr << "w: " << w << "\n";
-      abort();
-    }
-    totw += w;
-  }
-  if (abs(total_children_weight - totw) > 1.00012) {
-    std::cerr << "total_children_weight: " << total_children_weight << ", totw: " << total_children_weight << "\n";
-    abort();
-  }
+//  if (total_children_weight < 0.0 || total_children_weight - 1.0 > 1.00012) {
+//    std::cerr << "total_children_weight: " << total_children_weight << "\n";
+//    abort();
+//  }
+//  float totw = 0.0;
+//  for (int i = 0; i < node->GetNumChildren(); i++) {
+//    float w = node->GetEdges()[i].GetChild()->GetW();
+//    if (w < 0.0) {
+//      std::cerr << "w: " << w << "\n";
+//      abort();
+//    }
+//    totw += w;
+//  }
+//  if (abs(total_children_weight - totw) > 1.00012) {
+//    std::cerr << "total_children_weight: " << total_children_weight << ", totw: " << total_children_weight << "\n";
+//    abort();
+//  }
 
   // Average Q START
   float q = (1.0 - total_children_weight) * node->GetOrigQ();
@@ -743,10 +675,10 @@ void SearchWorker_revamp::recalcPropagatedQ(Node_revamp* node) {
 		first_non_created_child_idx++;
 	}
 
-  if (MULTIPLE_NEW_SIBLINGS)
-    n = node->GetNumEdges() - first_non_created_child_idx;
-  else
-    n = node->GetNumEdges() > first_non_created_child_idx ? 1 : 0;
+//  if (MULTIPLE_NEW_SIBLINGS)
+//    n = node->GetNumEdges() - first_non_created_child_idx;
+//  else
+//    n = node->GetNumEdges() > first_non_created_child_idx ? 1 : 0;
 
 //  for (int i = 0; i < node->GetNumChildren(); i++) {
 //    n += node->GetEdges()[i].GetChild()->GetNExtendable();
@@ -1068,6 +1000,7 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 		int64_t elapsed_time = search_->GetTimeSinceStart();
 		//LOGFILE << "Elapsed time when thread for node " << root_node_ << " which has size " << root_node_->GetN() << " nodes did " << i << " computations: " << elapsed_time << "ms";
 		LOGFILE << "Elapsed time for " << root_node_->GetN() << " nodes: " << elapsed_time << "ms";
+		LOGFILE << "#helper threads: " << N_HELPER_THREADS;
 
 		LOGFILE << "root Q: " << root_node_->GetQ();
 

@@ -191,7 +191,6 @@ private:
 	void buildJunctionRTree();
 
 	/* void pushNewNodeCandidate(float w, Node_revamp* node, int idx); */
-	std::vector<float> q_to_prob(std::vector<float> Q, int depth, float multiplier, float max_focus);
 	void SendUciInfo();
 	std::vector<std::string> GetVerboseStats(Node_revamp* node, bool is_black_to_move);
 	void SendMovesStats();
