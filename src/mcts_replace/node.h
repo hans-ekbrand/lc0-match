@@ -137,6 +137,9 @@ class Node_revamp {
   Edge_revamp* GetEdges() { return edges_.get(); }
   uint16_t GetIndex() const { return index_; }
 
+  uint8_t GetNextUnexpandedEdge() const { return next_unexpanded_edge_; }
+  void SetNextUnexpandedEdge(uint8_t n) { next_unexpanded_edge_ = n; }
+
   uint32_t GetN() const { return n_; }
   void SetN(uint32_t n) { n_ = n; }
   //uint32_t GetNExtendable() const { return n_extendable_; }
@@ -151,10 +154,9 @@ class Node_revamp {
   // Deletes all children except one.
   void ReleaseChildrenExceptOne(Node_revamp* node);
 
-  void ExtendNode(PositionHistory* history, bool multiple_new_siblings, Node_revamp* root_node);
+  void ExtendNode(PositionHistory* history, Node_revamp* root_node);
 
-  void ClearNumChildren() { noofchildren_ = 0; }
-  void Realize();
+  void IncrParentNumChildren();
 
 //  int ComputeHeight();
 //  bool Check();
@@ -192,14 +194,14 @@ private:
 	// Index of this node is parent's edge list.
 	uint16_t index_;
 
-	uint16_t noofchildren_ = 10000;  // indicates that node has not retrieved nn result
+	uint16_t noofchildren_ = 0;
 	int16_t best_idx_ = -1;  // index to child where unexpanded edge with highest global weight is
 
 	// 1 byte fields.
 	// Whether or not this node end game (with a winning of either sides or draw).
 	bool is_terminal_ = false;
 	uint8_t branching_in_flight_ = 0;
-//	uint8_t next_unexpanded_edge_ = 0;
+	uint8_t next_unexpanded_edge_ = 0;
 
 	friend class NodeTree_revamp;
 	friend class Edge_revamp;

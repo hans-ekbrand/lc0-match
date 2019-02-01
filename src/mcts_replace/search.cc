@@ -40,12 +40,8 @@ namespace {
 
 // Alternatives:
 
-bool const MULTIPLE_NEW_SIBLINGS = true;
-  // If true then multiple children of the same node can be created and evaluated in the same batch.
-  //  When using this alternative the Qs of the existing children plus the Ps of all unexpanded edges must sum up to 1. This must be fullfilled by the computeChildWeights function.
-bool const INITIAL_MAX_P_IS_1 = false;
-  // If true the the max weight of a node node is set to 1
-  // If false the the max weight of a node node is set to the leftmost/highest P value
+int const MAX_NEW_SIBLINGS = 10000;
+  // The maximum number of new siblings. If 1, then it's like old MULTIPLE_NEW_SIBLINGS = false, if >= maximum_number_of_legal_moves it's like MULTIPLE_NEW_SIBLINGS = true
 const int kUciInfoMinimumFrequencyMs = 500;
 
 int const N_HELPER_THREADS = 2;
@@ -343,21 +339,7 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
       // 	    << " weighted sum of P and q_as_prob: " << weighted_p_and_q[i]
       // 	    << " (weighted sum of P and q_as_prob) divided the product of sum_of_weighted_p_and_q and sum_of_P_of_expanded_nodes: " << node->GetEdges()[i].GetChild()->GetW();
     }
-    if (!MULTIPLE_NEW_SIBLINGS) {
-      if(node->GetNumChildren() < node->GetNumEdges()) {
-        // scale the p_q_weighted part so that it toghether with the P part _of one new sibling_ sums to 1
-        double my_final_scaler = final_sum_of_weights_for_the_exanded_children + node->GetEdges()[node->GetNumChildren()].GetP();
-        final_sum_of_weights_for_the_exanded_children = 0.0; // recalc this one
-        for (int i = 0; i < n; i++){
-          node->GetEdges()[i].GetChild()->SetW(node->GetEdges()[i].GetChild()->GetW() / my_final_scaler);
-          final_sum_of_weights_for_the_exanded_children += node->GetEdges()[i].GetChild()->GetW();
-        }
-      } else {
-        // All children already expanded. This should already sum up to 1.
-        // LOGFILE << "All nodes already expanded, returning " << final_sum_of_weights_for_the_exanded_children;
-      }
-    }
-    return final_sum_of_weights_for_the_exanded_children;
+    return final_sum_of_weights_for_the_exanded_children;  // this should be same as sum_of_P_of_expanded_nodes
   }
 }
 
@@ -366,31 +348,26 @@ void SearchWorker_revamp::pickNodesToExtend() {
 	Node_revamp* node;
 	int best_idx;
 
-	int nodes_visited = 0;
+//	int nodes_visited = 0;
 
 	for (int n_left = batch_size_; n_left > 0; n_left--) {
 		node = root_node_;
 
 		while (true) {
-			nodes_visited++;
+//			nodes_visited++;
 			best_idx = node->GetBestIdx();
 			if (best_idx == -1) {
-				int nidx = node->GetNumChildren();
-				if (nidx < node->GetNumEdges()) {
-					if (node->GetEdges()[nidx].GetChild() == nullptr) {  // edge not busy
-						node->GetEdges()[nidx].CreateChild(node, nidx);
-						//new_nodes_list_lock_.lock();
-						//new_nodes_.push_back({node, nidx, 0});
-						//new_nodes_list_lock_.unlock();
-						new_nodes_[new_nodes_size_++] = {node, nidx, 0};
-						break;
-					} else {
-//						LOGFILE << "picknodestoextend exhausted, nodes visited: " << nodes_visited;
-						return;
-					}
-				} else {
-					std::cerr << "happened 2";
-					abort();
+				int nidx = node->GetNextUnexpandedEdge();
+				if (nidx < node->GetNumEdges() && nidx - node->GetNumChildren() < MAX_NEW_SIBLINGS) {
+					node->GetEdges()[nidx].CreateChild(node, nidx);
+					//new_nodes_list_lock_.lock();
+					//new_nodes_.push_back({node, nidx, 0});
+					//new_nodes_list_lock_.unlock();
+					new_nodes_[new_nodes_size_++] = {node->GetEdges()[nidx].GetChild(), 0, -1};
+					node->SetNextUnexpandedEdge(nidx + 1);
+					break;
+				} else {  // no more child to add (before retrieved information about previous ones)
+					return;
 				}
 			} else {
 				node = node->GetEdges()[best_idx].GetChild();
@@ -402,10 +379,9 @@ void SearchWorker_revamp::pickNodesToExtend() {
 		while (true) {
 			int16_t max_idx = -1;
 			float max_w = 0.0;
-			if (node->GetNumChildren() < node->GetNumEdges()) {
-				if (node->GetEdges()[node->GetNumChildren()].GetChild() == nullptr) {  // edge not busy
-					max_w = node->GetEdges()[node->GetNumChildren()].GetP();
-				}
+			int nidx = node->GetNextUnexpandedEdge();
+			if (nidx < node->GetNumEdges() && nidx - node->GetNumChildren() < MAX_NEW_SIBLINGS) {
+				max_w = node->GetEdges()[nidx].GetP();
 			}
 			for (int i = 0; i < node->GetNumChildren(); i++) {
 				float br_max_w = node->GetEdges()[i].GetChild()->GetW() * node->GetEdges()[i].GetChild()->GetMaxW();
@@ -439,7 +415,7 @@ void SearchWorker_revamp::pickNodesToExtend() {
 void SearchWorker_revamp::buildJunctionRTree() {
 //	for (int i = new_nodes_.size() - 1; i >= 0; i--) {
 	for (int i = new_nodes_size_ - 1; i >= 0; i--) {
-		Node_revamp* node = new_nodes_[i].parent;
+		Node_revamp* node = new_nodes_[i].node->GetParent();
 		uint16_t* parent_ptr = &new_nodes_[i].junction;
 		while (true) {
 			while (node->GetBranchingInFlight() == 1) {
@@ -471,7 +447,7 @@ void SearchWorker_revamp::buildJunctionRTree() {
 
 //	for (int i = new_nodes_.size() - 1; i >= 0; i--) {
 	for (int i = new_nodes_size_ - 1; i >= 0; i--) {
-		Node_revamp* node = new_nodes_[i].parent;
+		Node_revamp* node = new_nodes_[i].node->GetParent();
 		while (node->GetBranchingInFlight() > 0) {
 			node->SetBranchingInFlight(0);
 			if (node == root_node_) break;
@@ -534,17 +510,17 @@ int SearchWorker_revamp::extendTree(std::vector<Move> *movestack, PositionHistor
 
 		for (; n > 0; n--, i++) {
 
-		Node_revamp* node = new_nodes_[i].parent;
-		int idx = new_nodes_[i].idx;
+		Node_revamp* newchild = new_nodes_[i].node;
+		//int idx = new_nodes_[i].idx;
 
 		count++;
 
-		int nappends = appendHistoryFromTo(movestack, history, root_node_, node);
-		Node_revamp* newchild = node->GetEdges()[idx].GetChild();
+		int nappends = appendHistoryFromTo(movestack, history, root_node_, newchild);
+		//Node_revamp* newchild = node->GetEdges()[idx].GetChild();
 
-		history->Append(node->GetEdges()[idx].move_);
+		//history->Append(node->GetEdges()[idx].move_);
 
-		newchild->ExtendNode(history, MULTIPLE_NEW_SIBLINGS, root_node_);
+		newchild->ExtendNode(history, root_node_);
 
 		if (!newchild->IsTerminal()) {
 
@@ -553,16 +529,15 @@ int SearchWorker_revamp::extendTree(std::vector<Move> *movestack, PositionHistor
 
 			computation_lock_.lock();
 			computation_->AddInput(std::move(planes));
-			minibatch_.push_back({newchild, (uint16_t)i});
+			new_nodes_[i].batch_idx = minibatch_shared_idx_++;
+			//minibatch_.push_back({newchild, (uint16_t)i});
 			//LOGFILE << "minibatch add: " << new_nodes_[i].junction;
 			computation_lock_.unlock();
 
 		} else {  // is terminal
-			newchild->Realize();
-
-			non_computation_lock_.lock();
-			non_computation_new_nodes_.push_back({newchild, (uint16_t)i});
-			non_computation_lock_.unlock();
+			//non_computation_lock_.lock();
+			//non_computation_new_nodes_.push_back({newchild, (uint16_t)i});
+			//non_computation_lock_.unlock();
 		}
 
 		history->Trim(played_history_length_);
@@ -573,8 +548,8 @@ int SearchWorker_revamp::extendTree(std::vector<Move> *movestack, PositionHistor
 		// not checking and setting N = 0 (see code that propagates below) here means duplicates can exist in the queue if MULTIPLE_NEW_SIBLINGS = true
 		// but checking for duplicates that way does not work with multiple threads because N values are not restored until after the nn-computation (and meanwhile other threads can run)
 
-		if (nappends > full_tree_depth) full_tree_depth = nappends;
-		cum_depth += nappends;
+		if (nappends - 1 > full_tree_depth) full_tree_depth = nappends - 1;
+		cum_depth += nappends - 1;
 
 		}
 	}
@@ -626,11 +601,7 @@ void SearchWorker_revamp::retrieveNNResult(Node_revamp* node, int batchidx) {
       (node->GetEdges())[k].SetP(x);
     }
   }
-  if (INITIAL_MAX_P_IS_1) {
-    node->SetMaxW(1.0);
-  } else {
-    node->SetMaxW(node->GetEdges()[0].GetP());
-  }
+	node->SetMaxW(node->GetEdges()[0].GetP());
 }
 
 
@@ -685,17 +656,21 @@ void SearchWorker_revamp::recalcPropagatedQ(Node_revamp* node) {
 //  }
 //  node->SetNExtendable(n);
 
-  int16_t max_idx = -1;
-  float max_w = first_non_created_child_idx < node->GetNumEdges() ? node->GetEdges()[first_non_created_child_idx].GetP() : 0.0;
-  for (int i = 0; i < node->GetNumChildren(); i++) {
-    float br_max_w = node->GetEdges()[i].GetChild()->GetW() * node->GetEdges()[i].GetChild()->GetMaxW();
-    if (br_max_w > max_w) {
-      max_w = br_max_w;
-      max_idx = i;
-    }
-  }
-  node->SetMaxW(max_w);
-  node->SetBestIdx(max_idx);
+	int16_t max_idx = -1;
+	float max_w = 0.0;
+	int nidx = node->GetNextUnexpandedEdge();
+	if (nidx < node->GetNumEdges() && nidx - node->GetNumChildren() < MAX_NEW_SIBLINGS) {
+		max_w = node->GetEdges()[nidx].GetP();
+	}
+	for (int i = 0; i < node->GetNumChildren(); i++) {
+		float br_max_w = node->GetEdges()[i].GetChild()->GetW() * node->GetEdges()[i].GetChild()->GetMaxW();
+		if (br_max_w > max_w) {
+			max_w = br_max_w;
+			max_idx = i;
+		}
+	}
+	node->SetMaxW(max_w);
+	node->SetBestIdx(max_idx);
 }
 
 
@@ -706,10 +681,10 @@ int SearchWorker_revamp::propagate() {
 	//auto stop_comp_time = std::chrono::steady_clock::now();
 
 	while (true) {
-		minibatch_lock_.lock();
-		int j = minibatch_list_shared_idx_;
-		if (j == minibatch_amount_retrieved_) {
-			minibatch_lock_.unlock();
+		new_nodes_list_lock_.lock();
+		int j = new_nodes_list_shared_idx_;
+		if (j == new_nodes_amount_retrieved_) {
+			new_nodes_list_lock_.unlock();
 			if (helper_threads_mode_ == 3) {
 				std::this_thread::yield();
 				std::this_thread::sleep_for(std::chrono::microseconds(20));
@@ -718,37 +693,37 @@ int SearchWorker_revamp::propagate() {
 				break;
 			}
 		}
-		int n = minibatch_amount_retrieved_ - j;
+		int n = new_nodes_amount_retrieved_ - j;
 		if (n > 5) n = 5;
-		minibatch_list_shared_idx_ += n;
-		minibatch_lock_.unlock();
+		new_nodes_list_shared_idx_ += n;
+		new_nodes_list_lock_.unlock();
 
 		for (; n > 0; n--, j++) {
-		Node_revamp* node = minibatch_[j].node->GetParent();
-		uint16_t juncidx = new_nodes_[minibatch_[j].new_nodes_idx].junction;
+			Node_revamp* node = new_nodes_[j].node->GetParent();
+			uint16_t juncidx = new_nodes_[j].junction;
 
-		//LOGFILE << "node: " << node << ", juncidx: " << juncidx;
+			//LOGFILE << "node: " << node << ", juncidx: " << juncidx;
 
-		while (juncidx != 0xFFFF) {
-			while (node != junctions_[juncidx].node) {
-				recalcPropagatedQ(node);
-				count++;
-				node = node->GetParent();
+			while (juncidx != 0xFFFF) {
+				while (node != junctions_[juncidx].node) {
+					recalcPropagatedQ(node);
+					count++;
+					node = node->GetParent();
+				}
+				junction_locks_[juncidx]->lock();
+				int children_count = --junctions_[juncidx].children_count;
+				junction_locks_[juncidx]->unlock();
+				if (children_count > 0) break;
+				juncidx = junctions_[juncidx].parent;
 			}
-			junction_locks_[juncidx]->lock();
-			int children_count = --junctions_[juncidx].children_count;
-			junction_locks_[juncidx]->unlock();
-			if (children_count > 0) break;
-			juncidx = junctions_[juncidx].parent;
-		}
-		if (juncidx == 0xFFFF) {
-			while (true) {
-				recalcPropagatedQ(node);
-				count++;
-				if (node == root_node_) break;
-				node = node->GetParent();
+			if (juncidx == 0xFFFF) {
+				while (true) {
+					recalcPropagatedQ(node);
+					count++;
+					if (node == root_node_) break;
+					node = node->GetParent();
+				}
 			}
-		}
 		}
 	}
 
@@ -814,7 +789,7 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 //  int i = 0;
 
   if (root_node_->GetNumEdges() == 0 && !root_node_->IsTerminal()) {  // root node not extended
-    root_node_->ExtendNode(&history, MULTIPLE_NEW_SIBLINGS, root_node_);
+    root_node_->ExtendNode(&history, root_node_);
     if (root_node_->IsTerminal()) {
       std::cerr << "Root " << root_node_ << " is terminal, nothing to do\n";
       abort();
@@ -825,7 +800,6 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
     // LOGFILE << "Computing thread root ..";
     computation_->ComputeBlocking();
     // LOGFILE << " done\n";
-    root_node_->ClearNumChildren();
     retrieveNNResult(root_node_, 0);
     //i++;
   }
@@ -885,25 +859,24 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 			helper_thread_locks[j]->lock();
 		}
 
-		//~ if (non_computation_new_nodes_.size() > 0) {
-			//~ LOGFILE << "terminal node!!";
-		//~ }
-		for (int i = (int)non_computation_new_nodes_.size() - 1; i >= 0; i--) {
-			uint32_t juncidx = new_nodes_[non_computation_new_nodes_[i].new_nodes_idx].junction;
-			while (juncidx != 0xFFFF) {
-				junctions_[juncidx].children_count--;
-				if (junctions_[juncidx].children_count > 0) break;
-				juncidx = junctions_[juncidx].parent;
-			}
-			Node_revamp* node = non_computation_new_nodes_[i].node;
-			while (true) {
-				node = node->GetParent();
-				recalcPropagatedQ(node);
-				if (node == root_node_) break;
-			}
-		}
-
-		non_computation_new_nodes_.clear();
+		//if (non_computation_new_nodes_.size() > 0) {
+		//	LOGFILE << "terminal node!!";
+		//}
+		//for (int i = (int)non_computation_new_nodes_.size() - 1; i >= 0; i--) {
+		//	uint32_t juncidx = new_nodes_[non_computation_new_nodes_[i].new_nodes_idx].junction;
+		//	while (juncidx != 0xFFFF) {
+		//		junctions_[juncidx].children_count--;
+		//		if (junctions_[juncidx].children_count > 0) break;
+		//		juncidx = junctions_[juncidx].parent;
+		//	}
+		//	Node_revamp* node = non_computation_new_nodes_[i].node;
+		//	while (true) {
+		//		node = node->GetParent();
+		//		recalcPropagatedQ(node);
+		//		if (node == root_node_) break;
+		//	}
+		//}
+		//non_computation_new_nodes_.clear();
 
 		stop_comp_time = std::chrono::steady_clock::now();
 		search_->duration_create_ += (stop_comp_time - start_comp_time).count();
@@ -914,16 +887,19 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 		//~ }
 
 		new_nodes_list_shared_idx_ = 0;
+		minibatch_shared_idx_ = 0;
 
 		if (LOG_RUNNING_INFO) LOGFILE
 						<< "n: " << root_node_->GetN()
 //						<< ", new_nodes_ size: " << new_nodes_.size()
 						<< ", new_nodes_ size: " << new_nodes_size_
-						<< ", minibatch_ size: " << minibatch_.size()
+						//<< ", minibatch_ size: " << minibatch_.size()
 						<< ", junctions_ size: " << junctions_.size();
 						//<< ", highest w: " << new_nodes_[new_nodes_.size() - 1].w
 						//<< ", node stack size: " << nodestack_.size()
 						//<< ", max_unexpanded_w: " << new_nodes_[0];
+
+		int my_iteration = search_->iteration_count_a_++;
 
 		//LOGFILE << "Unlock " << thread_id;
 		search_->busy_mutex_.unlock();
@@ -938,6 +914,13 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 
 		search_->busy_mutex_.lock();
 
+		while (search_->iteration_count_b_ != my_iteration) {
+			search_->busy_mutex_.unlock();
+			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+			search_->busy_mutex_.lock();
+		}
+		search_->iteration_count_b_++;
+
 		if (LOG_RUNNING_INFO) LOGFILE << "Working thread: " << thread_id;
 
 
@@ -950,10 +933,12 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 			helper_thread_locks[j]->unlock();
 		}
 
-		for (int j = 0; j < (int)minibatch_.size(); j++) {
-			minibatch_[j].node->Realize();
-			retrieveNNResult(minibatch_[j].node, j);
-			minibatch_amount_retrieved_++;
+		for (int j = 0; j < (int)new_nodes_size_; j++) {
+			new_nodes_[j].node->IncrParentNumChildren();
+			if (new_nodes_[j].batch_idx != -1) {
+				retrieveNNResult(new_nodes_[j].node, new_nodes_[j].batch_idx);
+			}
+			new_nodes_amount_retrieved_++;
 		}
 
 		stop_comp_time = std::chrono::steady_clock::now();
@@ -975,9 +960,8 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 
 		if (LOG_RUNNING_INFO) LOGFILE << "main thread did propagates: " << pcount;
 
-		minibatch_.clear();
-		minibatch_list_shared_idx_ = 0;
-		minibatch_amount_retrieved_ = 0;
+		new_nodes_list_shared_idx_ = 0;
+		new_nodes_amount_retrieved_ = 0;
 
 		junctions_.clear();
 

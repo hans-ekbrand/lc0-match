@@ -127,6 +127,8 @@ private:
 	ThinkingInfo::Callback info_callback_;
 
 	std::mutex busy_mutex_;
+	int iteration_count_a_ = 0;
+	int iteration_count_b_ = 0;
 
 	int full_tree_depth_ = 0;
 	uint64_t cum_depth_ = 0;
@@ -164,20 +166,15 @@ public:
 private:
 
 	struct NewNode {
-		Node_revamp* parent;
-		int idx;
+		Node_revamp* node;
 		uint16_t junction;
+		int16_t batch_idx;  // -1 if not in batch
 	};
 
 	struct Junction {
 		Node_revamp *node;
 		uint16_t parent;
 		uint8_t children_count;
-	};
-
-	struct NewNode2 {
-		Node_revamp* node;
-		uint16_t new_nodes_idx;
 	};
 
 	void AddNodeToComputation(PositionHistory *history);
@@ -223,13 +220,8 @@ private:
 	std::vector<Junction> junctions_;
 	std::vector<std::mutex *> junction_locks_;  // SearchWorker instance not needed, move to Search?
 
-	std::vector<NewNode2> non_computation_new_nodes_;  // SearchWorker instance not needed, move to Search?
-	std::mutex non_computation_lock_;  // SearchWorker instance not needed, move to Search?
-
-	std::vector<NewNode2> minibatch_;
-	int minibatch_list_shared_idx_ = 0;  // SearchWorker instance not needed, move to Search?
-	int minibatch_amount_retrieved_ = 0;  // SearchWorker instance not needed, move to Search?
-	std::mutex minibatch_lock_;  // SearchWorker instance not needed, move to Search?
+	int minibatch_shared_idx_ = 0;
+	int new_nodes_amount_retrieved_ = 0;  // SearchWorker instance not needed, move to Search?
 
 	std::vector<float> pvals_;  // SearchWorker instance not needed, move to Search?
 

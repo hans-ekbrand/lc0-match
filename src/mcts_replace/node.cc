@@ -251,8 +251,8 @@ void Node_revamp::MakeTerminal(GameResult result) {
   } else if (result == GameResult::WHITE_WON) {
     SetOrigQ(1.0f);
   } else if (result == GameResult::BLACK_WON) {
-    q_ = -1.0f;
-    LOGFILE << "BLACK_WON but white made the final move.";
+    SetOrigQ(-1.0f);
+    std::cerr << "BLACK_WON but white made the final move.";
     abort();
   }
 }
@@ -272,7 +272,7 @@ void Node_revamp::ReleaseChildrenExceptOne(Node_revamp* node_to_save) {
   }
 }
 
-  void Node_revamp::ExtendNode(PositionHistory* history, bool multiple_new_siblings, Node_revamp* root_node) {
+void Node_revamp::ExtendNode(PositionHistory* history, Node_revamp* root_node) {
   // We don't need the mutex because other threads will see that N=0 and
   // N-in-flight=1 and will not touch this node.
   const auto& board = history->Last().GetBoard();
@@ -315,16 +315,18 @@ void Node_revamp::ReleaseChildrenExceptOne(Node_revamp* node_to_save) {
   //n_extendable_ = multiple_new_siblings ? GetNumEdges() : 1;
 }
 
-void Node_revamp::Realize() {
-  noofchildren_ = 0;
+void Node_revamp::IncrParentNumChildren() {
+  parent_->noofchildren_++;
 
-  if (index_ == parent_->noofchildren_) {
-    parent_->noofchildren_++;
-    for (int i = index_ + 1; i < parent_->edges_.size() && parent_->edges_[i].GetChild() != nullptr && parent_->edges_[i].GetChild()->GetNumChildren() != 10000; i++) {
-//    for (int i = index_ + 1; i < parent_->next_unexpanded_edge_ && parent_->edges_[i].GetChild()->GetNumChildren() != 10000; i++) {
-      parent_->noofchildren_++;
-    }
-  }
+  //~ noofchildren_ = 0;
+
+  //~ if (index_ == parent_->noofchildren_) {
+    //~ parent_->noofchildren_++;
+    //~ for (int i = index_ + 1; i < parent_->edges_.size() && parent_->edges_[i].GetChild() != nullptr && parent_->edges_[i].GetChild()->GetNumChildren() != 10000; i++) {
+//~ //    for (int i = index_ + 1; i < parent_->next_unexpanded_edge_ && parent_->edges_[i].GetChild()->GetNumChildren() != 10000; i++) {
+      //~ parent_->noofchildren_++;
+    //~ }
+  //~ }
 }
 
 /////////////////////////////////////////////////////////////////////////
