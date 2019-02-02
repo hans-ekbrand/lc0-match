@@ -365,7 +365,8 @@ void SearchWorker_revamp::pickNodesToExtend() {
 					//new_nodes_list_lock_.lock();
 					//new_nodes_.push_back({node, nidx, 0});
 					//new_nodes_list_lock_.unlock();
-					new_nodes_[new_nodes_size_++] = {node->GetEdges()[nidx].GetChild(), 0, -1};
+					new_nodes_[new_nodes_size_] = {node->GetEdges()[nidx].GetChild(), 0, -1};
+					new_nodes_size_++;
 					node->SetNextUnexpandedEdge(nidx + 1);
 					break;
 				} else {  // no more child to add (before retrieved information about previous ones)
@@ -556,10 +557,10 @@ int SearchWorker_revamp::extendTree(std::vector<Move> *movestack, PositionHistor
 		}
 	}
 
-	search_->counters_lock_.lock();
+//	search_->counters_lock_.lock();
 	if (full_tree_depth > search_->full_tree_depth_) search_->full_tree_depth_ = full_tree_depth;
 	search_->cum_depth_ += cum_depth;
-	search_->counters_lock_.unlock();
+//	search_->counters_lock_.unlock();
 
 	return count;
 }
