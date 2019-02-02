@@ -31,6 +31,7 @@
 #include <thread>
 #include <mutex>
 #include <queue>
+#include <atomic>
 #include "chess/callbacks.h"
 #include "chess/uciloop.h"
 #include "mcts/params.h"
@@ -132,17 +133,16 @@ private:
 
 	int full_tree_depth_ = 0;
 	uint64_t cum_depth_ = 0;
-	std::mutex counters_lock_;
+	//std::mutex counters_lock_;
 
 	int64_t last_uci_time_ = 0;
 
-	int64_t duration_search_ = 0;
-	int64_t duration_create_ = 0;
-	int64_t duration_compute_ = 0;
-	int64_t duration_retrieve_ = 0;
-	int64_t duration_propagate_ = 0;
-	//int64_t duration_node_prio_queue_lock_ = 0;
-	int count_iterations_ = 0;
+	std::atomic<int64_t> duration_search_{0};
+	std::atomic<int64_t> duration_create_{0};
+	std::atomic<int64_t> duration_compute_{0};
+	std::atomic<int64_t> duration_retrieve_{0};
+	std::atomic<int64_t> duration_propagate_{0};
+	std::atomic<int> count_iterations_{0};
 
 	friend class SearchWorker_revamp;
 };
@@ -211,7 +211,7 @@ private:
 
 	//std::vector<NewNode> new_nodes_;
 	NewNode *new_nodes_;
-	int new_nodes_size_ = 0;
+	std::atomic<int> new_nodes_size_{0};
 	int new_nodes_list_shared_idx_ = 0;  // SearchWorker instance not needed, move to Search?
 	std::mutex new_nodes_list_lock_;  // SearchWorker instance not needed, move to Search?
 
@@ -221,7 +221,7 @@ private:
 	std::vector<std::mutex *> junction_locks_;  // SearchWorker instance not needed, move to Search?
 
 	int minibatch_shared_idx_ = 0;
-	int new_nodes_amount_retrieved_ = 0;  // SearchWorker instance not needed, move to Search?
+	std::atomic<int> new_nodes_amount_retrieved_{0};  // SearchWorker instance not needed, move to Search?
 
 	std::vector<float> pvals_;  // SearchWorker instance not needed, move to Search?
 
