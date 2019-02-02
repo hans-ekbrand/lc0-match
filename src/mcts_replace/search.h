@@ -48,7 +48,7 @@ namespace lczero {
 struct SearchLimits_revamp {
 	// Type for N in nodes is currently uint32_t, so set limit in order not to
 	// overflow it.
-	std::int64_t visits = 4000000000;
+	std::int64_t visits = -1;
 	std::int64_t playouts = -1;
 	int depth = -1;
 	optional<std::chrono::steady_clock::time_point> search_deadline;
@@ -75,18 +75,18 @@ public:
 	void StartThreads(size_t how_many);
 
 	// Starts search with k threads and wait until it finishes.
-	//  void RunBlocking(size_t threads);
+	void RunBlocking(size_t threads);
 
 	// Stops search. At the end bestmove will be returned. The function is not
 	// blocking, so it returns before search is actually done.
 	void Stop();
 	// Stops search, but does not return bestmove. The function is not blocking.
-	//  void Abort();
+	void Abort();
 	// Blocks until all worker thread finish.
 	void Wait();
 	// Returns whether search is active. Workers check that to see whether another
 	// search iteration is needed.
-	//  bool IsSearchActive() const;
+	bool IsSearchActive() const;
 
 	// Returns best move, from the point of view of white player. And also ponder.
 	// May or may not use temperature, according to the settings.
@@ -104,10 +104,12 @@ public:
 private:
 
 	int64_t GetTimeSinceStart() const;
+  int64_t GetTimeToDeadline() const;
 	void SendUciInfo();
+	void checkLimitsAndMaybeTriggerStop();
 
 
-	std::mutex threads_list_mutex_;
+	mutable std::mutex threads_list_mutex_;
 	int n_thread_active_ = 0;
 	std::vector<std::thread> threads_;
 
@@ -136,6 +138,8 @@ private:
 	//std::mutex counters_lock_;
 
 	int64_t last_uci_time_ = 0;
+	std::atomic<bool> not_stop_searching_{true};
+	std::atomic<bool> abort_{false};
 
 	std::atomic<int64_t> duration_search_{0};
 	std::atomic<int64_t> duration_create_{0};

@@ -91,6 +91,13 @@ int64_t Search_revamp::GetTimeSinceStart() const {
       .count();
 }
 
+int64_t Search_revamp::GetTimeToDeadline() const {
+  if (!limits_.search_deadline) return 0;
+  return std::chrono::duration_cast<std::chrono::milliseconds>(
+             *limits_.search_deadline - std::chrono::steady_clock::now())
+      .count();
+}
+
 
 void Search_revamp::StartThreads(size_t how_many) {
 
@@ -105,6 +112,11 @@ void Search_revamp::StartThreads(size_t how_many) {
     );
   }
 	threads_list_mutex_.unlock();
+}
+
+void Search_revamp::RunBlocking(size_t threads) {
+	StartThreads(threads);
+	Wait();
 }
 
 //~ bool Search_revamp::IsSearchActive() const {
@@ -144,8 +156,6 @@ void Search_revamp::StartThreads(size_t how_many) {
 
 
 /*
-void Search_revamp::RunBlocking(size_t threads) {
-}
 
 bool Search_revamp::IsSearchActive() const {
 	return false;
@@ -153,12 +163,20 @@ bool Search_revamp::IsSearchActive() const {
 */
 
 void Search_revamp::Stop() {
+	not_stop_searching_ = false;
 }
 
-/*
 void Search_revamp::Abort() {
+	abort_ = true;
+	not_stop_searching_ = false;
 }
-*/
+
+bool Search_revamp::IsSearchActive() const {
+	threads_list_mutex_.lock();
+	bool active = n_thread_active_ > 0;
+	threads_list_mutex_.unlock();
+	return active;
+}
 
 namespace {
 
@@ -201,7 +219,7 @@ std::pair<Move, Move> Search_revamp::GetBestMove() const {
 
 
 Search_revamp::~Search_revamp() {
-//  Abort();
+  Abort();
   Wait();
 }
 
@@ -266,6 +284,22 @@ void Search_revamp::SendUciInfo() {
   std::reverse(uci_infos.begin(), uci_infos.end());
   info_callback_(uci_infos);
 
+}
+
+void Search_revamp::checkLimitsAndMaybeTriggerStop() {
+	//root_node_->GetN() + (search_->n_thread_active_ - 1) * batch_size_ < visits/* && root_node_->GetNExtendable() > 0*/
+	if (limits_.playouts >= 0 && root_node_->GetN() - initial_visits_ >= limits_.playouts) {
+		not_stop_searching_ = false;
+	} else
+	if (limits_.visits >= 0 && root_node_->GetN() >= limits_.visits) {
+		not_stop_searching_ = false;
+	} else
+	if (limits_.search_deadline && GetTimeToDeadline() <= 0) {
+		not_stop_searching_ = false;
+	} else
+	if (limits_.depth >= 0 && cum_depth_ / (root_node_->GetN() - initial_visits_) >= (uint64_t)limits_.depth) {
+		not_stop_searching_ = false;
+	}
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -809,9 +843,7 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 //	std::priority_queue<PropagateQueueElement, std::vector<PropagateQueueElement>, decltype(cmp)> propagate_queue(cmp);
 
 
-	uint32_t visits = search_->limits_.visits;
-
-	while (root_node_->GetN() + (search_->n_thread_active_ - 1) * batch_size_ < visits/* && root_node_->GetNExtendable() > 0*/) {
+	while (search_->not_stop_searching_) {
 
 		computation_ = search_->network_->NewComputation();
 
@@ -975,13 +1007,16 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 			search_->SendUciInfo();
 		}
 
+		if (search_->not_stop_searching_) {
+			search_->checkLimitsAndMaybeTriggerStop();
+		}
   }
 
 	search_->threads_list_mutex_.lock();
 	int nt = --search_->n_thread_active_;
 	search_->threads_list_mutex_.unlock();
 
-	if (nt == 0) {  // this is the last thread
+	if (nt == 0 && !search_->abort_) {  // this is the last thread
 		int64_t elapsed_time = search_->GetTimeSinceStart();
 		//LOGFILE << "Elapsed time when thread for node " << root_node_ << " which has size " << root_node_->GetN() << " nodes did " << i << " computations: " << elapsed_time << "ms";
 		LOGFILE << "Elapsed time for " << root_node_->GetN() << " nodes: " << elapsed_time << "ms";
