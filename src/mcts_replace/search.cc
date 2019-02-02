@@ -286,7 +286,8 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
     double sum_of_P_of_expanded_nodes = 0.0;
     double sum_of_w_of_expanded_nodes = 0.0;
     for (int i = 0; i < n; i++) {
-      float w = exp(q_concentration_ * node->GetEdges()[i].GetChild()->GetQ());
+      // To fit these datapoints for cpuct: 2 -> 10, 30000 -> 40; 120000 -> 45; 480000 -> 50 we use 10.41674 * x ^ 0.1030475
+      float w = exp(21 * pow(node->GetN(), 0.07440463) * node->GetEdges()[i].GetChild()->GetQ());
       node->GetEdges()[i].GetChild()->SetW(w);
       sum_of_w_of_expanded_nodes += w;
       sum_of_P_of_expanded_nodes += node->GetEdges()[i].GetP();
@@ -313,7 +314,8 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
     std::vector<double> weighted_p_and_q(n);
     double sum_of_weighted_p_and_q = 0.0;
     for (int i = 0; i < n; i++){
-      double relative_weight_of_p = pow(node->GetEdges()[i].GetChild()->GetN(), policy_weight_exponent_) / ( 0.05 + node->GetEdges()[i].GetChild()->GetN()); // 0.05 is here to make Q have some influence after 1 visit.
+      // double relative_weight_of_p = pow(node->GetN(), 0.3044496 * pow(node->GetN(), 0.07289331)) / ( 0.05 + node->GetN()); // 0.05 is here to make Q have some influence after 1 visit.
+      double relative_weight_of_p = pow(node->GetN(), (0.1617684/node->GetN() + 0.3382316 * pow(node->GetN(), 0.05560117))) / ( 0.05 + node->GetN()); // 0.05 is here to make Q have some influence after 1 visit.      
       // LOGFILE << "relative_weight_of_p:" << relative_weight_of_p;
       double relative_weight_of_q = 1 - relative_weight_of_p;
       // LOGFILE << "relative_weight_of_q:" << relative_weight_of_q;	    
@@ -990,23 +992,23 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 
 //		LOGFILE << "move   P                 n   norm n      h   Q          w";
 		LOGFILE << "move   P                 n   norm n     Q          w";
-		for (int i = 0; i < root_node_->GetNumChildren(); i++) {
-			LOGFILE << std::fixed << std::setfill(' ') 
-								<< (root_node_->GetEdges())[i].move_.as_string() << " "
-								<< std::setw(10) << (root_node_->GetEdges())[i].GetP() << " "
-								<< std::setw(10) << (root_node_->GetEdges())[i].GetChild()->GetN() << " "
-								<< std::setw(10) << (float)(root_node_->GetEdges())[i].GetChild()->GetN() / (float)(root_node_->GetN() - 1) << " "
-//								<< std::setw(4) << (root_node_->GetEdges())[i].GetChild()->ComputeHeight() << " "
-								<< std::setw(10) << (float)(root_node_->GetEdges())[i].GetChild()->GetQ() << " "
-								<< std::setw(10) << root_node_->GetEdges()[i].GetChild()->GetW();
-		}
+// 		for (int i = 0; i < root_node_->GetNumChildren(); i++) {
+// 			LOGFILE << std::fixed << std::setfill(' ') 
+// 								<< (root_node_->GetEdges())[i].move_.as_string() << " "
+// 								<< std::setw(10) << (root_node_->GetEdges())[i].GetP() << " "
+// 								<< std::setw(10) << (root_node_->GetEdges())[i].GetChild()->GetN() << " "
+// 								<< std::setw(10) << (float)(root_node_->GetEdges())[i].GetChild()->GetN() / (float)(root_node_->GetN() - 1) << " "
+// //								<< std::setw(4) << (root_node_->GetEdges())[i].GetChild()->ComputeHeight() << " "
+// 				<< std::setw(10) << (float)(root_node_->GetEdges())[i].GetChild()->GetQ() << " " // are we sure that all children has a Q by now? I saw a segfault around here
+// 								<< std::setw(10) << root_node_->GetEdges()[i].GetChild()->GetW();
+// 		}
 
-		LOGFILE << "search: " << search_->duration_search_ / search_->count_iterations_
-						<< ", create: " << search_->duration_create_ / search_->count_iterations_
-						<< ", compute: " << search_->duration_compute_ / search_->count_iterations_
-						<< ", retrieve: " << search_->duration_retrieve_ / search_->count_iterations_
-						<< ", propagate: " << search_->duration_propagate_ / search_->count_iterations_;
-//						<< ", duration_node_prio_queue_lock_: " << duration_node_prio_queue_lock_ / count_iterations_;
+// 		LOGFILE << "search: " << search_->duration_search_ / search_->count_iterations_
+// 						<< ", create: " << search_->duration_create_ / search_->count_iterations_
+// 						<< ", compute: " << search_->duration_compute_ / search_->count_iterations_
+// 						<< ", retrieve: " << search_->duration_retrieve_ / search_->count_iterations_
+// 						<< ", propagate: " << search_->duration_propagate_ / search_->count_iterations_;
+// //						<< ", duration_node_prio_queue_lock_: " << duration_node_prio_queue_lock_ / count_iterations_;
 
 		int64_t dur_sum = (search_->duration_search_ + search_->duration_create_ + search_->duration_compute_ + search_->duration_retrieve_ + search_->duration_propagate_) / 1000;
 
