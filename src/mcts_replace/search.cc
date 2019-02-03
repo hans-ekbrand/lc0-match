@@ -287,7 +287,7 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
     double sum_of_w_of_expanded_nodes = 0.0;
     for (int i = 0; i < n; i++) {
       // To fit these datapoints for cpuct: 2 -> 10, 30000 -> 40; 120000 -> 45; 480000 -> 50 we use 10.41674 * x ^ 0.1030475
-      float w = exp(21 * pow(node->GetN(), 0.07440463) * node->GetEdges()[i].GetChild()->GetQ());
+      float w = exp(10 * pow(node->GetN(), 0.09) * node->GetEdges()[i].GetChild()->GetQ());
       node->GetEdges()[i].GetChild()->SetW(w);
       sum_of_w_of_expanded_nodes += w;
       sum_of_P_of_expanded_nodes += node->GetEdges()[i].GetP();
@@ -314,8 +314,9 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
     std::vector<double> weighted_p_and_q(n);
     double sum_of_weighted_p_and_q = 0.0;
     for (int i = 0; i < n; i++){
-      // double relative_weight_of_p = pow(node->GetN(), 0.3044496 * pow(node->GetN(), 0.07289331)) / ( 0.05 + node->GetN()); // 0.05 is here to make Q have some influence after 1 visit.
-      double relative_weight_of_p = pow(node->GetN(), (0.1617684/node->GetN() + 0.3382316 * pow(node->GetN(), 0.05560117))) / ( 0.05 + node->GetN()); // 0.05 is here to make Q have some influence after 1 visit.      
+      // double relative_weight_of_p = pow(node->GetN(), (0.1617684/node->GetN() + 0.3382316 * pow(node->GetN(), 0.05560117))) / ( 0.05 + node->GetN()); // 0.05 is here to make Q have some influence after 1 visit.
+      // double relative_weight_of_p = pow(node->GetN(), (0.1182095/node->GetN() + 0.3817905 * pow(node->GetN(), 0.05161479))) / ( 0.05 + node->GetN()); // 0.05 is here to make Q have some influence after 1 visit.
+      double relative_weight_of_p = pow(node->GetN(), (0.5 + log10(node->GetN())/30)) / ( 0.05 + node->GetN()); // 0.05 is here to make Q have some influence after 1 visit.                  
       // LOGFILE << "relative_weight_of_p:" << relative_weight_of_p;
       double relative_weight_of_q = 1 - relative_weight_of_p;
       // LOGFILE << "relative_weight_of_q:" << relative_weight_of_q;	    
@@ -1011,14 +1012,15 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 // 						<< ", propagate: " << search_->duration_propagate_ / search_->count_iterations_;
 // //						<< ", duration_node_prio_queue_lock_: " << duration_node_prio_queue_lock_ / count_iterations_;
 
-		int64_t dur_sum = (search_->duration_search_ + search_->duration_create_ + search_->duration_compute_ + search_->duration_retrieve_ + search_->duration_propagate_) / 1000;
+		// int64_t dur_sum = (search_->duration_search_ + search_->duration_create_ + search_->duration_compute_ + search_->duration_retrieve_ + search_->duration_propagate_) / 1000;
 
-		LOGFILE << "search: " << search_->duration_search_ / dur_sum
-						<< ", create: " << search_->duration_create_ / dur_sum
-						<< ", compute: " << search_->duration_compute_ / dur_sum
-						<< ", retrieve: " << search_->duration_retrieve_ / dur_sum
-						<< ", propagate: " << search_->duration_propagate_ / dur_sum;
-
+		// LOGFILE << "about to div by dur_sum, may crash:" << dur_sum;
+		// LOGFILE << "search: " << search_->duration_search_ / dur_sum
+		// 				<< ", create: " << search_->duration_create_ / dur_sum
+		// 				<< ", compute: " << search_->duration_compute_ / dur_sum
+		// 				<< ", retrieve: " << search_->duration_retrieve_ / dur_sum
+		// 				<< ", propagate: " << search_->duration_propagate_ / dur_sum;
+		// LOGFILE << "Didn't crash";
 
 		int bestidx = indexOfHighestQEdge(root_node_);
 		Move best_move = root_node_->GetEdges()[bestidx].GetMove(search_->played_history_.IsBlackToMove());
