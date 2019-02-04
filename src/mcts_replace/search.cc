@@ -868,6 +868,10 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 			for (int j = 0; j < (int)helper_thread_locks.size(); j++) {
 				helper_thread_locks[j]->lock();
 			}
+			if (search_->half_done_count_ == 0) {  // no other thread is waiting for nn computation and new nodes to finish so the search tree is exhausted
+				search_->not_stop_searching_ = false;
+				break;
+			}
 
 			search_->busy_mutex_.unlock();
 			std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -922,7 +926,6 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 		//~ }
 
 		new_nodes_list_shared_idx_ = 0;
-		minibatch_shared_idx_ = 0;
 
 		if (LOG_RUNNING_INFO) LOGFILE
 						<< "n: " << root_node_->GetN()
@@ -935,6 +938,7 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 						//<< ", max_unexpanded_w: " << new_nodes_[0];
 
 		int my_iteration = search_->iteration_count_a_++;
+		search_->half_done_count_ += new_nodes_size_;
 
 		//LOGFILE << "Unlock " << thread_id;
 		search_->busy_mutex_.unlock();
@@ -942,7 +946,10 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
     // std::this_thread::sleep_for(std::chrono::milliseconds(0));
 		start_comp_time = std::chrono::steady_clock::now();
 
-		computation_->ComputeBlocking();
+		if (minibatch_shared_idx_ > 0) {
+			computation_->ComputeBlocking();
+			minibatch_shared_idx_ = 0;
+		}
 
 		stop_comp_time = std::chrono::steady_clock::now();
 		search_->duration_compute_ += (stop_comp_time - start_comp_time).count();
@@ -955,6 +962,7 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 			search_->busy_mutex_.lock();
 		}
 		search_->iteration_count_b_++;
+		search_->half_done_count_ -= new_nodes_size_;
 
 		if (LOG_RUNNING_INFO) LOGFILE << "Working thread: " << thread_id;
 
@@ -1039,12 +1047,14 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 								<< std::setw(10) << root_node_->GetEdges()[i].GetChild()->GetW();
 		}
 
-		LOGFILE << "search: " << search_->duration_search_ / search_->count_iterations_
-						<< ", create: " << search_->duration_create_ / search_->count_iterations_
-						<< ", compute: " << search_->duration_compute_ / search_->count_iterations_
-						<< ", retrieve: " << search_->duration_retrieve_ / search_->count_iterations_
-						<< ", propagate: " << search_->duration_propagate_ / search_->count_iterations_;
-//						<< ", duration_node_prio_queue_lock_: " << duration_node_prio_queue_lock_ / count_iterations_;
+		if (search_->count_iterations_ > 0) {
+			LOGFILE << "search: " << search_->duration_search_ / search_->count_iterations_
+							<< ", create: " << search_->duration_create_ / search_->count_iterations_
+							<< ", compute: " << search_->duration_compute_ / search_->count_iterations_
+							<< ", retrieve: " << search_->duration_retrieve_ / search_->count_iterations_
+							<< ", propagate: " << search_->duration_propagate_ / search_->count_iterations_;
+							//<< ", duration_node_prio_queue_lock_: " << duration_node_prio_queue_lock_ / count_iterations_;
+		}
 
 		int64_t dur_sum = (search_->duration_search_ + search_->duration_create_ + search_->duration_compute_ + search_->duration_retrieve_ + search_->duration_propagate_) / 1000;
 

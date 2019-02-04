@@ -132,6 +132,7 @@ private:
 	std::mutex busy_mutex_;
 	int iteration_count_a_ = 0;
 	int iteration_count_b_ = 0;
+	int half_done_count_ = 0;
 
 	int full_tree_depth_ = 0;
 	uint64_t cum_depth_ = 0;
