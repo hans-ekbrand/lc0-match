@@ -55,9 +55,6 @@ class Edge_revamp {
   Node_revamp* GetChild() { return child_.get(); }
   void CreateChild(Node_revamp* parent, uint16_t index);
 
-  void ReleaseChild();
-  void ReleaseChildIfIsNot(Node_revamp* node_to_save);
-
   // Debug information about the edge.
   std::string DebugString() const;
 

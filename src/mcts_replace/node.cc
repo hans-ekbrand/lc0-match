@@ -167,18 +167,6 @@ float Edge_revamp::GetP() const {
   return ret;
 }
 
-void Edge_revamp::ReleaseChild() {
-  if (child_) {
-    gNodeGc.AddToGcQueue(std::move(child_));
-  }
-}
-
-void Edge_revamp::ReleaseChildIfIsNot(Node_revamp* node_to_save) {
-  if (child_.get() != node_to_save) {
-    gNodeGc.AddToGcQueue(std::move(child_));
-  }
-}
-
 std::string Edge_revamp::DebugString() const {
   std::ostringstream oss;
   oss << "Move: " << move_.as_string() << " p_: " << p_ << " GetP: " << GetP();
@@ -258,17 +246,16 @@ void Node_revamp::MakeTerminal(GameResult result) {
 }
 
 void Node_revamp::ReleaseChildren() {
-  int nedge = edges_.size();
-  for (int i = 0; i < nedge; i++) {
-    auto& n = edges_[i];
-    n.ReleaseChild();
+  for (int i = edges_.size() - 1; i >= 0; i--) {
+    gNodeGc.AddToGcQueue(std::move(edges_[i].child_));
   }
 }
 
 void Node_revamp::ReleaseChildrenExceptOne(Node_revamp* node_to_save) {
-  int nedge = edges_.size();
-  for (int i = 0; i < nedge; i++) {
-    edges_[i].ReleaseChildIfIsNot(node_to_save);
+  for (int i = edges_.size() - 1; i >= 0; i--) {
+    if (edges_[i].child_.get() != node_to_save) {
+      gNodeGc.AddToGcQueue(std::move(edges_[i].child_));
+    }
   }
 }
 
@@ -337,12 +324,10 @@ void NodeTree_revamp::MakeMove(Move move) {
   if (HeadPosition().IsBlackToMove()) move.Mirror();
 
   Node_revamp* new_head = nullptr;
-  int nedges = current_head_->edges_.size();
-  for (int i = 0; i < nedges; i++) {
+  for (int i = 0; i < current_head_->edges_.size(); i++) {
     auto& n = current_head_->edges_[i];
-//  for (auto& n : current_head_->Edges()) {
     if (n.move_ == move) {
-      new_head = n.GetChild();  // is this always non-null? must it be?
+      new_head = n.GetChild();
       break;
     }
   }
