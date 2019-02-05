@@ -121,7 +121,10 @@ void Search_revamp::RunBlocking(size_t threads) {
 }
 
 void Search_revamp::Stop() {
-	not_stop_searching_ = false;
+  // If pondering is on, then turn if off to get bestmove
+  ponder_ = false;
+  not_stop_searching_ = false;
+  // TODO: If search is already finished, then return bestmove
 }
 
 void Search_revamp::Abort() {
