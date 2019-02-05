@@ -48,8 +48,6 @@ int const N_HELPER_THREADS = 2;
 
 bool const LOG_RUNNING_INFO = false;
 
-  bool ponder_ = false;
-
 }  // namespace
 
 
@@ -289,9 +287,6 @@ void Search_revamp::SendUciInfo() {
 }
 
 void Search_revamp::checkLimitsAndMaybeTriggerStop() {
-        if(limits_.infinite){ ponder_ = true;
-	  LOGFILE << "Limits are infinite infering pondering";
-	}
 	//root_node_->GetN() + (search_->n_thread_active_ - 1) * batch_size_ < visits/* && root_node_->GetNExtendable() > 0*/
 	if (limits_.playouts >= 0 && root_node_->GetN() - initial_visits_ >= limits_.playouts) {
 		not_stop_searching_ = false;
@@ -1071,20 +1066,16 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 						<< ", propagate: " << search_->duration_propagate_ / dur_sum;
 		}
 
-		// Don't return bestmove if we are pondering
-		if(!ponder_){
-		  int bestidx = indexOfHighestQEdge(root_node_);
-		  Move best_move = root_node_->GetEdges()[bestidx].GetMove(search_->played_history_.IsBlackToMove());
-		  int ponderidx = indexOfHighestQEdge(root_node_->GetEdges()[bestidx].GetChild());
-		  // If the move we make is terminal, then there is nothing to ponder about
-		  if(!root_node_->GetEdges()[bestidx].GetChild()->IsTerminal()){
-		    Move ponder_move = root_node_->GetEdges()[bestidx].GetChild()->GetEdges()[ponderidx].GetMove(!search_->played_history_.IsBlackToMove());
-		    search_->best_move_callback_({best_move, ponder_move});    
-		  } else {
-		    search_->best_move_callback_({best_move});    
-		  }
+
+		int bestidx = indexOfHighestQEdge(root_node_);
+		Move best_move = root_node_->GetEdges()[bestidx].GetMove(search_->played_history_.IsBlackToMove());
+		int ponderidx = indexOfHighestQEdge(root_node_->GetEdges()[bestidx].GetChild());
+		// If the move we make is terminal, then there is nothing to ponder about
+		if(!root_node_->GetEdges()[bestidx].GetChild()->IsTerminal()){
+			Move ponder_move = root_node_->GetEdges()[bestidx].GetChild()->GetEdges()[ponderidx].GetMove(!search_->played_history_.IsBlackToMove());
+			search_->best_move_callback_({best_move, ponder_move});    
 		} else {
-		  LOGFILE << "Since ponder is on, not reporting best_move";
+			search_->best_move_callback_({best_move});    
 		}
 	}
 

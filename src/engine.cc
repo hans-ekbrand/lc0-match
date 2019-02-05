@@ -309,22 +309,15 @@ void EngineController::SetPosition(const std::string& fen,
 void EngineController::SetupPosition(
     const std::string& fen, const std::vector<std::string>& moves_str) {
   SharedLock lock(busy_mutex_);
-  LOGFILE << "SP 1";
   search_.reset();
-  // This one never returns when Go() is called due to "ponderhit".
-  LOGFILE << "SP 2";  
 
   UpdateFromUciOptions();
-  LOGFILE << "SP 3";  
 
   if (!tree_) tree_ = std::make_unique<NodeTree_revamp>();
-  LOGFILE << "SP 4";  
 
   std::vector<Move> moves;
   for (const auto& move : moves_str) moves.emplace_back(move);
-  LOGFILE << "SP 5";    
   bool is_same_game = tree_->ResetToPosition(fen, moves);
-  LOGFILE << "SP 6";    
   if (!is_same_game) time_spared_ms_ = 0;
 }
 
@@ -342,9 +335,7 @@ void EngineController::Go(const GoParams& params) {
 
   // Setting up current position, now that it's known whether it's ponder or
   // not.
-  LOGFILE << "lived 0.1";          
   if (current_position_) {
-    LOGFILE << "lived 0.2";              
     if (params.ponder && !current_position_->moves.empty()) {
       LOGFILE << "Ponder requested!";
       std::vector<std::string> moves(current_position_->moves);
@@ -372,24 +363,11 @@ void EngineController::Go(const GoParams& params) {
         info_callback_({ponder_info});
       };
     } else {
-      LOGFILE << "lived 1";
       SetupPosition(current_position_->fen, current_position_->moves);
-      // SetupPosition() never returns here when Go is called in context of "ponderhit".
-// 0205 12:14:53.114652 140708855592768 ../../src/chess/uciloop.cc:131] >> ponderhit
-// 0205 12:14:53.114678 140708855592768 ../../src/engine.cc:408] Ponderhit captured! Will stop search and the initiate a normal search
-// 0205 12:14:53.114693 140708855592768 ../../src/engine.cc:329] Go!
-// 0205 12:14:53.114699 140708855592768 ../../src/engine.cc:338] lived 0.1
-// 0205 12:14:53.114703 140708855592768 ../../src/engine.cc:340] lived 0.2
-// 0205 12:14:53.114708 140708855592768 ../../src/engine.cc:368] lived 1
-// And here the log file ends (the execution continues but who knows what it does...)
-
-      LOGFILE << "lived 2";      
     }
   } else if (!tree_) {
-    LOGFILE << "lived 3";      
     SetupPosition(ChessBoard::kStartposFen, {});
   }
-  LOGFILE << "lived 4";        
 
   auto limits = PopulateSearchLimits(
       tree_->GetPlyCount(), tree_->IsBlackToMove(), params, start_time);
