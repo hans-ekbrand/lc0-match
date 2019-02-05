@@ -97,7 +97,7 @@ private:
 
 
 	mutable std::mutex threads_list_mutex_;
-	int n_thread_active_ = 0;
+	std::atomic<int> n_thread_active_{0};
 	std::vector<std::thread> threads_;
 
 	Node_revamp* root_node_;

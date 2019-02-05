@@ -130,9 +130,9 @@ void Search_revamp::Abort() {
 }
 
 bool Search_revamp::IsSearchActive() const {
-	threads_list_mutex_.lock();
+	//threads_list_mutex_.lock();
 	bool active = n_thread_active_ > 0;
-	threads_list_mutex_.unlock();
+	//threads_list_mutex_.unlock();
 	return active;
 }
 
@@ -1034,9 +1034,9 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 		}
   }
 
-	search_->threads_list_mutex_.lock();
+	//search_->threads_list_mutex_.lock();
 	int nt = --search_->n_thread_active_;
-	search_->threads_list_mutex_.unlock();
+	//search_->threads_list_mutex_.unlock();
 
 	if (nt == 0) {  // this is the last thread
 		int64_t elapsed_time = search_->GetTimeSinceStart();
