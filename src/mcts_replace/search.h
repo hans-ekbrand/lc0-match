@@ -48,7 +48,7 @@ namespace lczero {
 struct SearchLimits_revamp {
 	// Type for N in nodes is currently uint32_t, so set limit in order not to
 	// overflow it.
-	std::int64_t visits = -1;
+	std::int64_t visits = -1;  // Why is this 4000000000 in mcts code?
 	std::int64_t playouts = -1;
 	int depth = -1;
 	optional<std::chrono::steady_clock::time_point> search_deadline;
@@ -64,12 +64,10 @@ public:
 		 BestMoveInfo::Callback best_move_callback,
 		 ThinkingInfo::Callback info_callback, const SearchLimits_revamp& limits,
 		 const OptionsDict& options, NNCache* cache,
-		 SyzygyTablebase* syzygy_tb);
+		 SyzygyTablebase* syzygy_tb,
+		 bool ponder = false);
 
 	~Search_revamp();
-
-	/* // Populates UciOptions with search parameters. */
-	/* static void PopulateUciParams(OptionsParser* options); */
 
 	// Starts worker threads and returns immediately.
 	void StartThreads(size_t how_many);
@@ -88,25 +86,14 @@ public:
 	// search iteration is needed.
 	bool IsSearchActive() const;
 
-	// Returns best move, from the point of view of white player. And also ponder.
-	// May or may not use temperature, according to the settings.
-	//  std::pair<Move, Move> GetBestMove() const;
-	// Returns the evaluation of the best move, WITHOUT temperature. This differs
-	// from the above function; with temperature enabled, these two functions may
-	// return results from different possible moves.
-	//  float GetBestEval() const;
-
-	// Strings for UCI params. So that others can override defaults.
-	// TODO(mooskagh) There are too many options for now. Factor out that into a
-	// separate class.
-	void SendMovesStats();
-
 private:
 
 	int64_t GetTimeSinceStart() const;
   int64_t GetTimeToDeadline() const;
 	void SendUciInfo();
 	void checkLimitsAndMaybeTriggerStop();
+	void SendMovesStats();
+	std::vector<std::string> GetVerboseStats(Node_revamp* node, bool is_black_to_move);
 
 
 	mutable std::mutex threads_list_mutex_;
@@ -114,7 +101,8 @@ private:
 	std::vector<std::thread> threads_;
 
 	Node_revamp* root_node_;
-
+	NNCache* cache_;
+	SyzygyTablebase* syzygy_tb_;
 	// Fixed positions which happened before the search.
 	const PositionHistory& played_history_;
 
@@ -122,6 +110,8 @@ private:
 	const SearchLimits_revamp limits_;
 
 	const SearchParams params_;
+
+	bool ponder_ = false;
 
 	const std::chrono::steady_clock::time_point start_time_;
 	const int64_t initial_visits_;
@@ -192,10 +182,6 @@ private:
 	int extendTree(std::vector<Move> *movestack, PositionHistory *history);
 	void buildJunctionRTree();
 
-	/* void pushNewNodeCandidate(float w, Node_revamp* node, int idx); */
-	void SendUciInfo();
-	std::vector<std::string> GetVerboseStats(Node_revamp* node, bool is_black_to_move);
-	void SendMovesStats();
 
 
 

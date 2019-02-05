@@ -71,14 +71,16 @@ Search_revamp::Search_revamp(const NodeTree_revamp& tree, Network* network,
                BestMoveInfo::Callback best_move_callback,
                ThinkingInfo::Callback info_callback, const SearchLimits_revamp& limits,
                const OptionsDict& options, NNCache* cache,
-               SyzygyTablebase* syzygy_tb)
-    :
-      root_node_(tree.GetCurrentHead()),
-      //~ syzygy_tb_(syzygy_tb),
+               SyzygyTablebase* syzygy_tb,
+               bool ponder)
+    : root_node_(tree.GetCurrentHead()),
+      cache_(cache),
+      syzygy_tb_(syzygy_tb),
       played_history_(tree.GetPositionHistory()),
       network_(network),
       limits_(limits),
       params_(options),
+      ponder_(ponder),
       start_time_(std::chrono::steady_clock::now()),
       initial_visits_(root_node_->GetN()),
       best_move_callback_(best_move_callback),
@@ -100,17 +102,16 @@ int64_t Search_revamp::GetTimeToDeadline() const {
 
 
 void Search_revamp::StartThreads(size_t how_many) {
-
 	threads_list_mutex_.lock();
-  for (int i = 0; i < (int)how_many; i++) {
-    n_thread_active_++;
-    threads_.emplace_back([this, i]()
-      {
+	for (int i = threads_.size(); i < (int)how_many; i++) {
+		n_thread_active_++;
+		threads_.emplace_back([this, i]()
+			{
 				SearchWorker_revamp worker(this);
 				worker.ThreadLoop(i);
-      }
-    );
-  }
+			}
+		);
+	}
 	threads_list_mutex_.unlock();
 }
 
@@ -118,49 +119,6 @@ void Search_revamp::RunBlocking(size_t threads) {
 	StartThreads(threads);
 	Wait();
 }
-
-//~ bool Search_revamp::IsSearchActive() const {
-  //~ Mutex::Lock lock(counters_mutex_);
-  //~ return !stop_;
-//~ }
-
-//void Search_revamp::WatchdogThread() {
-  //~ SearchWorker_revamp worker(this, root_node_);
-  //~ worker.RunBlocking();
-
-  //~ while (IsSearchActive()) {
-    //~ {
-      //~ using namespace std::chrono_literals;
-      //~ constexpr auto kMaxWaitTime = 100ms;
-      //~ constexpr auto kMinWaitTime = 1ms;
-      //~ Mutex::Lock lock(counters_mutex_);
-      //~ auto remaining_time = limits_.time_ms >= 0
-                                //~ ? (limits_.time_ms - GetTimeSinceStart()) * 1ms
-                                //~ : kMaxWaitTime;
-      //~ if (remaining_time > kMaxWaitTime) remaining_time = kMaxWaitTime;
-      //~ if (remaining_time < kMinWaitTime) remaining_time = kMinWaitTime;
-      //~ // There is no real need to have max wait time, and sometimes it's fine
-      //~ // to wait without timeout at all (e.g. in `go nodes` mode), but we
-      //~ // still limit wait time for exotic cases like when pc goes to sleep
-      //~ // mode during thinking.
-      //~ // Minimum wait time is there to prevent busy wait and other thread
-      //~ // starvation.
-      //~ watchdog_cv_.wait_for(lock.get_raw(), remaining_time,
-                            //~ [this]()
-                                //~ NO_THREAD_SAFETY_ANALYSIS { return stop_; });
-    //~ }
-    //~ MaybeTriggerStop();
-  //~ }
-  //~ MaybeTriggerStop();
-//}
-
-
-/*
-
-bool Search_revamp::IsSearchActive() const {
-	return false;
-}
-*/
 
 void Search_revamp::Stop() {
 	not_stop_searching_ = false;
@@ -181,46 +139,33 @@ bool Search_revamp::IsSearchActive() const {
 namespace {
 
 int indexOfHighestQEdge(Node_revamp* node) {
-  float highestq = -2.0;
-  int bestidx = -1;
-  for (int i = 0; i < node->GetNumChildren(); i++) {
-    float q = node->GetEdges()[i].GetChild()->GetQ();
-    if (q > highestq) {
-      highestq = q;
-      bestidx = i;
-    }
-  }
-  return bestidx;
+	float highestq = -2.0;
+	int bestidx = -1;
+	for (int i = 0; i < node->GetNumChildren(); i++) {
+		float q = node->GetEdges()[i].GetChild()->GetQ();
+		if (q > highestq) {
+			highestq = q;
+			bestidx = i;
+		}
+	}
+	return bestidx;
 }
 
 }
 
 void Search_revamp::Wait() {
 	threads_list_mutex_.lock();
-
-  while (!threads_.empty()) {
-    threads_.back().join();
-    threads_.pop_back();
-  }
-
+	while (!threads_.empty()) {
+		threads_.back().join();
+		threads_.pop_back();
+	}
 	threads_list_mutex_.unlock();
 }
 
-/*
-float Search_revamp::GetBestEval() const {
-	return 1.0;
-}
-
-std::pair<Move, Move> Search_revamp::GetBestMove() const {
-	return {Move("d2d4", false), NULL};
-}
-
-*/
-
 
 Search_revamp::~Search_revamp() {
-  Abort();
-  Wait();
+	Abort();
+	Wait();
 }
 
 void Search_revamp::SendUciInfo() {
@@ -301,6 +246,73 @@ void Search_revamp::checkLimitsAndMaybeTriggerStop() {
 		not_stop_searching_ = false;
 	}
 }
+
+std::vector<std::string> Search_revamp::GetVerboseStats(Node_revamp* node, bool is_black_to_move) {
+
+  std::vector<std::string> infos;
+  for (int i = 0; i < node->GetNumChildren(); i++) {
+    std::ostringstream oss;
+    oss << std::fixed;
+
+    oss << std::left << std::setw(5)
+        << node->GetEdges()[i].GetMove(is_black_to_move).as_string();
+
+    oss << " (" << std::setw(4) << node->GetEdges()[i].GetMove(is_black_to_move).as_nn_index() << ")";
+
+    oss << " N: " << std::right << std::setw(7) << node->GetEdges()[i].GetChild()->GetN() << " (+"
+        << std::setw(2) << node->GetEdges()[i].GetChild()->GetN() << ") ";
+
+    oss << "(P: " << std::setw(5) << std::setprecision(2) << node->GetEdges()[i].GetP() * 100
+        << "%) ";
+
+    oss << "(Q: " << std::setw(8) << std::setprecision(5) << node->GetEdges()[i].GetChild()->GetQ()
+        << ") ";
+
+    oss << "(U: " << std::setw(6) << std::setprecision(5) << node->GetEdges()[i].GetChild()->GetQ()
+        << ") ";
+
+    oss << "(Q+U: " << std::setw(8) << std::setprecision(5)
+        << node->GetEdges()[i].GetChild()->GetQ() + node->GetEdges()[i].GetChild()->GetQ() << ") ";
+
+    oss << "(V: ";
+    optional<float> v;
+    if (node->GetEdges()[i].GetChild()->IsTerminal()) {
+      v = node->GetEdges()[i].GetChild()->GetQ();
+    } else {
+      v = node->GetEdges()[i].GetChild()->GetQ();
+    }
+    if (v) {
+      oss << std::setw(7) << std::setprecision(4) << *v;
+    } else {
+      oss << " -.----";
+    }
+    oss << ") ";
+
+    if (node->GetEdges()[i].GetChild()->IsTerminal()) oss << "(T) ";
+    infos.emplace_back(oss.str());
+  }
+  return infos;
+}
+
+// void Search_revamp::SendMovesStats() {
+//   const bool is_black_to_move = played_history_.IsBlackToMove();
+//   auto move_stats = SearchWorker_revamp::GetVerboseStats(root_node_, is_black_to_move);
+
+//   if (params_.GetVerboseStats()) {
+//     // LOGFILE << "captured GetVerboseStats";
+//     std::vector<ThinkingInfo> infos;
+//     std::transform(move_stats.begin(), move_stats.end(),
+//                    std::back_inserter(infos), [](const std::string& line) {
+//                      ThinkingInfo info;
+//                      info.comment = line;
+//                      return info;
+//                    });
+//     info_callback_(infos);
+//   } else {
+//     LOGFILE << "=== Move stats:";
+//     for (const auto& line : move_stats) LOGFILE << line;
+//   }
+// }
 
 //////////////////////////////////////////////////////////////////////////////
 // Distribution
@@ -1026,7 +1038,7 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 	int nt = --search_->n_thread_active_;
 	search_->threads_list_mutex_.unlock();
 
-	if (nt == 0 && !search_->abort_) {  // this is the last thread
+	if (nt == 0) {  // this is the last thread
 		int64_t elapsed_time = search_->GetTimeSinceStart();
 		//LOGFILE << "Elapsed time when thread for node " << root_node_ << " which has size " << root_node_->GetN() << " nodes did " << i << " computations: " << elapsed_time << "ms";
 		LOGFILE << "Elapsed time for " << root_node_->GetN() << " nodes: " << elapsed_time << "ms";
@@ -1066,16 +1078,17 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 						<< ", propagate: " << search_->duration_propagate_ / dur_sum;
 		}
 
-
-		int bestidx = indexOfHighestQEdge(root_node_);
-		Move best_move = root_node_->GetEdges()[bestidx].GetMove(search_->played_history_.IsBlackToMove());
-		int ponderidx = indexOfHighestQEdge(root_node_->GetEdges()[bestidx].GetChild());
-		// If the move we make is terminal, then there is nothing to ponder about
-		if(!root_node_->GetEdges()[bestidx].GetChild()->IsTerminal()){
-			Move ponder_move = root_node_->GetEdges()[bestidx].GetChild()->GetEdges()[ponderidx].GetMove(!search_->played_history_.IsBlackToMove());
-			search_->best_move_callback_({best_move, ponder_move});    
-		} else {
-			search_->best_move_callback_({best_move});    
+		if (!search_->ponder_ && !search_->abort_) {
+			int bestidx = indexOfHighestQEdge(root_node_);
+			Move best_move = root_node_->GetEdges()[bestidx].GetMove(search_->played_history_.IsBlackToMove());
+			int ponderidx = indexOfHighestQEdge(root_node_->GetEdges()[bestidx].GetChild());
+			// If the move we make is terminal, then there is nothing to ponder about
+			if(!root_node_->GetEdges()[bestidx].GetChild()->IsTerminal()){
+				Move ponder_move = root_node_->GetEdges()[bestidx].GetChild()->GetEdges()[ponderidx].GetMove(!search_->played_history_.IsBlackToMove());
+				search_->best_move_callback_({best_move, ponder_move});    
+			} else {
+				search_->best_move_callback_({best_move});    
+			}
 		}
 	}
 
@@ -1130,71 +1143,6 @@ void SearchWorker_revamp::HelperThreadLoop(int helper_thread_id, std::mutex* loc
 	}
 }
 
-std::vector<std::string> SearchWorker_revamp::GetVerboseStats(Node_revamp* node, bool is_black_to_move) {
 
-  std::vector<std::string> infos;
-  for (int i = 0; i < node->GetNumChildren(); i++) {
-    std::ostringstream oss;
-    oss << std::fixed;
-
-    oss << std::left << std::setw(5)
-        << node->GetEdges()[i].GetMove(is_black_to_move).as_string();
-
-    oss << " (" << std::setw(4) << node->GetEdges()[i].GetMove(is_black_to_move).as_nn_index() << ")";
-
-    oss << " N: " << std::right << std::setw(7) << node->GetEdges()[i].GetChild()->GetN() << " (+"
-        << std::setw(2) << node->GetEdges()[i].GetChild()->GetN() << ") ";
-
-    oss << "(P: " << std::setw(5) << std::setprecision(2) << node->GetEdges()[i].GetP() * 100
-        << "%) ";
-
-    oss << "(Q: " << std::setw(8) << std::setprecision(5) << node->GetEdges()[i].GetChild()->GetQ()
-        << ") ";
-
-    oss << "(U: " << std::setw(6) << std::setprecision(5) << node->GetEdges()[i].GetChild()->GetQ()
-        << ") ";
-
-    oss << "(Q+U: " << std::setw(8) << std::setprecision(5)
-        << node->GetEdges()[i].GetChild()->GetQ() + node->GetEdges()[i].GetChild()->GetQ() << ") ";
-
-    oss << "(V: ";
-    optional<float> v;
-    if (node->GetEdges()[i].GetChild()->IsTerminal()) {
-      v = node->GetEdges()[i].GetChild()->GetQ();
-    } else {
-      v = node->GetEdges()[i].GetChild()->GetQ();
-    }
-    if (v) {
-      oss << std::setw(7) << std::setprecision(4) << *v;
-    } else {
-      oss << " -.----";
-    }
-    oss << ") ";
-
-    if (node->GetEdges()[i].GetChild()->IsTerminal()) oss << "(T) ";
-    infos.emplace_back(oss.str());
-  }
-  return infos;
-}
-
-// void Search_revamp::SendMovesStats() {
-//   const bool is_black_to_move = played_history_.IsBlackToMove();
-//   auto move_stats = SearchWorker_revamp::GetVerboseStats(root_node_, is_black_to_move);
-
-//   if (params_.GetVerboseStats()) {
-//     // LOGFILE << "captured GetVerboseStats";
-//     std::vector<ThinkingInfo> infos;
-//     std::transform(move_stats.begin(), move_stats.end(),
-//                    std::back_inserter(infos), [](const std::string& line) {
-//                      ThinkingInfo info;
-//                      info.comment = line;
-//                      return info;
-//                    });
-//     info_callback_(infos);
-//   } else {
-//     LOGFILE << "=== Move stats:";
-//     for (const auto& line : move_stats) LOGFILE << line;
-//   }
-// }
 
 }  // namespace lczero
