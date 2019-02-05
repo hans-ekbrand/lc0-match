@@ -309,7 +309,10 @@ void EngineController::SetPosition(const std::string& fen,
 void EngineController::SetupPosition(
     const std::string& fen, const std::vector<std::string>& moves_str) {
   SharedLock lock(busy_mutex_);
+  // This is where we get inresponsive. It happens when UCI sends 'ponderhit' before we have finished our pondering search.
+  LOGFILE << "about to call search_.reset() which will return only if our search was already finished.";
   search_.reset();
+  LOGFILE << "search_.reset() returned successfully.";
 
   UpdateFromUciOptions();
 
@@ -388,7 +391,7 @@ void EngineController::Go(const GoParams& params) {
 
   search_ = std::make_unique<Search_revamp>(*tree_, network_.get(), best_move_callback,
                                      info_callback, limits, options_, &cache_,
-                                     syzygy_tb_.get());
+				     syzygy_tb_.get(), params.ponder);
 
   if (limits.search_deadline) {
     LOGFILE << "Timer started at "
@@ -399,7 +402,7 @@ void EngineController::Go(const GoParams& params) {
 
 void EngineController::PonderHit() {
   move_start_time_ = std::chrono::steady_clock::now();
-  LOGFILE << "Ponderhit captured! Will stop search and the initiate a normal search";
+  LOGFILE << "Ponderhit captured! should silently continue and return like this was a normal search all along";
   if (search_) search_->Stop();
   go_params_.ponder = false;
   Go(go_params_);
