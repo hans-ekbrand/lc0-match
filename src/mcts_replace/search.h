@@ -94,6 +94,7 @@ private:
 	void checkLimitsAndMaybeTriggerStop();
 	void SendMovesStats();
 	std::vector<std::string> GetVerboseStats(Node_revamp* node, bool is_black_to_move);
+	void reportBestMove();
 
 
 	mutable std::mutex threads_list_mutex_;
@@ -112,6 +113,7 @@ private:
 	const SearchParams params_;
 
 	bool ponder_ = false;
+	std::mutex ponder_lock_;
 
 	const std::chrono::steady_clock::time_point start_time_;
 	const int64_t initial_visits_;

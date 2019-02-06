@@ -121,10 +121,19 @@ void Search_revamp::RunBlocking(size_t threads) {
 }
 
 void Search_revamp::Stop() {
-  // If pondering is on, then turn if off to get bestmove
-  ponder_ = false;
-  not_stop_searching_ = false;
-  // TODO: If search is already finished, then return bestmove
+	ponder_lock_.lock();
+	if (ponder_) {
+		if (IsSearchActive()) {
+			// If pondering is on, then turn if off to get bestmove
+			ponder_ = false;
+			not_stop_searching_ = false;
+		} else {
+			reportBestMove();
+		}
+	} else {
+		not_stop_searching_ = false;
+	}
+	ponder_lock_.unlock();
 }
 
 void Search_revamp::Abort() {
@@ -316,6 +325,19 @@ std::vector<std::string> Search_revamp::GetVerboseStats(Node_revamp* node, bool 
 //     for (const auto& line : move_stats) LOGFILE << line;
 //   }
 // }
+
+void Search_revamp::reportBestMove() {
+	int bestidx = indexOfHighestQEdge(root_node_);
+	Move best_move = root_node_->GetEdges()[bestidx].GetMove(played_history_.IsBlackToMove());
+	int ponderidx = indexOfHighestQEdge(root_node_->GetEdges()[bestidx].GetChild());
+	// If the move we make is terminal, then there is nothing to ponder about
+	if(!root_node_->GetEdges()[bestidx].GetChild()->IsTerminal()){
+		Move ponder_move = root_node_->GetEdges()[bestidx].GetChild()->GetEdges()[ponderidx].GetMove(!played_history_.IsBlackToMove());
+		best_move_callback_({best_move, ponder_move});
+	} else {
+		best_move_callback_({best_move});
+	}
+}
 
 //////////////////////////////////////////////////////////////////////////////
 // Distribution
@@ -1081,17 +1103,11 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 						<< ", propagate: " << search_->duration_propagate_ / dur_sum;
 		}
 
-		if (!search_->ponder_ && !search_->abort_) {
-			int bestidx = indexOfHighestQEdge(root_node_);
-			Move best_move = root_node_->GetEdges()[bestidx].GetMove(search_->played_history_.IsBlackToMove());
-			int ponderidx = indexOfHighestQEdge(root_node_->GetEdges()[bestidx].GetChild());
-			// If the move we make is terminal, then there is nothing to ponder about
-			if(!root_node_->GetEdges()[bestidx].GetChild()->IsTerminal()){
-				Move ponder_move = root_node_->GetEdges()[bestidx].GetChild()->GetEdges()[ponderidx].GetMove(!search_->played_history_.IsBlackToMove());
-				search_->best_move_callback_({best_move, ponder_move});    
-			} else {
-				search_->best_move_callback_({best_move});    
-			}
+		search_->ponder_lock_.lock();
+		bool ponder = search_->ponder_;
+		search_->ponder_lock_.unlock();
+		if (!ponder && !search_->abort_) {
+			search_->reportBestMove();
 		}
 	}
 
