@@ -74,6 +74,7 @@ class Edge_revamp {
   friend class EdgeList_revamp;
   friend class Node_revamp;
   friend class NodeTree_revamp;
+	friend class Search_revamp;
 	friend class SearchWorker_revamp;
 };
 

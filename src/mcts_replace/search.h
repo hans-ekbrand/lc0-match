@@ -94,6 +94,7 @@ private:
 	void checkLimitsAndMaybeTriggerStop();
 	void SendMovesStats();
 	std::vector<std::string> GetVerboseStats(Node_revamp* node, bool is_black_to_move);
+	NNCacheLock GetCachedNNEval(Node_revamp* node) const;
 	void reportBestMove();
 	void ExtendNode(PositionHistory* history, Node_revamp* node);
 
@@ -154,6 +155,7 @@ public:
 		batch_size_(search->params_.GetMiniBatchSize()),
 		history_fill_(search->params_.GetHistoryFill()),
 		played_history_length_(search_->played_history_.GetLength()),
+		cache_history_length_plus_1_(search_->params_.GetCacheHistoryLength() + 1),
 		root_node_(search->root_node_) {}
 
 	void ThreadLoop(int thread_id);
@@ -174,7 +176,7 @@ private:
 		uint8_t children_count;
 	};
 
-	void AddNodeToComputation(PositionHistory *history);
+	int AddNodeToComputation(Node_revamp* node, PositionHistory *history);
 	void retrieveNNResult(Node_revamp* node, int batchidx);
 	void recalcPropagatedQ(Node_revamp* node);
 	void pickNodesToExtend();
@@ -195,11 +197,13 @@ private:
 	const int batch_size_;
 	const FillEmptyHistory history_fill_;
 	const int played_history_length_;
+  const int cache_history_length_plus_1_;
 
 	Node_revamp* root_node_;
 
 
-	std::unique_ptr<NetworkComputation> computation_;
+	//std::unique_ptr<NetworkComputation> computation_;
+	std::unique_ptr<CachingComputation> computation_;
 	std::mutex computation_lock_;  // SearchWorker instance not needed, move to Search?
 
 	//std::vector<NewNode> new_nodes_;

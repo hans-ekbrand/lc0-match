@@ -190,6 +190,8 @@ void Search_revamp::SendUciInfo() {
   common_info.seldepth = full_tree_depth_;
   common_info.time = GetTimeSinceStart();
   common_info.nodes = root_node_->GetN();
+  common_info.hashfull =
+      cache_->GetSize() * 1000LL / std::max(cache_->GetCapacity(), 1);
   common_info.nps =
       common_info.time ? ((root_node_->GetN() - initial_visits_) * 1000 / common_info.time) : 0;
 
@@ -291,7 +293,8 @@ std::vector<std::string> Search_revamp::GetVerboseStats(Node_revamp* node, bool 
     if (node->GetEdges()[i].GetChild()->IsTerminal()) {
       v = node->GetEdges()[i].GetChild()->GetQ();
     } else {
-      v = node->GetEdges()[i].GetChild()->GetQ();
+      NNCacheLock nneval = GetCachedNNEval(node->GetEdges()[i].GetChild());
+      if (nneval) v = -nneval->q;
     }
     if (v) {
       oss << std::setw(7) << std::setprecision(4) << *v;
@@ -305,6 +308,23 @@ std::vector<std::string> Search_revamp::GetVerboseStats(Node_revamp* node, bool 
   }
   return infos;
 }
+
+NNCacheLock Search_revamp::GetCachedNNEval(Node_revamp* node) const {
+  if (!node) return {};
+
+  std::vector<Move> moves;
+  for (; node != root_node_; node = node->GetParent()) {
+    moves.push_back(node->GetParent()->GetEdges()[node->GetIndex()].move_);
+  }
+  PositionHistory history(played_history_);
+  for (auto iter = moves.rbegin(), end = moves.rend(); iter != end; ++iter) {
+    history.Append(*iter);
+  }
+  auto hash = history.HashLast(params_.GetCacheHistoryLength() + 1);
+  NNCacheLock nneval(cache_, hash);
+  return nneval;
+}
+
 
 // void Search_revamp::SendMovesStats() {
 //   const bool is_black_to_move = played_history_.IsBlackToMove();
@@ -608,16 +628,21 @@ int SearchWorker_revamp::appendHistoryFromTo(std::vector<Move> *movestack, Posit
 }
 
 
-void SearchWorker_revamp::AddNodeToComputation(PositionHistory *history) {
-  // auto hash = history_.HashLast(params_.GetCacheHistoryLength() + 1);
+int SearchWorker_revamp::AddNodeToComputation(Node_revamp* node, PositionHistory *history) {
+  auto hash = history->HashLast(cache_history_length_plus_1_);
   auto planes = EncodePositionForNN(*history, 8, history_fill_);
-  // std::vector<uint16_t> moves;
-  // int nedge = node->GetNumEdges();
-  // for (int k = 0; k < nedge; k++) {
-  //   moves.emplace_back(node->edges_[k].GetMove().as_nn_index());
-  // }
-  computation_->AddInput(std::move(planes));
-  //computation->AddInput(hash, std::move(planes), std::move(moves));
+  int nedge = node->GetNumEdges();
+  std::vector<uint16_t> moves;
+  moves.reserve(nedge);
+  for (int k = 0; k < nedge; k++) {
+    moves.emplace_back(node->GetEdges()[k].move_.as_nn_index());
+  }
+	computation_lock_.lock();
+  //computation_->AddInput(std::move(planes));
+  computation_->AddInput(hash, std::move(planes), std::move(moves));
+  int idx = minibatch_shared_idx_++;
+	computation_lock_.unlock();
+	return idx;
 }
 
 
@@ -663,15 +688,10 @@ int SearchWorker_revamp::extendTree(std::vector<Move> *movestack, PositionHistor
 
 		if (!newchild->IsTerminal()) {
 
-			//AddNodeToComputation(&history);
-			auto planes = EncodePositionForNN(*history, 8, history_fill_);
-
-			computation_lock_.lock();
-			computation_->AddInput(std::move(planes));
-			new_nodes_[i].batch_idx = minibatch_shared_idx_++;
+			int idx = AddNodeToComputation(newchild, history);
+			new_nodes_[i].batch_idx = idx;
 			//minibatch_.push_back({newchild, (uint16_t)i});
 			//LOGFILE << "minibatch add: " << new_nodes_[i].junction;
-			computation_lock_.unlock();
 
 		} else {  // is terminal
 			//non_computation_lock_.lock();
@@ -933,8 +953,11 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
       std::cerr << "Root " << root_node_ << " is terminal, nothing to do\n";
       abort();
     }
-    computation_ = search_->network_->NewComputation();
-    AddNodeToComputation(&history);
+		//computation_ = search_->network_->NewComputation();
+    computation_ = std::make_unique<CachingComputation>(std::move(search_->network_->NewComputation()),
+                                                        search_->cache_);
+    AddNodeToComputation(root_node_, &history);
+		minibatch_shared_idx_ = 0;
 
     // LOGFILE << "Computing thread root ..";
     computation_->ComputeBlocking();
@@ -949,7 +972,9 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 
 	while (search_->not_stop_searching_) {
 
-		computation_ = search_->network_->NewComputation();
+		//computation_ = search_->network_->NewComputation();
+    computation_ = std::make_unique<CachingComputation>(std::move(search_->network_->NewComputation()),
+                                                        search_->cache_);
 
 		helper_threads_mode_ = 1;
 		//LOGFILE << "Allowing helper threads to help";
