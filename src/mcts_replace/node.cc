@@ -240,8 +240,6 @@ void Node_revamp::MakeTerminal(GameResult result) {
     SetOrigQ(1.0f);
   } else if (result == GameResult::BLACK_WON) {
     SetOrigQ(-1.0f);
-    std::cerr << "BLACK_WON but white made the final move.";
-    abort();
   }
 }
 
@@ -257,49 +255,6 @@ void Node_revamp::ReleaseChildrenExceptOne(Node_revamp* node_to_save) {
       gNodeGc.AddToGcQueue(std::move(edges_[i].child_));
     }
   }
-}
-
-void Node_revamp::ExtendNode(PositionHistory* history, Node_revamp* root_node) {
-  // We don't need the mutex because other threads will see that N=0 and
-  // N-in-flight=1 and will not touch this node.
-  const auto& board = history->Last().GetBoard();
-  auto legal_moves = board.GenerateLegalMoves();
-
-  // Check whether it's a draw/lose by position. Importantly, we must check
-  // these before doing the by-rule checks below.
-  if (legal_moves.empty()) {
-    // Could be a checkmate or a stalemate
-    if (board.IsUnderCheck()) {
-      MakeTerminal(GameResult::WHITE_WON);
-    } else {
-      MakeTerminal(GameResult::DRAW);
-    }
-    return;
-  }
-
-  // We can shortcircuit these draws-by-rule only if they aren't root;
-  // if they are root, then thinking about them is the point.
-  if (this != root_node) {
-    if (!board.HasMatingMaterial()) {
-      MakeTerminal(GameResult::DRAW);
-      return;
-    }
-
-    if (history->Last().GetNoCaptureNoPawnPly() >= 100) {
-      MakeTerminal(GameResult::DRAW);
-      return;
-    }
-
-    if (history->Last().GetRepetitions() >= 2) {
-      MakeTerminal(GameResult::DRAW);
-      return;
-    }
-  }
-
-  // Add legal moves as edges of this node.
-  CreateEdges(legal_moves);
-
-  //n_extendable_ = multiple_new_siblings ? GetNumEdges() : 1;
 }
 
 void Node_revamp::IncrParentNumChildren() {

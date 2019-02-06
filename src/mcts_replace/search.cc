@@ -339,6 +339,71 @@ void Search_revamp::reportBestMove() {
 	}
 }
 
+void Search_revamp::ExtendNode(PositionHistory* history, Node_revamp* node) {
+	// We don't need the mutex because other threads will see that N=0 and
+	// N-in-flight=1 and will not touch this node.
+	const auto& board = history->Last().GetBoard();
+	auto legal_moves = board.GenerateLegalMoves();
+
+	// Check whether it's a draw/lose by position. Importantly, we must check
+	// these before doing the by-rule checks below.
+	if (legal_moves.empty()) {
+		// Could be a checkmate or a stalemate
+		if (board.IsUnderCheck()) {
+			node->MakeTerminal(GameResult::WHITE_WON);
+		} else {
+			node->MakeTerminal(GameResult::DRAW);
+		}
+		return;
+	}
+
+	// We can shortcircuit these draws-by-rule only if they aren't root;
+	// if they are root, then thinking about them is the point.
+	if (node != root_node_) {
+		if (!board.HasMatingMaterial()) {
+			node->MakeTerminal(GameResult::DRAW);
+			return;
+		}
+
+		if (history->Last().GetNoCaptureNoPawnPly() >= 100) {
+			node->MakeTerminal(GameResult::DRAW);
+			return;
+		}
+
+		if (history->Last().GetRepetitions() >= 2) {
+			node->MakeTerminal(GameResult::DRAW);
+			return;
+		}
+
+		// Neither by-position or by-rule termination, but maybe it's a TB position.
+		if (syzygy_tb_ && board.castlings().no_legal_castle() &&
+				history->Last().GetNoCaptureNoPawnPly() == 0 &&
+				(board.ours() + board.theirs()).count() <=
+						syzygy_tb_->max_cardinality()) {
+			ProbeState state;
+			WDLScore wdl = syzygy_tb_->probe_wdl(history->Last(), &state);
+			// Only fail state means the WDL is wrong, probe_wdl may produce correct
+			// result with a stat other than OK.
+			if (state != FAIL) {
+				// If the colors seem backwards, check the checkmate check above.
+				if (wdl == WDL_WIN) {
+					node->MakeTerminal(GameResult::BLACK_WON);
+				} else if (wdl == WDL_LOSS) {
+					node->MakeTerminal(GameResult::WHITE_WON);
+				} else {  // Cursed wins and blessed losses count as draws.
+					node->MakeTerminal(GameResult::DRAW);
+				}
+				//tb_hits_++;
+				return;
+			}
+		}
+	}
+
+	// Add legal moves as edges of this node.
+	node->CreateEdges(legal_moves);
+}
+
+
 //////////////////////////////////////////////////////////////////////////////
 // Distribution
 //////////////////////////////////////////////////////////////////////////////
@@ -594,7 +659,7 @@ int SearchWorker_revamp::extendTree(std::vector<Move> *movestack, PositionHistor
 
 		//history->Append(node->GetEdges()[idx].move_);
 
-		newchild->ExtendNode(history, root_node_);
+		search_->ExtendNode(history, newchild);
 
 		if (!newchild->IsTerminal()) {
 
@@ -863,7 +928,7 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 //  int i = 0;
 
   if (root_node_->GetNumEdges() == 0 && !root_node_->IsTerminal()) {  // root node not extended
-    root_node_->ExtendNode(&history, root_node_);
+    search_->ExtendNode(&history, root_node_);
     if (root_node_->IsTerminal()) {
       std::cerr << "Root " << root_node_ << " is terminal, nothing to do\n";
       abort();

@@ -95,7 +95,7 @@ private:
 	void SendMovesStats();
 	std::vector<std::string> GetVerboseStats(Node_revamp* node, bool is_black_to_move);
 	void reportBestMove();
-
+	void ExtendNode(PositionHistory* history, Node_revamp* node);
 
 	mutable std::mutex threads_list_mutex_;
 	std::atomic<int> n_thread_active_{0};

@@ -151,8 +151,6 @@ class Node_revamp {
   // Deletes all children except one.
   void ReleaseChildrenExceptOne(Node_revamp* node);
 
-  void ExtendNode(PositionHistory* history, Node_revamp* root_node);
-
   void IncrParentNumChildren();
 
 //  int ComputeHeight();
