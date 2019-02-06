@@ -130,6 +130,8 @@ private:
 	int full_tree_depth_ = 0;
 	uint64_t cum_depth_ = 0;
 	//std::mutex counters_lock_;
+  std::atomic<int> tb_hits_{0};
+
 
 	int64_t last_uci_time_ = 0;
 	std::atomic<bool> not_stop_searching_{true};

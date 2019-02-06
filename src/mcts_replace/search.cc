@@ -194,6 +194,7 @@ void Search_revamp::SendUciInfo() {
       cache_->GetSize() * 1000LL / std::max(cache_->GetCapacity(), 1);
   common_info.nps =
       common_info.time ? ((root_node_->GetN() - initial_visits_) * 1000 / common_info.time) : 0;
+  common_info.tb_hits = tb_hits_.load(std::memory_order_acquire);
 
   std::vector<ThinkingInfo> uci_infos;
 
@@ -413,7 +414,7 @@ void Search_revamp::ExtendNode(PositionHistory* history, Node_revamp* node) {
 				} else {  // Cursed wins and blessed losses count as draws.
 					node->MakeTerminal(GameResult::DRAW);
 				}
-				//tb_hits_++;
+				tb_hits_++;
 				return;
 			}
 		}
