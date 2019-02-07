@@ -472,7 +472,7 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
     double sum_of_weighted_p_and_q = 0.0;
     for (int i = 0; i < n; i++){
       // double relative_weight_of_p = pow(node->GetEdges()[i].GetChild()->GetN(), policy_weight_exponent_) / ( 0.05 + node->GetEdges()[i].GetChild()->GetN()); // 0.05 is here to make Q have some influence after 1 visit.
-      double relative_weight_of_p = pow(node->GetN(), 0.6) / ( 0.05 + node->GetN());
+      double relative_weight_of_p = pow(node->GetN(), 0.55) / ( 0.05 + node->GetN());
       // double relative_weight_of_p = pow(node->GetN(), (0.46 + log10(node->GetN())/30)) / ( 0.05 + node->GetN());         // LOGFILE << "relative_weight_of_p:" << relative_weight_of_p;
       double relative_weight_of_q = 1 - relative_weight_of_p;
       // LOGFILE << "relative_weight_of_q:" << relative_weight_of_q;	    
