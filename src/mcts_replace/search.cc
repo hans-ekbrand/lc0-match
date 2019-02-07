@@ -444,7 +444,7 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
     double sum_of_w_of_expanded_nodes = 0.0;
     for (int i = 0; i < n; i++) {
       // float w = exp(q_concentration_ * node->GetEdges()[i].GetChild()->GetQ());
-      float w = exp(20 * pow(node->GetN(), 0.09) * node->GetEdges()[i].GetChild()->GetQ());
+      float w = exp(12 * pow(node->GetN(), 0.1) * node->GetEdges()[i].GetChild()->GetQ());
       node->GetEdges()[i].GetChild()->SetW(w);
       sum_of_w_of_expanded_nodes += w;
       sum_of_P_of_expanded_nodes += node->GetEdges()[i].GetP();
@@ -472,8 +472,8 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
     double sum_of_weighted_p_and_q = 0.0;
     for (int i = 0; i < n; i++){
       // double relative_weight_of_p = pow(node->GetEdges()[i].GetChild()->GetN(), policy_weight_exponent_) / ( 0.05 + node->GetEdges()[i].GetChild()->GetN()); // 0.05 is here to make Q have some influence after 1 visit.
-      double relative_weight_of_p = pow(node->GetN(), (0.46 + log10(node->GetN())/30)) / ( 0.05 + node->GetN());
-      // LOGFILE << "relative_weight_of_p:" << relative_weight_of_p;
+      double relative_weight_of_p = pow(node->GetN(), 0.6) / ( 0.05 + node->GetN());
+      // double relative_weight_of_p = pow(node->GetN(), (0.46 + log10(node->GetN())/30)) / ( 0.05 + node->GetN());         // LOGFILE << "relative_weight_of_p:" << relative_weight_of_p;
       double relative_weight_of_q = 1 - relative_weight_of_p;
       // LOGFILE << "relative_weight_of_q:" << relative_weight_of_q;	    
       if(relative_weight_of_q > 0){
