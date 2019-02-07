@@ -142,6 +142,12 @@ private:
 	std::atomic<int64_t> duration_compute_{0};
 	std::atomic<int64_t> duration_retrieve_{0};
 	std::atomic<int64_t> duration_propagate_{0};
+
+  int64_t count_minibatch_size_{0};
+  int64_t count_search_node_visits_{0};
+  std::atomic<int64_t> count_propagate_node_visits_{0};
+  int64_t count_junctions_{0};
+
 	std::atomic<int> count_iterations_{0};
 
 	friend class SearchWorker_revamp;

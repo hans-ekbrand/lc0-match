@@ -507,13 +507,13 @@ void SearchWorker_revamp::pickNodesToExtend() {
 	Node_revamp* node;
 	int best_idx;
 
-//	int nodes_visited = 0;
+	int nodes_visited = 0;
 
 	for (int n_left = batch_size_; n_left > 0; n_left--) {
 		node = root_node_;
 
 		while (true) {
-//			nodes_visited++;
+			nodes_visited++;
 			best_idx = node->GetBestIdx();
 			if (best_idx == -1) {
 				int nidx = node->GetNextUnexpandedEdge();
@@ -568,8 +568,7 @@ void SearchWorker_revamp::pickNodesToExtend() {
 		}
 	}
 
-//	LOGFILE << "picknodestoextend, nodes visited: " << nodes_visited;
-
+  search_->count_search_node_visits_ += nodes_visited;
 }
 
 void SearchWorker_revamp::buildJunctionRTree() {
@@ -907,6 +906,9 @@ int SearchWorker_revamp::propagate() {
 			//~ if (node == root_node_) break;
 		//~ }
 	//}
+
+  search_->count_propagate_node_visits_ += count;
+
 	return count;
 }
 
@@ -1076,6 +1078,7 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 
 		if (minibatch_shared_idx_ > 0) {
 			computation_->ComputeBlocking();
+      search_->count_minibatch_size_ += minibatch_shared_idx_;
 			minibatch_shared_idx_ = 0;
 		}
 
@@ -1134,6 +1137,8 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 		new_nodes_list_shared_idx_ = 0;
 		new_nodes_amount_retrieved_ = 0;
 
+    search_->count_junctions_ += junctions_.size();
+
 		junctions_.clear();
 
 		//new_nodes_.clear();
@@ -1155,6 +1160,13 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 	//search_->threads_list_mutex_.unlock();
 
 	if (nt == 0) {  // this is the last thread
+		search_->ponder_lock_.lock();
+		bool ponder = search_->ponder_;
+		search_->ponder_lock_.unlock();
+		if (!ponder && !search_->abort_) {
+			search_->reportBestMove();
+		}
+
 		int64_t elapsed_time = search_->GetTimeSinceStart();
 		//LOGFILE << "Elapsed time when thread for node " << root_node_ << " which has size " << root_node_->GetN() << " nodes did " << i << " computations: " << elapsed_time << "ms";
 		LOGFILE << "Elapsed time for " << root_node_->GetN() << " nodes: " << elapsed_time << "ms";
@@ -1194,12 +1206,14 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 						<< ", propagate: " << search_->duration_propagate_ / dur_sum;
 		}
 
-		search_->ponder_lock_.lock();
-		bool ponder = search_->ponder_;
-		search_->ponder_lock_.unlock();
-		if (!ponder && !search_->abort_) {
-			search_->reportBestMove();
-		}
+    if (search_->count_iterations_ > 0) {
+      LOGFILE << "nodes per iteration: " << root_node_->GetN() / search_->count_iterations_
+              << ", minibatch size: " << search_->count_minibatch_size_ / search_->count_iterations_
+              << ", search node visits: " << search_->count_search_node_visits_ / search_->count_iterations_
+              << ", propagate node visits: " << search_->count_propagate_node_visits_ / search_->count_iterations_
+              << ", junctions: " << search_->count_junctions_ / search_->count_iterations_;
+    }
+
 	}
 
 	while (!junction_locks_.empty()) {
