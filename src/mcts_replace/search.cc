@@ -444,7 +444,7 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
     double sum_of_w_of_expanded_nodes = 0.0;
     for (int i = 0; i < n; i++) {
       // float w = exp(q_concentration_ * node->GetEdges()[i].GetChild()->GetQ());
-      float w = exp(12 * pow(node->GetN(), 0.095) * node->GetEdges()[i].GetChild()->GetQ());
+      float w = exp(11 * pow(node->GetN(), 0.095) * node->GetEdges()[i].GetChild()->GetQ());
       node->GetEdges()[i].GetChild()->SetW(w);
       sum_of_w_of_expanded_nodes += w;
       sum_of_P_of_expanded_nodes += node->GetEdges()[i].GetP();
