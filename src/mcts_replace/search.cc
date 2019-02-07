@@ -509,7 +509,7 @@ void SearchWorker_revamp::pickNodesToExtend() {
 
 	int nodes_visited = 0;
 
-	for (int n_left = batch_size_; n_left > 0; n_left--) {
+	for (int n = 0; n < new_nodes_amount_target_ && n < new_nodes_amount_limit_; n++) {
 		node = root_node_;
 
 		while (true) {
@@ -638,8 +638,12 @@ int SearchWorker_revamp::AddNodeToComputation(Node_revamp* node, PositionHistory
     moves.emplace_back(node->GetEdges()[k].move_.as_nn_index());
   }
 	computation_lock_.lock();
-  //computation_->AddInput(std::move(planes));
-  computation_->AddInput(hash, std::move(planes), std::move(moves));
+  if (computation_->AddInputByHash(hash)) {
+    new_nodes_amount_target_++;  // it's cached so it shouldn't be counted towards the minibatch size
+  } else {
+    //computation_->AddInput(std::move(planes));
+    computation_->AddInput(hash, std::move(planes), std::move(moves));
+  }
   int idx = minibatch_shared_idx_++;
 	computation_lock_.unlock();
 	return idx;
@@ -694,6 +698,7 @@ int SearchWorker_revamp::extendTree(std::vector<Move> *movestack, PositionHistor
 			//LOGFILE << "minibatch add: " << new_nodes_[i].junction;
 
 		} else {  // is terminal
+      new_nodes_amount_target_++;  // it's terminal so it shouldn't be counted towards the minibatch size
 			//non_computation_lock_.lock();
 			//non_computation_new_nodes_.push_back({newchild, (uint16_t)i});
 			//non_computation_lock_.unlock();
@@ -919,7 +924,7 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 	PositionHistory history(search_->played_history_);
 	std::vector<Move> movestack;
 
-	new_nodes_ = new NewNode[batch_size_];
+	new_nodes_ = new NewNode[new_nodes_amount_limit_];
 
 	search_->busy_mutex_.lock();
 	if (LOG_RUNNING_INFO) LOGFILE << "Working thread: " << thread_id;
@@ -937,7 +942,7 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
     );
   }
 
-	for (int n = batch_size_; n > 0; n--) {
+	for (int n = new_nodes_amount_limit_; n > 0; n--) {
 		junction_locks_.push_back(new std::mutex());
 	}
 
@@ -978,6 +983,8 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 		//computation_ = search_->network_->NewComputation();
     computation_ = std::make_unique<CachingComputation>(std::move(search_->network_->NewComputation()),
                                                         search_->cache_);
+
+    new_nodes_amount_target_ = batch_size_;
 
 		helper_threads_mode_ = 1;
 		//LOGFILE << "Allowing helper threads to help";

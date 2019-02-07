@@ -161,6 +161,7 @@ public:
 		p_concentration_(search->params_.GetPolicySoftmaxTemp()),
 		policy_weight_exponent_(search->params_.GetFpuValue()),
 		batch_size_(search->params_.GetMiniBatchSize()),
+    new_nodes_amount_limit_(batch_size_ * 2),
 		history_fill_(search->params_.GetHistoryFill()),
 		played_history_length_(search_->played_history_.GetLength()),
 		cache_history_length_plus_1_(search_->params_.GetCacheHistoryLength() + 1),
@@ -203,6 +204,7 @@ private:
 	const float p_concentration_;
 	const float policy_weight_exponent_; // weight of policy relative to weight of q: pow(n, pwe)/n where n is the number of subnodes of the current node.	
 	const int batch_size_;
+  const int new_nodes_amount_limit_;
 	const FillEmptyHistory history_fill_;
 	const int played_history_length_;
   const int cache_history_length_plus_1_;
@@ -217,6 +219,7 @@ private:
 	//std::vector<NewNode> new_nodes_;
 	NewNode *new_nodes_;
 	std::atomic<int> new_nodes_size_{0};
+  std::atomic<int> new_nodes_amount_target_{0};
 	int new_nodes_list_shared_idx_ = 0;  // SearchWorker instance not needed, move to Search?
 	std::mutex new_nodes_list_lock_;  // SearchWorker instance not needed, move to Search?
 
