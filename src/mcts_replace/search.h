@@ -138,6 +138,7 @@ private:
 	std::atomic<bool> abort_{false};
 
 	std::atomic<int64_t> duration_search_{0};
+	std::atomic<int64_t> duration_junctions_{0};
 	std::atomic<int64_t> duration_create_{0};
 	std::atomic<int64_t> duration_compute_{0};
 	std::atomic<int64_t> duration_retrieve_{0};

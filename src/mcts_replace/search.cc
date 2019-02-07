@@ -1016,12 +1016,17 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 			continue;
 		}
 
+		auto stop_comp_time = std::chrono::steady_clock::now();
+		search_->duration_search_ += (stop_comp_time - start_comp_time).count();
+
+    start_comp_time = stop_comp_time;
+
 		buildJunctionRTree();
 
 		junction_of_node_.clear();
 
-		auto stop_comp_time = std::chrono::steady_clock::now();
-		search_->duration_search_ += (stop_comp_time - start_comp_time).count();
+		stop_comp_time = std::chrono::steady_clock::now();
+		search_->duration_junctions_ += (stop_comp_time - start_comp_time).count();
 
 
 
@@ -1068,6 +1073,7 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 						<< "n: " << root_node_->GetN()
 //						<< ", new_nodes_ size: " << new_nodes_.size()
 						<< ", new_nodes_ size: " << new_nodes_size_
+            << ", new_nodes_amount_target_: " << new_nodes_amount_target_
 						//<< ", minibatch_ size: " << minibatch_.size()
 						<< ", junctions_ size: " << junctions_.size();
 						//<< ", highest w: " << new_nodes_[new_nodes_.size() - 1].w
@@ -1196,6 +1202,7 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 
 		if (search_->count_iterations_ > 0) {
 			LOGFILE << "search: " << search_->duration_search_ / search_->count_iterations_
+							<< ", junctions: " << search_->duration_junctions_ / search_->count_iterations_
 							<< ", create: " << search_->duration_create_ / search_->count_iterations_
 							<< ", compute: " << search_->duration_compute_ / search_->count_iterations_
 							<< ", retrieve: " << search_->duration_retrieve_ / search_->count_iterations_
@@ -1207,6 +1214,7 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 
 		if(dur_sum > 0){ // I've seen cases with dur_sum == 0
 		  LOGFILE << "search: " << search_->duration_search_ / dur_sum
+						<< ", junctions: " << search_->duration_junctions_ / dur_sum
 						<< ", create: " << search_->duration_create_ / dur_sum
 						<< ", compute: " << search_->duration_compute_ / dur_sum
 						<< ", retrieve: " << search_->duration_retrieve_ / dur_sum
