@@ -40,6 +40,10 @@ namespace {
 
 // Alternatives:
 
+int const Q_TO_PROB_MODE = 2;
+  // 1: e^(k * q)
+  // 2: 1 / (1 + k (maxq - q))^2
+
 int const MAX_NEW_SIBLINGS = 10000;
   // The maximum number of new siblings. If 1, then it's like old MULTIPLE_NEW_SIBLINGS = false, if >= maximum_number_of_legal_moves it's like MULTIPLE_NEW_SIBLINGS = true
 const int kUciInfoMinimumFrequencyMs = 500;
@@ -429,6 +433,19 @@ void Search_revamp::ExtendNode(PositionHistory* history, Node_revamp* node) {
 // Distribution
 //////////////////////////////////////////////////////////////////////////////
 
+inline float q_to_prob(float q, float max_q, int n, int parent_n) {
+  switch (Q_TO_PROB_MODE) {
+  case 1: {
+    return exp(11.5 * pow(parent_n, 0.095) * q);
+  };
+  case 2: {
+    float x = 1.0 + 20.0 * (max_q - q);
+    return pow(x, -2.0);
+  };
+  };
+}
+
+
 float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
   int n = node->GetNumChildren();
   bool DEBUG = false;
@@ -440,11 +457,20 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
     if(DEBUG) LOGFILE << "At computeChildWeights, number of (expanded) children: " << n;
     // At least one child is extended, weight the expanded children by Q.
     // sum_of_w_of_expanded_nodes is the sum of the exponentiated Q:s (where Q is not OrigQ but a backpropagated Q)
+
+    float maxq = -2.0;
+    if (Q_TO_PROB_MODE == 2) {  // maxq not used for Q_TO_PROB_MODE = 1
+      for (int i = 0; i < n; i++) {
+        float q = node->GetEdges()[i].GetChild()->GetQ();
+        if (q > maxq) maxq = q;
+      }
+    }
+
     double sum_of_P_of_expanded_nodes = 0.0;
     double sum_of_w_of_expanded_nodes = 0.0;
     for (int i = 0; i < n; i++) {
       // float w = exp(q_concentration_ * node->GetEdges()[i].GetChild()->GetQ());
-      float w = exp(11.5 * pow(node->GetN(), 0.095) * node->GetEdges()[i].GetChild()->GetQ());
+      float w = q_to_prob(node->GetEdges()[i].GetChild()->GetQ(), maxq, node->GetEdges()[i].GetChild()->GetN(), node->GetN());
       node->GetEdges()[i].GetChild()->SetW(w);
       sum_of_w_of_expanded_nodes += w;
       sum_of_P_of_expanded_nodes += node->GetEdges()[i].GetP();
@@ -747,6 +773,10 @@ void SearchWorker_revamp::retrieveNNResult(Node_revamp* node, int batchidx) {
       abort();
       //p = 0.0;
     }
+    //if (p > 1.0) {
+    //  std::cerr << "p value > 1\n";
+    //  abort();
+    //}
     if (p_concentration_ != 1.0) {
       p = pow(p, p_concentration_);
     }
