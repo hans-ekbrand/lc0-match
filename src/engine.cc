@@ -403,7 +403,7 @@ void EngineController::Go(const GoParams& params) {
 void EngineController::PonderHit() {
   move_start_time_ = std::chrono::steady_clock::now();
   LOGFILE << "Ponderhit captured! should silently continue and return like this was a normal search all along";
-  if (search_) search_->Stop();
+  // if (search_) search_->Stop(); // If on, that causes printing of bestmove for the opponent.
   go_params_.ponder = false;
   Go(go_params_);
 }

@@ -40,7 +40,7 @@ namespace {
 
 // Alternatives:
 
-int const Q_TO_PROB_MODE = 2;
+int const Q_TO_PROB_MODE = 1;
   // 1: e^(k * q)
   // 2: 1 / (1 + k (maxq - q))^2
 
@@ -132,6 +132,9 @@ void Search_revamp::Stop() {
 			ponder_ = false;
 			not_stop_searching_ = false;
 		} else {
+		  // This makes us return a move for the opponent if we - Stop() - was called by PonderHit() in engine.cc
+		  // To take care of this case, which happens when ponder is used together with node limits, we need a switch
+		  // which tells us whether or not to report bestmove. Or PonderHit() should just not call us?
 			reportBestMove();
 		}
 	} else {
@@ -436,7 +439,12 @@ void Search_revamp::ExtendNode(PositionHistory* history, Node_revamp* node) {
 inline float q_to_prob(float q, float max_q, int n, int parent_n) {
   switch (Q_TO_PROB_MODE) {
   case 1: {
-    return exp(11.5 * pow(parent_n, 0.095) * q);
+    // return exp(q_concentration_ * q);
+    // return exp(11.5 * pow(parent_n, 0.095) * q);
+
+    // replicate the success at 120.000 nodes
+    float my_q_concentration_ = 35.2;
+    return exp(my_q_concentration_ * q);
   };
   case 2: {
     float x = 1.0 + 20.0 * (max_q - q);
@@ -469,7 +477,6 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
     double sum_of_P_of_expanded_nodes = 0.0;
     double sum_of_w_of_expanded_nodes = 0.0;
     for (int i = 0; i < n; i++) {
-      // float w = exp(q_concentration_ * node->GetEdges()[i].GetChild()->GetQ());
       float w = q_to_prob(node->GetEdges()[i].GetChild()->GetQ(), maxq, node->GetEdges()[i].GetChild()->GetN(), node->GetN());
       node->GetEdges()[i].GetChild()->SetW(w);
       sum_of_w_of_expanded_nodes += w;
@@ -497,8 +504,10 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
     std::vector<double> weighted_p_and_q(n);
     double sum_of_weighted_p_and_q = 0.0;
     for (int i = 0; i < n; i++){
-      // double relative_weight_of_p = pow(node->GetEdges()[i].GetChild()->GetN(), policy_weight_exponent_) / ( 0.05 + node->GetEdges()[i].GetChild()->GetN()); // 0.05 is here to make Q have some influence after 1 visit.
-      double relative_weight_of_p = pow(node->GetN(), 0.55) / ( 0.05 + node->GetN());
+      // replicate the success at 120.000 nodes
+      float my_policy_weight_exponent_ = 0.59;
+      double relative_weight_of_p = pow(node->GetEdges()[i].GetChild()->GetN(), my_policy_weight_exponent_) / ( 0.05 + node->GetEdges()[i].GetChild()->GetN()); // 0.05 is here to make Q have some influence after 1 visit.
+      // double relative_weight_of_p = pow(node->GetN(), 0.55) / ( 0.05 + node->GetN());
       // double relative_weight_of_p = pow(node->GetN(), (0.46 + log10(node->GetN())/30)) / ( 0.05 + node->GetN());         // LOGFILE << "relative_weight_of_p:" << relative_weight_of_p;
       double relative_weight_of_q = 1 - relative_weight_of_p;
       // LOGFILE << "relative_weight_of_q:" << relative_weight_of_q;	    
