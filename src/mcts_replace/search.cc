@@ -933,7 +933,6 @@ int SearchWorker_revamp::propagate() {
 			uint16_t juncidx = new_nodes_[j].junction;
 
 			//LOGFILE << "node: " << node << ", juncidx: " << juncidx;
-juncidx = 0xFFFF;
 
 			while (juncidx != 0xFFFF) {
 				while (node != junctions_[juncidx].node) {
