@@ -536,7 +536,7 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
     for (int i = 0; i < n; i++){
       double relative_weight_of_p = pow(node->GetEdges()[i].GetChild()->GetN(), my_policy_weight_exponent_) / ( 0.05 + node->GetEdges()[i].GetChild()->GetN()); // 0.05 is here to make Q have some influence after 1 visit.
       double relative_weight_of_q = 1 - relative_weight_of_p;
-      weighted_p_and_q[i] = relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() + relative_weight_of_p * node->GetEdges()[i].GetP() + 0.25 * log((node->GetN() + 19652)/19652) * sqrt(log(node->GetN())/(1+node->GetEdges()[i].GetChild()->GetN()));
+      weighted_p_and_q[i] = relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() + relative_weight_of_p * node->GetEdges()[i].GetP() + node->GetEdges()[i].GetP() * 0.05 * log((node->GetN() + 19652)/19652) * sqrt(log(node->GetN())/(1+node->GetEdges()[i].GetChild()->GetN()));
       if(DEBUG) { LOGFILE << "Weighted p and q for i=" << i << " " << weighted_p_and_q[i]; }
       sum_of_weighted_p_and_q += weighted_p_and_q[i];
     }
