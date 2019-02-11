@@ -576,22 +576,19 @@ void SearchWorker_revamp::pickNodesToExtend() {
 				int nidx = node->GetNextUnexpandedEdge();
 				if (nidx < node->GetNumEdges() && nidx - node->GetNumChildren() < MAX_NEW_SIBLINGS) {
 					node->GetEdges()[nidx].CreateChild(node, nidx);
-					//new_nodes_list_lock_.lock();
-					//new_nodes_.push_back({node, nidx, 0});
-					//new_nodes_list_lock_.unlock();
-					new_nodes_[new_nodes_size_] = {node->GetEdges()[nidx].GetChild(), 0, -1};
+					new_nodes_[new_nodes_size_] = {node->GetEdges()[nidx].GetChild(), 0xFFFF, -1};
 					new_nodes_size_++;
 					node->SetNextUnexpandedEdge(nidx + 1);
 					break;
 				} else {  // no more child to add (before retrieved information about previous ones)
 					return;
 				}
-			} else {
-				node = node->GetEdges()[best_idx].GetChild();
 			}
+			node = node->GetEdges()[best_idx].GetChild();
 		}
 
-		bool update_branching = true;
+		int junction_mode = 0;
+		uint16_t ccidx = (new_nodes_size_ - 1) | 0x8000;
 
 		while (true) {
 			int16_t max_idx = -1;
@@ -610,13 +607,44 @@ void SearchWorker_revamp::pickNodesToExtend() {
 			node->SetMaxW(max_w);
 			node->SetBestIdx(max_idx);
 
-			if (update_branching) {
-				uint8_t n = node->GetBranchingInFlight();
-				if (n == 0) {
-					node->SetBranchingInFlight(1);
-				} else {
-					node->SetBranchingInFlight(n + 1);
-					update_branching = false;
+			if (junction_mode == 0) {
+				uint16_t n = node->GetBranchingInFlight();
+				if (n == 0) {  // an unvisited node
+					node->SetBranchingInFlight(ccidx);
+				} else if (n & 0xC000) {  // part of a path between junctions
+					uint16_t new_junc_idx = junctions_.size();
+					node->SetBranchingInFlight(new_junc_idx + 1);
+					uint16_t parent;
+					if (n & 0x8000) {
+						parent = new_nodes_[n & 0x3FFF].junction;
+						new_nodes_[n & 0x3FFF].junction = new_junc_idx;
+					} else {
+						parent = junctions_[n & 0x3FFF].parent;
+						junctions_[n & 0x3FFF].parent = new_junc_idx;
+					}
+					junctions_.push_back({node, parent, 0});
+
+					if (ccidx & 0x8000) {
+						new_nodes_[ccidx & 0x3FFF].junction = new_junc_idx;
+					} else {
+						junctions_[ccidx & 0x3FFF].parent = new_junc_idx;
+					}
+					ccidx = new_junc_idx | 0x4000;
+					junction_mode = 1;
+                                } else {  // a junction node
+					if (ccidx & 0x8000) {
+						new_nodes_[ccidx & 0x3FFF].junction = n - 1;
+					} else {
+						junctions_[ccidx & 0x3FFF].parent = n - 1;
+					}
+					junction_mode = 2;
+				}
+			} else if (junction_mode == 1) {
+				uint16_t n = node->GetBranchingInFlight();
+				if (n & 0xC000) {  // part of path between junctions
+					node->SetBranchingInFlight(ccidx);
+				} else {  // a junction node
+					junction_mode = 2;
 				}
 			}
 
@@ -629,42 +657,19 @@ void SearchWorker_revamp::pickNodesToExtend() {
 }
 
 void SearchWorker_revamp::buildJunctionRTree() {
-//	for (int i = new_nodes_.size() - 1; i >= 0; i--) {
 	for (int i = new_nodes_size_ - 1; i >= 0; i--) {
-		Node_revamp* node = new_nodes_[i].node->GetParent();
-		uint16_t* parent_ptr = &new_nodes_[i].junction;
-		while (true) {
-			while (node->GetBranchingInFlight() == 1) {
-				if (node == root_node_) {
-					*parent_ptr = 0xFFFF;
-					break;
-				}
-				node = node->GetParent();
-			}
-			if (*parent_ptr == 0xFFFF) break;
-			uint16_t &junc_idx = junction_of_node_[node];
-			if (junc_idx == 0) {
-				uint16_t new_junc_idx = junctions_.size();
-				*parent_ptr = new_junc_idx;
-				junctions_.push_back({node, 0, node->GetBranchingInFlight()});
-				junc_idx = new_junc_idx + 1;
-				parent_ptr = &junctions_[new_junc_idx].parent;
-				if (node == root_node_) {
-					*parent_ptr = 0xFFFF;
-					break;
-				}
-				node = node->GetParent();
-			} else {
-				*parent_ptr = junc_idx - 1;
-				break;
-			}
+		uint16_t junction = new_nodes_[i].junction;
+		while (junction != 0xFFFF) {
+			int cc = junctions_[junction].children_count++;
+			if (cc > 0) break;
+			junction = junctions_[junction].parent;
 		}
 	}
 
 //	for (int i = new_nodes_.size() - 1; i >= 0; i--) {
 	for (int i = new_nodes_size_ - 1; i >= 0; i--) {
 		Node_revamp* node = new_nodes_[i].node->GetParent();
-		while (node->GetBranchingInFlight() > 0) {
+		while (node->GetBranchingInFlight() != 0) {
 			node->SetBranchingInFlight(0);
 			if (node == root_node_) break;
 			node = node->GetParent();
@@ -831,6 +836,12 @@ void SearchWorker_revamp::retrieveNNResult(Node_revamp* node, int batchidx) {
 
 
 void SearchWorker_revamp::recalcPropagatedQ(Node_revamp* node) {
+  int n = 1;
+  for (int i = 0; i < node->GetNumChildren(); i++) {
+    n += node->GetEdges()[i].GetChild()->GetN();
+  }
+  node->SetN(n);
+
   float total_children_weight = computeChildWeights(node);
 
 //  if (total_children_weight < 0.0 || total_children_weight - 1.0 > 1.00012) {
@@ -860,12 +871,6 @@ void SearchWorker_revamp::recalcPropagatedQ(Node_revamp* node) {
   // Average Q STOP
 
   
-  int n = 1;
-  for (int i = 0; i < node->GetNumChildren(); i++) {
-    n += node->GetEdges()[i].GetChild()->GetN();
-  }
-  node->SetN(n);
-
 	int first_non_created_child_idx = node->GetNumChildren();
 	while (first_non_created_child_idx < node->GetNumEdges() && node->GetEdges()[first_non_created_child_idx].GetChild() != nullptr) {
 		first_non_created_child_idx++;
@@ -928,6 +933,7 @@ int SearchWorker_revamp::propagate() {
 			uint16_t juncidx = new_nodes_[j].junction;
 
 			//LOGFILE << "node: " << node << ", juncidx: " << juncidx;
+juncidx = 0xFFFF;
 
 			while (juncidx != 0xFFFF) {
 				while (node != junctions_[juncidx].node) {
@@ -1084,12 +1090,8 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 
 		buildJunctionRTree();
 
-		junction_of_node_.clear();
-
 		stop_comp_time = std::chrono::steady_clock::now();
 		search_->duration_junctions_ += (stop_comp_time - start_comp_time).count();
-
-
 
 		start_comp_time = std::chrono::steady_clock::now();
 

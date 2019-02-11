@@ -224,8 +224,6 @@ private:
 	int new_nodes_list_shared_idx_ = 0;  // SearchWorker instance not needed, move to Search?
 	std::mutex new_nodes_list_lock_;  // SearchWorker instance not needed, move to Search?
 
-	std::unordered_map<Node_revamp*, uint16_t> junction_of_node_;  // SearchWorker instance not needed, move to Search?
-
 	std::vector<Junction> junctions_;
 	std::vector<std::mutex *> junction_locks_;  // SearchWorker instance not needed, move to Search?
 

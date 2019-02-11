@@ -122,8 +122,8 @@ class Node_revamp {
   void SetW(float w) { w_ = w; }
   float GetMaxW() const { return max_w_; }
   void SetMaxW(float w) { max_w_ = w; }
-  uint8_t GetBranchingInFlight() const { return branching_in_flight_; }
-  void SetBranchingInFlight(uint8_t b) { branching_in_flight_ = b; }
+  uint16_t GetBranchingInFlight() const { return branching_in_flight_; }
+  void SetBranchingInFlight(uint16_t b) { branching_in_flight_ = b; }
 
   // Returns whether the node is known to be draw/lose/win.
   bool IsTerminal() const { return is_terminal_; }
@@ -192,11 +192,11 @@ private:
 
 	uint16_t noofchildren_ = 0;
 	int16_t best_idx_ = -1;  // index to child where unexpanded edge with highest global weight is
+	uint16_t branching_in_flight_ = 0;
 
 	// 1 byte fields.
 	// Whether or not this node end game (with a winning of either sides or draw).
 	bool is_terminal_ = false;
-	uint8_t branching_in_flight_ = 0;
 	uint8_t next_unexpanded_edge_ = 0;
 
 	friend class NodeTree_revamp;
