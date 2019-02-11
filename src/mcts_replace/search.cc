@@ -48,7 +48,8 @@ int const MAX_NEW_SIBLINGS = 10000;
   // The maximum number of new siblings. If 1, then it's like old MULTIPLE_NEW_SIBLINGS = false, if >= maximum_number_of_legal_moves it's like MULTIPLE_NEW_SIBLINGS = true
 const int kUciInfoMinimumFrequencyMs = 500;
 
-int const N_HELPER_THREADS = 5;
+int const N_HELPER_THREADS_PRE = 5;
+int const N_HELPER_THREADS_POST = 5;
 
 bool const LOG_RUNNING_INFO = false;
 
@@ -997,7 +998,7 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 
 	std::vector<std::mutex *> helper_thread_locks;
 	std::vector<std::thread> helper_threads;
-	for (int j = 0; j < N_HELPER_THREADS; j++) {
+	for (int j = 0; j < std::max(N_HELPER_THREADS_PRE, N_HELPER_THREADS_POST); j++) {
 		helper_thread_locks.push_back(new std::mutex());
 		helper_thread_locks[j]->lock();
 		std::mutex *lock = helper_thread_locks[j];
@@ -1054,7 +1055,7 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 
 		helper_threads_mode_ = 1;
 		//LOGFILE << "Allowing helper threads to help";
-		for (int j = 0; j < (int)helper_thread_locks.size(); j++) {
+		for (int j = 0; j < N_HELPER_THREADS_PRE; j++) {
 			helper_thread_locks[j]->unlock();
 		}
 
@@ -1068,7 +1069,7 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 
 //		if (new_nodes_.size() == 0) {  // no new nodes found, but there may exist unextended edges unavailable due to business
 		if (new_nodes_size_ == 0) {  // no new nodes found, but there may exist unextended edges unavailable due to business
-			for (int j = 0; j < (int)helper_thread_locks.size(); j++) {
+			for (int j = 0; j < N_HELPER_THREADS_PRE; j++) {
 				helper_thread_locks[j]->lock();
 			}
 			if (search_->half_done_count_ == 0) {  // no other thread is waiting for nn computation and new nodes to finish so the search tree is exhausted
@@ -1098,7 +1099,7 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 
 		if (LOG_RUNNING_INFO) LOGFILE << "main thread new nodes: " << count;
 
-		for (int j = 0; j < (int)helper_thread_locks.size(); j++) {
+		for (int j = 0; j < N_HELPER_THREADS_PRE; j++) {
 			helper_thread_locks[j]->lock();
 		}
 
@@ -1178,7 +1179,7 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 		start_comp_time = std::chrono::steady_clock::now();
 
 		helper_threads_mode_ = 3;
-		for (int j = 0; j < (int)helper_thread_locks.size(); j++) {
+		for (int j = 0; j < N_HELPER_THREADS_POST; j++) {
 			helper_thread_locks[j]->unlock();
 		}
 
@@ -1199,7 +1200,7 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 
 		int pcount = propagate();
 
-		for (int j = 0; j < (int)helper_thread_locks.size(); j++) {
+		for (int j = 0; j < N_HELPER_THREADS_POST; j++) {
 			helper_thread_locks[j]->lock();
 		}
 
@@ -1245,7 +1246,7 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 		int64_t elapsed_time = search_->GetTimeSinceStart();
 		//LOGFILE << "Elapsed time when thread for node " << root_node_ << " which has size " << root_node_->GetN() << " nodes did " << i << " computations: " << elapsed_time << "ms";
 		LOGFILE << "Elapsed time for " << root_node_->GetN() << " nodes: " << elapsed_time << "ms";
-		LOGFILE << "#helper threads: " << N_HELPER_THREADS;
+		LOGFILE << "#helper threads pre: " << N_HELPER_THREADS_PRE << ", #helper threads post: " << N_HELPER_THREADS_POST;
 
 		LOGFILE << "root Q: " << root_node_->GetQ();
 
