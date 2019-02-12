@@ -735,7 +735,7 @@ int SearchWorker_revamp::extendTree(std::vector<Move> *movestack, PositionHistor
 			}
 		}
 		int n = new_nodes_size_ - i;
-		if (n > 5) n = 5;
+		if (n > 10) n = 10;
 		new_nodes_list_shared_idx_ += n;
 		new_nodes_list_lock_.unlock();
 
@@ -925,7 +925,7 @@ int SearchWorker_revamp::propagate() {
 			}
 		}
 		int n = new_nodes_amount_retrieved_ - j;
-		if (n > 5) n = 5;
+		if (n > 1) n = 1;
 		new_nodes_list_shared_idx_ += n;
 		new_nodes_list_lock_.unlock();
 
@@ -1264,25 +1264,18 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 		}
 
 		if (search_->count_iterations_ > 0) {
-			LOGFILE << "search: " << search_->duration_search_ / search_->count_iterations_
-							<< ", junctions: " << search_->duration_junctions_ / search_->count_iterations_
-							<< ", create: " << search_->duration_create_ / search_->count_iterations_
-							<< ", compute: " << search_->duration_compute_ / search_->count_iterations_
-							<< ", retrieve: " << search_->duration_retrieve_ / search_->count_iterations_
-							<< ", propagate: " << search_->duration_propagate_ / search_->count_iterations_;
-							//<< ", duration_node_prio_queue_lock_: " << duration_node_prio_queue_lock_ / count_iterations_;
+      int divisor = search_->count_iterations_ * 1000;
+			LOGFILE << "search: " << search_->duration_search_ / divisor
+							<< ", junctions: " << search_->duration_junctions_ / divisor
+							<< ", create: " << search_->duration_create_ / divisor
+							<< ", compute: " << search_->duration_compute_ / divisor
+							<< ", retrieve: " << search_->duration_retrieve_ / divisor
+							<< ", propagate: " << search_->duration_propagate_ / divisor
+							<< ", pre: " << (search_->duration_search_ + search_->duration_junctions_ + search_->duration_create_) / divisor
+							<< ", post: " << (search_->duration_retrieve_ + search_->duration_propagate_) / divisor
+              << ", total (exc nn comp): " << (search_->duration_search_ + search_->duration_junctions_ + search_->duration_create_ + search_->duration_retrieve_ + search_->duration_propagate_) / divisor;
 		}
 
-		int64_t dur_sum = (search_->duration_search_ + search_->duration_create_ + search_->duration_compute_ + search_->duration_retrieve_ + search_->duration_propagate_) / 1000;
-
-		if(dur_sum > 0){ // I've seen cases with dur_sum == 0
-		  LOGFILE << "search: " << search_->duration_search_ / dur_sum
-						<< ", junctions: " << search_->duration_junctions_ / dur_sum
-						<< ", create: " << search_->duration_create_ / dur_sum
-						<< ", compute: " << search_->duration_compute_ / dur_sum
-						<< ", retrieve: " << search_->duration_retrieve_ / dur_sum
-						<< ", propagate: " << search_->duration_propagate_ / dur_sum;
-		}
 
     if (search_->count_iterations_ > 0) {
       LOGFILE << "nodes per iteration: " << root_node_->GetN() / search_->count_iterations_
