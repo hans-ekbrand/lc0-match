@@ -51,10 +51,9 @@ const int kUciInfoMinimumFrequencyMs = 500;
 int const N_HELPER_THREADS_PRE = 5;
 int const N_HELPER_THREADS_POST = 5;
 
-bool const LOG_RUNNING_INFO = false;
+bool const LOG_RUNNING_INFO = false;  
 
 }  // namespace
-
 
 std::string SearchLimits_revamp::DebugString() const {
   std::ostringstream ss;
@@ -334,37 +333,37 @@ NNCacheLock Search_revamp::GetCachedNNEval(Node_revamp* node) const {
   return nneval;
 }
 
+void Search_revamp::SendMovesStats() {
+  const bool is_black_to_move = played_history_.IsBlackToMove();
+  auto move_stats = Search_revamp::GetVerboseStats(root_node_, is_black_to_move);
 
-// void Search_revamp::SendMovesStats() {
-//   const bool is_black_to_move = played_history_.IsBlackToMove();
-//   auto move_stats = SearchWorker_revamp::GetVerboseStats(root_node_, is_black_to_move);
-
-//   if (params_.GetVerboseStats()) {
-//     // LOGFILE << "captured GetVerboseStats";
-//     std::vector<ThinkingInfo> infos;
-//     std::transform(move_stats.begin(), move_stats.end(),
-//                    std::back_inserter(infos), [](const std::string& line) {
-//                      ThinkingInfo info;
-//                      info.comment = line;
-//                      return info;
-//                    });
-//     info_callback_(infos);
-//   } else {
-//     LOGFILE << "=== Move stats:";
-//     for (const auto& line : move_stats) LOGFILE << line;
-//   }
-// }
+  if (params_.GetVerboseStats()) {
+    std::vector<ThinkingInfo> infos;
+    std::transform(move_stats.begin(), move_stats.end(),
+                   std::back_inserter(infos), [](const std::string& line) {
+                     ThinkingInfo info;
+                     info.comment = line;
+                     return info;
+                   });
+    info_callback_(infos);
+  } else {
+    LOGFILE << "=== Move stats:";
+    for (const auto& line : move_stats) LOGFILE << line;
+  }
+}
 
 void Search_revamp::reportBestMove() {
 	int bestidx = indexOfHighestQEdge(root_node_);
 	Move best_move = root_node_->GetEdges()[bestidx].GetMove(played_history_.IsBlackToMove());
 	int ponderidx = indexOfHighestQEdge(root_node_->GetEdges()[bestidx].GetChild());
-	// If the move we make is terminal, then there is nothing to ponder about
-	if(!root_node_->GetEdges()[bestidx].GetChild()->IsTerminal()){
+	// If the move we make is terminal, then there is nothing to ponder about.
+	// Also, if the bestmove doesn't have any children, then don't report a ponder move.
+	if(!root_node_->GetEdges()[bestidx].GetChild()->IsTerminal() &&
+	   ponderidx != -1){
 		Move ponder_move = root_node_->GetEdges()[bestidx].GetChild()->GetEdges()[ponderidx].GetMove(!played_history_.IsBlackToMove());
 		best_move_callback_({best_move, ponder_move});
 	} else {
-		best_move_callback_({best_move});
+		best_move_callback_(best_move);
 	}
 }
 
@@ -437,13 +436,12 @@ void Search_revamp::ExtendNode(PositionHistory* history, Node_revamp* node) {
 // Distribution
 //////////////////////////////////////////////////////////////////////////////
 
-inline float q_to_prob(float q, float max_q, int n, int parent_n) {
+  inline float q_to_prob(const float q, const float max_q, const float q_concentration, int n, int parent_n) {
   switch (Q_TO_PROB_MODE) {
   case 1: {
-    // return exp(q_concentration_ * q);
-    // return exp(11.5 * pow(parent_n, 0.095) * q);
-    double my_q_concentration_ = 35.2;
-    return exp(my_q_concentration_ * q);
+    // double my_q_concentration_ = 35.2;
+    // double my_q_concentration_ = 40;
+    return exp(q_concentration * (q - abs(max_q)/2)); // reduce the overflow risk.
   };
   case 2: {
     float x = 1.0 + 20.0 * (max_q - q);
@@ -476,7 +474,7 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
     double sum_of_P_of_expanded_nodes = 0.0;
     double sum_of_w_of_expanded_nodes = 0.0;
     for (int i = 0; i < n; i++) {
-      double w = q_to_prob(node->GetEdges()[i].GetChild()->GetQ(), maxq, node->GetEdges()[i].GetChild()->GetN(), node->GetN());
+      double w = q_to_prob(node->GetEdges()[i].GetChild()->GetQ(), maxq, search_->params_.GetTemperature(), node->GetEdges()[i].GetChild()->GetN(), node->GetN());
       node->GetEdges()[i].GetChild()->SetW(w);
       sum_of_w_of_expanded_nodes += w;
       sum_of_P_of_expanded_nodes += node->GetEdges()[i].GetP();
@@ -503,7 +501,8 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
     std::vector<double> weighted_p_and_q(n);
     double sum_of_weighted_p_and_q = 0.0;
 
-    float my_policy_weight_exponent_ = 0.55;
+    const float my_policy_weight_exponent_ = search_->params_.GetFpuValue();
+
     // // Imitate MCTS with dynamic cpuct weight like AlphaZero
     // // However, apply our own mixing of q and p as before
     // // Unlike MCTS we have to normalize the cpuct weight, but should we normalize before or after multiplying with P?
@@ -537,7 +536,7 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
     for (int i = 0; i < n; i++){
       double relative_weight_of_p = pow(node->GetEdges()[i].GetChild()->GetN(), my_policy_weight_exponent_) / ( 0.05 + node->GetEdges()[i].GetChild()->GetN()); // 0.05 is here to make Q have some influence after 1 visit.
       double relative_weight_of_q = 1 - relative_weight_of_p;
-      weighted_p_and_q[i] = relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() + relative_weight_of_p * node->GetEdges()[i].GetP() + node->GetEdges()[i].GetP() * 0.05 * log((node->GetN() + 19652)/19652) * sqrt(log(node->GetN())/(1+node->GetEdges()[i].GetChild()->GetN()));
+      weighted_p_and_q[i] = relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() + relative_weight_of_p * node->GetEdges()[i].GetP() + node->GetEdges()[i].GetP() * search_->params_.GetCpuct() * log((node->GetN() + search_->params_.GetCpuctBase())/search_->params_.GetCpuctBase()) * sqrt(log(node->GetN())/(1+node->GetEdges()[i].GetChild()->GetN()));
       if(DEBUG) { LOGFILE << "Weighted p and q for i=" << i << " " << weighted_p_and_q[i]; }
       sum_of_weighted_p_and_q += weighted_p_and_q[i];
     }
@@ -1240,51 +1239,49 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 		bool ponder = search_->ponder_;
 		search_->ponder_lock_.unlock();
 		if (!ponder && !search_->abort_) {
+	    search_->SendMovesStats(); // Support VerboseMoveStats
 			search_->reportBestMove();
 		}
 
 		int64_t elapsed_time = search_->GetTimeSinceStart();
 		//LOGFILE << "Elapsed time when thread for node " << root_node_ << " which has size " << root_node_->GetN() << " nodes did " << i << " computations: " << elapsed_time << "ms";
-		LOGFILE << "Elapsed time for " << root_node_->GetN() << " nodes: " << elapsed_time << "ms";
-		LOGFILE << "#helper threads pre: " << N_HELPER_THREADS_PRE << ", #helper threads post: " << N_HELPER_THREADS_POST;
+	  if(LOG_RUNNING_INFO){
+      LOGFILE << "Elapsed time for " << root_node_->GetN() << " nodes: " << elapsed_time << "ms";
+      LOGFILE << "#helper threads pre: " << N_HELPER_THREADS_PRE << ", #helper threads post: " << N_HELPER_THREADS_POST;
+      LOGFILE << "root Q: " << root_node_->GetQ();
+      LOGFILE << "move   P                 n   norm n     Q          w";
+	    for (int i = 0; i < root_node_->GetNumChildren(); i++) {
+	      LOGFILE << std::fixed << std::setfill(' ') 
+		      << (root_node_->GetEdges())[i].move_.as_string() << " "
+		      << std::setw(10) << (root_node_->GetEdges())[i].GetP() << " "
+		      << std::setw(10) << (root_node_->GetEdges())[i].GetChild()->GetN() << " "
+		      << std::setw(10) << (float)(root_node_->GetEdges())[i].GetChild()->GetN() / (float)(root_node_->GetN() - 1) << " "
+		// << std::setw(4) << (root_node_->GetEdges())[i].GetChild()->ComputeHeight() << " "
+		      << std::setw(10) << (float)(root_node_->GetEdges())[i].GetChild()->GetQ() << " "
+		      << std::setw(10) << root_node_->GetEdges()[i].GetChild()->GetW();
+	    }
 
-		LOGFILE << "root Q: " << root_node_->GetQ();
+      if (search_->count_iterations_ > 0) {
+        int divisor = search_->count_iterations_ * 1000;
+        LOGFILE << "search: " << search_->duration_search_ / divisor
+                << ", junctions: " << search_->duration_junctions_ / divisor
+                << ", create: " << search_->duration_create_ / divisor
+                << ", compute: " << search_->duration_compute_ / divisor
+                << ", retrieve: " << search_->duration_retrieve_ / divisor
+                << ", propagate: " << search_->duration_propagate_ / divisor
+                << ", pre: " << (search_->duration_search_ + search_->duration_junctions_ + search_->duration_create_) / divisor
+                << ", post: " << (search_->duration_retrieve_ + search_->duration_propagate_) / divisor
+                << ", total (exc nn comp): " << (search_->duration_search_ + search_->duration_junctions_ + search_->duration_create_ + search_->duration_retrieve_ + search_->duration_propagate_) / divisor;
+      }
 
-//		LOGFILE << "move   P                 n   norm n      h   Q          w";
-		LOGFILE << "move   P                 n   norm n     Q          w";
-		for (int i = 0; i < root_node_->GetNumChildren(); i++) {
-			LOGFILE << std::fixed << std::setfill(' ') 
-								<< (root_node_->GetEdges())[i].move_.as_string() << " "
-								<< std::setw(10) << (root_node_->GetEdges())[i].GetP() << " "
-								<< std::setw(10) << (root_node_->GetEdges())[i].GetChild()->GetN() << " "
-								<< std::setw(10) << (float)(root_node_->GetEdges())[i].GetChild()->GetN() / (float)(root_node_->GetN() - 1) << " "
-//								<< std::setw(4) << (root_node_->GetEdges())[i].GetChild()->ComputeHeight() << " "
-								<< std::setw(10) << (float)(root_node_->GetEdges())[i].GetChild()->GetQ() << " "
-								<< std::setw(10) << root_node_->GetEdges()[i].GetChild()->GetW();
-		}
-
-		if (search_->count_iterations_ > 0) {
-      int divisor = search_->count_iterations_ * 1000;
-			LOGFILE << "search: " << search_->duration_search_ / divisor
-							<< ", junctions: " << search_->duration_junctions_ / divisor
-							<< ", create: " << search_->duration_create_ / divisor
-							<< ", compute: " << search_->duration_compute_ / divisor
-							<< ", retrieve: " << search_->duration_retrieve_ / divisor
-							<< ", propagate: " << search_->duration_propagate_ / divisor
-							<< ", pre: " << (search_->duration_search_ + search_->duration_junctions_ + search_->duration_create_) / divisor
-							<< ", post: " << (search_->duration_retrieve_ + search_->duration_propagate_) / divisor
-              << ", total (exc nn comp): " << (search_->duration_search_ + search_->duration_junctions_ + search_->duration_create_ + search_->duration_retrieve_ + search_->duration_propagate_) / divisor;
-		}
-
-
-    if (search_->count_iterations_ > 0) {
-      LOGFILE << "nodes per iteration: " << root_node_->GetN() / search_->count_iterations_
-              << ", minibatch size: " << search_->count_minibatch_size_ / search_->count_iterations_
-              << ", search node visits: " << search_->count_search_node_visits_ / search_->count_iterations_
-              << ", propagate node visits: " << search_->count_propagate_node_visits_ / search_->count_iterations_
-              << ", junctions: " << search_->count_junctions_ / search_->count_iterations_;
+      if (search_->count_iterations_ > 0) {
+        LOGFILE << "nodes per iteration: " << root_node_->GetN() / search_->count_iterations_
+                << ", minibatch size: " << search_->count_minibatch_size_ / search_->count_iterations_
+                << ", search node visits: " << search_->count_search_node_visits_ / search_->count_iterations_
+                << ", propagate node visits: " << search_->count_propagate_node_visits_ / search_->count_iterations_
+                << ", junctions: " << search_->count_junctions_ / search_->count_iterations_;
+      }
     }
-
 	}
 
 	while (!junction_locks_.empty()) {

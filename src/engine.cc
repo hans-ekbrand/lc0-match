@@ -310,9 +310,9 @@ void EngineController::SetupPosition(
     const std::string& fen, const std::vector<std::string>& moves_str) {
   SharedLock lock(busy_mutex_);
   // This is where we get inresponsive. It happens when UCI sends 'ponderhit' before we have finished our pondering search.
-  LOGFILE << "about to call search_.reset() which will return only if our search was already finished.";
+  // LOGFILE << "about to call search_.reset() which will return only if our search was already finished.";
   search_.reset();
-  LOGFILE << "search_.reset() returned successfully.";
+  // LOGFILE << "search_.reset() returned successfully.";
 
   UpdateFromUciOptions();
 
@@ -329,7 +329,7 @@ void EngineController::Go(const GoParams& params) {
   // hence have the same start time like this behaves, or should we check start
   // time hasn't changed since last call to go and capture the new start time
   // now?
-  LOGFILE << "Go!";
+  // LOGFILE << "Go!";
   auto start_time = move_start_time_;
   go_params_ = params;
 
@@ -340,7 +340,7 @@ void EngineController::Go(const GoParams& params) {
   // not.
   if (current_position_) {
     if (params.ponder && !current_position_->moves.empty()) {
-      LOGFILE << "Ponder requested!";
+      // LOGFILE << "Ponder requested!";
       std::vector<std::string> moves(current_position_->moves);
       std::string ponder_move = moves.back();
       moves.pop_back();
@@ -402,7 +402,7 @@ void EngineController::Go(const GoParams& params) {
 
 void EngineController::PonderHit() {
   move_start_time_ = std::chrono::steady_clock::now();
-  LOGFILE << "Ponderhit captured! should silently continue and return like this was a normal search all along";
+  // LOGFILE << "Ponderhit captured! should silently continue and return like this was a normal search all along";
   // if (search_) search_->Stop(); // If on, that causes printing of bestmove for the opponent.
   go_params_.ponder = false;
   Go(go_params_);
