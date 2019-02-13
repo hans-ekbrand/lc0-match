@@ -441,7 +441,7 @@ void Search_revamp::ExtendNode(PositionHistory* history, Node_revamp* node) {
   case 1: {
     // double my_q_concentration_ = 35.2;
     // double my_q_concentration_ = 40;
-    return exp(q_concentration * q - abs(max_q)/2); // reduce the overflow risk.
+    return exp(q_concentration * (q - abs(max_q)/2)); // reduce the overflow risk.
   };
   case 2: {
     float x = 1.0 + 20.0 * (max_q - q);
