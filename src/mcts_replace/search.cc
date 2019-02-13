@@ -441,8 +441,7 @@ void Search_revamp::ExtendNode(PositionHistory* history, Node_revamp* node) {
   case 1: {
     // double my_q_concentration_ = 35.2;
     // double my_q_concentration_ = 40;
-    // return exp(q_concentration * (q - abs(max_q)/2)); // reduce the overflow risk.
-    return exp(q_concentration * q);
+    return exp(q_concentration * (q - abs(max_q)/2)); // reduce the overflow risk.
   };
   case 2: {
     float x = 1.0 + 20.0 * (max_q - q);
@@ -475,7 +474,7 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
     double sum_of_P_of_expanded_nodes = 0.0;
     double sum_of_w_of_expanded_nodes = 0.0;
     for (int i = 0; i < n; i++) {
-      double w = q_to_prob(node->GetEdges()[i].GetChild()->GetQ(), maxq, search_->params_.GetCpuctBase(), node->GetEdges()[i].GetChild()->GetN(), node->GetN());
+      double w = q_to_prob(node->GetEdges()[i].GetChild()->GetQ(), maxq, search_->params_.GetTemperature(), node->GetEdges()[i].GetChild()->GetN(), node->GetN());
       node->GetEdges()[i].GetChild()->SetW(w);
       sum_of_w_of_expanded_nodes += w;
       sum_of_P_of_expanded_nodes += node->GetEdges()[i].GetP();
@@ -537,7 +536,7 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
     for (int i = 0; i < n; i++){
       double relative_weight_of_p = pow(node->GetEdges()[i].GetChild()->GetN(), my_policy_weight_exponent_) / ( 0.05 + node->GetEdges()[i].GetChild()->GetN()); // 0.05 is here to make Q have some influence after 1 visit.
       double relative_weight_of_q = 1 - relative_weight_of_p;
-      weighted_p_and_q[i] = relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() + relative_weight_of_p * node->GetEdges()[i].GetP() + node->GetEdges()[i].GetP() * search_->params_.GetCpuct() * log((node->GetN() + 19652)/19652) * sqrt(log(node->GetN())/(1+node->GetEdges()[i].GetChild()->GetN()));
+      weighted_p_and_q[i] = relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() + relative_weight_of_p * node->GetEdges()[i].GetP() + node->GetEdges()[i].GetP() * search_->params_.GetCpuct() * log((node->GetN() + search_->params_.GetCpuctBase())/search_->params_.GetCpuctBase()) * sqrt(log(node->GetN())/(1+node->GetEdges()[i].GetChild()->GetN()));
       if(DEBUG) { LOGFILE << "Weighted p and q for i=" << i << " " << weighted_p_and_q[i]; }
       sum_of_weighted_p_and_q += weighted_p_and_q[i];
     }
