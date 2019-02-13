@@ -1238,8 +1238,8 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 	  bool ponder = search_->ponder_;
 	  search_->ponder_lock_.unlock();
 	  if (!ponder && !search_->abort_) {
-	    search_->reportBestMove();
 	    search_->SendMovesStats(); // Support VerboseMoveStats
+	    search_->reportBestMove();
 	  }
 
 	  int64_t elapsed_time = search_->GetTimeSinceStart();
