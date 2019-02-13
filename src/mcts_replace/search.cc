@@ -441,7 +441,8 @@ void Search_revamp::ExtendNode(PositionHistory* history, Node_revamp* node) {
   case 1: {
     // double my_q_concentration_ = 35.2;
     // double my_q_concentration_ = 40;
-    return exp(q_concentration * (q - abs(max_q)/2)); // reduce the overflow risk.
+    // return exp(q_concentration * (q - abs(max_q)/2)); // reduce the overflow risk.
+    return exp(q_concentration * q);
   };
   case 2: {
     float x = 1.0 + 20.0 * (max_q - q);
@@ -474,7 +475,7 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
     double sum_of_P_of_expanded_nodes = 0.0;
     double sum_of_w_of_expanded_nodes = 0.0;
     for (int i = 0; i < n; i++) {
-      double w = q_to_prob(node->GetEdges()[i].GetChild()->GetQ(), maxq, search_->params_.GetTemperature(), node->GetEdges()[i].GetChild()->GetN(), node->GetN());
+      double w = q_to_prob(node->GetEdges()[i].GetChild()->GetQ(), maxq, search_->params_.GetCpuctBase(), node->GetEdges()[i].GetChild()->GetN(), node->GetN());
       node->GetEdges()[i].GetChild()->SetW(w);
       sum_of_w_of_expanded_nodes += w;
       sum_of_P_of_expanded_nodes += node->GetEdges()[i].GetP();
@@ -502,6 +503,7 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
     double sum_of_weighted_p_and_q = 0.0;
 
     const float my_policy_weight_exponent_ = search_->params_.GetFpuValue();
+
     // // Imitate MCTS with dynamic cpuct weight like AlphaZero
     // // However, apply our own mixing of q and p as before
     // // Unlike MCTS we have to normalize the cpuct weight, but should we normalize before or after multiplying with P?
