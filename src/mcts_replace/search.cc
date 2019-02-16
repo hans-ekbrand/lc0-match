@@ -40,10 +40,6 @@ namespace {
 
 // Alternatives:
 
-int const Q_TO_PROB_MODE = 1;
-  // 1: e^(k * q)
-  // 2: 1 / (1 + k (maxq - q))^2
-
 int const MAX_NEW_SIBLINGS = 10000;
   // The maximum number of new siblings. If 1, then it's like old MULTIPLE_NEW_SIBLINGS = false, if >= maximum_number_of_legal_moves it's like MULTIPLE_NEW_SIBLINGS = true
 const int kUciInfoMinimumFrequencyMs = 500;
@@ -436,13 +432,11 @@ void Search_revamp::ExtendNode(PositionHistory* history, Node_revamp* node) {
 // Distribution
 //////////////////////////////////////////////////////////////////////////////
 
-// Let a d-fun be a funcion, f, defined on the interval [0,+inf[ such that
-// f is decreasing,
-// f(0) = 1 and
-// lim_x->+inf f(x) = 0
-// In order to easier switch between d-funs they all share parameter h, the half-life, such that
-// f(h) = 1/2
-// Note that, in general, it's not the case that f(x+h)/f(x) = 1/2 for all x (altough it is for f(x)=e^(-k*x)).
+float const Q_CONCENTRATION = 36.0;
+int const MEMORY_FACTOR_THRESHOLD = 30;
+float const MEMORY_FACTOR_INITIAL = 0.95;
+float const MEMORY_FACTOR_FINAL = 0.0;
+
 
 float compute_d_fun_1_par(float half_life) {
   return log(0.5) / half_life;
@@ -463,24 +457,21 @@ inline float d_fun_2(float par1, float par2, float x) {
   return pow(1.0 + par1 * x, par2);
 }
 
-float const HALF_LIFE_Q_TO_W = 0.019254088;  // corresponds to old par = -36 (old q_concentration = 36)
+float const half_life_q_to_w = compute_d_fun_1_par(-Q_CONCENTRATION);
 
-float const d_fun_1_par_q_to_w = compute_d_fun_1_par(HALF_LIFE_Q_TO_W);
+float const d_fun_1_par_q_to_w = compute_d_fun_1_par(half_life_q_to_w);
 
-float const d_fun_2_par2_q_to_w = -2.0;
-float const d_fun_2_par1_q_to_w = compute_d_fun_2_par1_from_par2(d_fun_2_par2_q_to_w, HALF_LIFE_Q_TO_W);
+float const D_FUN_2_PAR2_Q_TO_W = -2.0;
+float const d_fun_2_par1_q_to_w = compute_d_fun_2_par1_from_par2(D_FUN_2_PAR2_Q_TO_W, half_life_q_to_w);
 
 inline float d_fun_1_q_to_w(float highest_q, float q) {
   return d_fun_1(d_fun_1_par_q_to_w, highest_q - q);
 }
 
 inline float d_fun_2_q_to_w(float highest_q, float q) {
-  return d_fun_2(d_fun_2_par1_q_to_w, d_fun_2_par2_q_to_w, highest_q - q);
+  return d_fun_2(d_fun_2_par1_q_to_w, D_FUN_2_PAR2_Q_TO_W, highest_q - q);
 }
 
-int const MEMORY_FACTOR_THRESHOLD = 30;
-float const MEMORY_FACTOR_INITIAL = 0.95;
-float const MEMORY_FACTOR_FINAL = 0.0;
 
 void SearchWorker_revamp::recalcNode(Node_revamp *node) {
   int old_n = node->GetN();
@@ -520,139 +511,16 @@ void SearchWorker_revamp::recalcNode(Node_revamp *node) {
 
   int nidx = node->GetNextUnexpandedEdge();
   if (nidx < node->GetNumEdges() && nidx - node->GetNumChildren() < MAX_NEW_SIBLINGS) {
-    max_max_w = node->GetEdges()[nidx].GetP();
-    max_max_w_idx = -1;
+    float max_w = node->GetEdges()[nidx].GetP();
+    if (max_w > max_max_w) {
+      max_max_w = max_w;
+      max_max_w_idx = -1;
+    }
   }
   node->SetMaxW(max_max_w);
   node->SetBestIdx(max_max_w_idx);
 }
 
-
-
-/*
-  inline float q_to_prob(const float q, const float max_q, const float q_concentration, int n, int parent_n) {
-  switch (Q_TO_PROB_MODE) {
-  case 1: {
-    // double my_q_concentration_ = 35.2;
-    // double my_q_concentration_ = 40;
-    return exp(q_concentration * (q - abs(max_q)/2)); // reduce the overflow risk.
-  };
-  case 2: {
-    float x = 1.0 + 20.0 * (max_q - q);
-    return pow(x, -2.0);
-  };
-  };
-}
-
-
-float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
-  int n = node->GetNumChildren();
-  bool DEBUG = false;
-  // If no child is extended, then just use P.
-  if(n == 0 && (node->GetEdges())[0].GetChild() == nullptr){
-    if(DEBUG) LOGFILE << "No child extended, returning 0";
-    return 0.0;
-  } else {
-    if(DEBUG) LOGFILE << "At computeChildWeights, number of (expanded) children: " << n;
-    // At least one child is extended, weight the expanded children by Q.
-    // sum_of_w_of_expanded_nodes is the sum of the exponentiated Q:s (where Q is not OrigQ but a backpropagated Q)
-
-    float maxq = -2.0;
-    if (Q_TO_PROB_MODE == 2) {  // maxq not used for Q_TO_PROB_MODE = 1
-      for (int i = 0; i < n; i++) {
-        float q = node->GetEdges()[i].GetChild()->GetQ();
-        if (q > maxq) maxq = q;
-      }
-    }
-
-    double sum_of_P_of_expanded_nodes = 0.0;
-    double sum_of_w_of_expanded_nodes = 0.0;
-    for (int i = 0; i < n; i++) {
-      double w = q_to_prob(node->GetEdges()[i].GetChild()->GetQ(), maxq, search_->params_.GetTemperature(), node->GetEdges()[i].GetChild()->GetN(), node->GetN());
-      node->GetEdges()[i].GetChild()->SetW(w);
-      sum_of_w_of_expanded_nodes += w;
-      sum_of_P_of_expanded_nodes += node->GetEdges()[i].GetP();
-      // LOGFILE << "Raw P of node: " << i << " is " << node->GetEdges()[i].GetP();
-      // LOGFILE << "Raw Q of node: " << i << " is " << node->GetEdges()[i].GetChild()->GetOrigQ();	    
-    }
-    // factor for normalising w:s so their sum matches sum_of_P_of_expanded_nodes
-    double normalise_to_sum_of_p = sum_of_P_of_expanded_nodes / sum_of_w_of_expanded_nodes;
-
-    for (int i = 0; i < n; i++) {
-      node->GetEdges()[i].GetChild()->SetW(node->GetEdges()[i].GetChild()->GetW() * normalise_to_sum_of_p );
-    }
-
-    // We want to use P even if there is a Q available, since single Q values are always uncertain, but becomes more certain the more subnodes there are.
-
-    // In UCT the choice of node to descend/expand is made using the formula (highest score gets picked):
-    // Q + cpuct * sqrt(log(ParentN)/ChildN)
-    // For implementations that have access to P, the second part of the expression is multiplied with P
-    // Q + cpuct * sqrt(log(ParentN)/ChildN) * P
-    // In LC0, the implementation of this calculation is spread over different parts of the code (see definition of puct_mult, ComputeCpuct() and GetU() in search.cc, and node.h of lc0 (3, 2 and 19652 are defaults), but here is a summary:
-    // score = Q + P * cpuct * sqrt(log(ParentN)/ChildN)
-    // where cpuct = 3 + (2 * log((ParentN + 19652)/19652))
-
-    std::vector<double> weighted_p_and_q(n);
-    double sum_of_weighted_p_and_q = 0.0;
-
-    const float my_policy_weight_exponent_ = search_->params_.GetFpuValue();
-
-    // // Imitate MCTS with dynamic cpuct weight like AlphaZero
-    // // However, apply our own mixing of q and p as before
-    // // Unlike MCTS we have to normalize the cpuct weight, but should we normalize before or after multiplying with P?
-    // // In our previous algorithm, there was no need to normalize before multiplication, because the coefficient was guaranteed to be between 0 and 1 (n^0.5/n). The new coefficient is unbounded.
-    // // 1. calculate the relative weight of p (p_weight) for each child.
-    // // 2. Normalize the weights of p so that they sum to 1 and store them in relative_weight_of_p[i]
-    // // 3. Use relative_weight_of_p[i] to calculate weighted p for each child.
-    // // This means an extra loop since relative_weight_of_p[i] now varies per child.
-    // std::vector<double> unnormalised_p_weights(n); // storage before normalization
-    // double sum_of_unnormalized_p_weights = 0;
-    // for (int i = 0; i < n; i++){
-    //   unnormalised_p_weights[i] = 3 + 2 * log((node->GetN() + 19652)/19652) * sqrt(log(node->GetN())/(1+node->GetEdges()[i].GetChild()->GetN()));
-    //   if(DEBUG){
-    // 	LOGFILE << "Child: " << i << " has n_visits: " << node->GetEdges()[i].GetChild()->GetN() << " cpuct: " << unnormalised_p_weights[i];
-    //   }
-    //   sum_of_unnormalized_p_weights += unnormalised_p_weights[i];
-    // }
-    // for (int i = 0; i < n; i++){
-    //   relative_weight_of_p = unnormalised_p_weights[i] / sum_of_unnormalized_p_weights;      
-    //   if(relative_weight_of_p < 1){ // I think this will always be true.
-    // 	// Normalize so that the policy part sums to 1.
-    // 	relative_weight_of_q = 1 - relative_weight_of_p;
-    // 	weighted_p_and_q[i] = relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() + relative_weight_of_p * node->GetEdges()[i].GetP();
-    //   } else {
-    //     weighted_p_and_q[i] = node->GetEdges()[i].GetP();
-    //   }
-    //   LOGFILE << "Weighted p and q for i=" << i << " " << weighted_p_and_q[i];
-    //   sum_of_weighted_p_and_q += weighted_p_and_q[i];
-    // }
-
-    for (int i = 0; i < n; i++){
-      double relative_weight_of_p = pow(node->GetEdges()[i].GetChild()->GetN(), my_policy_weight_exponent_) / ( 0.05 + node->GetEdges()[i].GetChild()->GetN()); // 0.05 is here to make Q have some influence after 1 visit.
-      double relative_weight_of_q = 1 - relative_weight_of_p;
-      weighted_p_and_q[i] = relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() + relative_weight_of_p * node->GetEdges()[i].GetP() + node->GetEdges()[i].GetP() * search_->params_.GetCpuct() * log((node->GetN() + search_->params_.GetCpuctBase())/search_->params_.GetCpuctBase()) * sqrt(log(node->GetN())/(1+node->GetEdges()[i].GetChild()->GetN()));
-      if(DEBUG) { LOGFILE << "Weighted p and q for i=" << i << " " << weighted_p_and_q[i]; }
-      sum_of_weighted_p_and_q += weighted_p_and_q[i];
-    }
-    
-    // make these sum to the sum of P of all the expanded children
-    double final_sum_of_weights_for_the_exanded_children = 0.0; // save the final sum here, we will return it.
-    for (int i = 0; i < n; i++){
-      node->GetEdges()[i].GetChild()->SetW(weighted_p_and_q[i] / sum_of_weighted_p_and_q * sum_of_P_of_expanded_nodes);
-      final_sum_of_weights_for_the_exanded_children += node->GetEdges()[i].GetChild()->GetW();
-      // LOGFILE << "visits: " << node->GetEdges()[i].GetChild()->GetN()
-      // 	    << " P: " << node->GetEdges()[i].GetP()
-      // 	    << " original Q: " << node->GetEdges()[i].GetChild()->GetOrigQ() 
-      // 	    << " Q after search: " << node->GetEdges()[i].GetChild()->GetQ()
-      // 	    << " q as prop: " << node->GetEdges()[i].GetChild()->GetW()
-      // 	    << " sum of p for the expanded nodes: " << sum_of_P_of_expanded_nodes
-      // 	    << " weighted sum of P and q_as_prob: " << weighted_p_and_q[i]
-      // 	    << " (weighted sum of P and q_as_prob) divided the product of sum_of_weighted_p_and_q and sum_of_P_of_expanded_nodes: " << node->GetEdges()[i].GetChild()->GetW();
-    }
-    return final_sum_of_weights_for_the_exanded_children;  // this should be same as sum_of_P_of_expanded_nodes
-  }
-}
-*/
 
 void SearchWorker_revamp::pickNodesToExtend() {
 	Node_revamp* node;
@@ -685,21 +553,32 @@ void SearchWorker_revamp::pickNodesToExtend() {
 		uint16_t ccidx = (new_nodes_size_ - 1) | 0x8000;
 
 		while (true) {
-			int16_t max_idx = -1;
-			float max_w = 0.0;
-			int nidx = node->GetNextUnexpandedEdge();
-			if (nidx < node->GetNumEdges() && nidx - node->GetNumChildren() < MAX_NEW_SIBLINGS) {
-				max_w = node->GetEdges()[nidx].GetP();
-			}
-			for (int i = 0; i < node->GetNumChildren(); i++) {
-				float br_max_w = node->GetEdges()[i].GetChild()->GetW() * node->GetEdges()[i].GetChild()->GetMaxW();
-				if (br_max_w > max_w) {
-					max_w = br_max_w;
-					max_idx = i;
-				}
-			}
-			node->SetMaxW(max_w);
-			node->SetBestIdx(max_idx);
+      float w_total = 0.0;
+      float p_total = 0.0;
+      float max_max_w = 0.0;
+      int16_t max_max_w_idx = -1;
+      for (int i = 0; i < node->GetNumChildren(); i++) {
+        float w = node->GetEdges()[i].GetChild()->GetW();
+        w_total += w;
+        p_total += node->GetEdges()[i].GetP();
+        float max_w = w * node->GetEdges()[i].GetChild()->GetMaxW();
+        if (max_w > max_max_w) {
+          max_max_w = max_w;
+          max_max_w_idx = i;
+        }
+      }
+      max_max_w *= p_total / w_total;
+      int nidx = node->GetNextUnexpandedEdge();
+      if (nidx < node->GetNumEdges() && nidx - node->GetNumChildren() < MAX_NEW_SIBLINGS) {
+        float max_w = node->GetEdges()[nidx].GetP();
+        if (max_w > max_max_w) {
+          max_max_w = max_w;
+          max_max_w_idx = -1;
+        }
+      }
+      node->SetMaxW(max_max_w);
+      node->SetBestIdx(max_max_w_idx);
+
 
 			if (junction_mode == 0) {
 				uint16_t n = node->GetBranchingInFlight();
@@ -760,7 +639,6 @@ void SearchWorker_revamp::buildJunctionRTree() {
 		}
 	}
 
-//	for (int i = new_nodes_.size() - 1; i >= 0; i--) {
 	for (int i = new_nodes_size_ - 1; i >= 0; i--) {
 		Node_revamp* node = new_nodes_[i].node->GetParent();
 		while (node->GetBranchingInFlight() != 0) {
@@ -816,7 +694,6 @@ int SearchWorker_revamp::extendTree(std::vector<Move> *movestack, PositionHistor
 		new_nodes_list_lock_.lock();
 
 		int i = new_nodes_list_shared_idx_;
-//		if (i == (int)new_nodes_.size()) {
 		if (i == (int)new_nodes_size_) {
 			new_nodes_list_lock_.unlock();
 			if (helper_threads_mode_ == 1) {
@@ -835,16 +712,12 @@ int SearchWorker_revamp::extendTree(std::vector<Move> *movestack, PositionHistor
 		for (; n > 0; n--, i++) {
 
 		Node_revamp* newchild = new_nodes_[i].node;
-		//int idx = new_nodes_[i].idx;
 
 		count++;
 
     newchild->SetW(newchild->GetParent()->GetEdges()[newchild->GetIndex()].GetP() / newchild->GetParent()->GetEdges()[0].GetP());
 
 		int nappends = appendHistoryFromTo(movestack, history, root_node_, newchild);
-		//Node_revamp* newchild = node->GetEdges()[idx].GetChild();
-
-		//history->Append(node->GetEdges()[idx].move_);
 
 		search_->ExtendNode(history, newchild);
 
@@ -852,14 +725,9 @@ int SearchWorker_revamp::extendTree(std::vector<Move> *movestack, PositionHistor
 
 			int idx = AddNodeToComputation(newchild, history);
 			new_nodes_[i].batch_idx = idx;
-			//minibatch_.push_back({newchild, (uint16_t)i});
-			//LOGFILE << "minibatch add: " << new_nodes_[i].junction;
 
 		} else {  // is terminal
       new_nodes_amount_target_++;  // it's terminal so it shouldn't be counted towards the minibatch size
-			//non_computation_lock_.lock();
-			//non_computation_new_nodes_.push_back({newchild, (uint16_t)i});
-			//non_computation_lock_.unlock();
 		}
 
 		history->Trim(played_history_length_);
@@ -867,19 +735,14 @@ int SearchWorker_revamp::extendTree(std::vector<Move> *movestack, PositionHistor
 		//	history->Pop();
 		//}
 
-		// not checking and setting N = 0 (see code that propagates below) here means duplicates can exist in the queue if MULTIPLE_NEW_SIBLINGS = true
-		// but checking for duplicates that way does not work with multiple threads because N values are not restored until after the nn-computation (and meanwhile other threads can run)
-
 		if (nappends - 1 > full_tree_depth) full_tree_depth = nappends - 1;
 		cum_depth += nappends - 1;
 
 		}
 	}
 
-//	search_->counters_lock_.lock();
 	if (full_tree_depth > search_->full_tree_depth_) search_->full_tree_depth_ = full_tree_depth;
 	search_->cum_depth_ += cum_depth;
-//	search_->counters_lock_.unlock();
 
 	return count;
 }
@@ -890,8 +753,6 @@ void SearchWorker_revamp::retrieveNNResult(Node_revamp* node, int batchidx) {
   if (q < -1.0 || q > 1.0) {
     std::cerr << "q = " << q << "\n";
     abort();
-    //if (q < -1.0) q = -1.0;
-    //if (q > 1.0) q = 1.0;
   }
   node->SetOrigQ(q);
 
@@ -903,7 +764,6 @@ void SearchWorker_revamp::retrieveNNResult(Node_revamp* node, int batchidx) {
     if (p < 0.0) {
       std::cerr << "p value < 0\n";
       abort();
-      //p = 0.0;
     }
     //if (p > 1.0) {
     //  std::cerr << "p value > 1\n";
@@ -931,81 +791,8 @@ void SearchWorker_revamp::retrieveNNResult(Node_revamp* node, int batchidx) {
 }
 
 
-/*
-void SearchWorker_revamp::recalcPropagatedQ(Node_revamp* node) {
-  int n = 1;
-  for (int i = 0; i < node->GetNumChildren(); i++) {
-    n += node->GetEdges()[i].GetChild()->GetN();
-  }
-  node->SetN(n);
-
-  float total_children_weight = computeChildWeights(node);
-
-//  if (total_children_weight < 0.0 || total_children_weight - 1.0 > 1.00012) {
-//    std::cerr << "total_children_weight: " << total_children_weight << "\n";
-//    abort();
-//  }
-//  float totw = 0.0;
-//  for (int i = 0; i < node->GetNumChildren(); i++) {
-//    float w = node->GetEdges()[i].GetChild()->GetW();
-//    if (w < 0.0) {
-//      std::cerr << "w: " << w << "\n";
-//      abort();
-//    }
-//    totw += w;
-//  }
-//  if (abs(total_children_weight - totw) > 1.00012) {
-//    std::cerr << "total_children_weight: " << total_children_weight << ", totw: " << total_children_weight << "\n";
-//    abort();
-//  }
-
-  // Average Q START
-  float q = (1.0 - total_children_weight) * node->GetOrigQ();
-  for (int i = 0; i < node->GetNumChildren(); i++) {
-    q -= node->GetEdges()[i].GetChild()->GetW() * node->GetEdges()[i].GetChild()->GetQ();
-  }
-  node->SetQ(q);
-  // Average Q STOP
-
-  
-	int first_non_created_child_idx = node->GetNumChildren();
-	while (first_non_created_child_idx < node->GetNumEdges() && node->GetEdges()[first_non_created_child_idx].GetChild() != nullptr) {
-		first_non_created_child_idx++;
-	}
-
-//  if (MULTIPLE_NEW_SIBLINGS)
-//    n = node->GetNumEdges() - first_non_created_child_idx;
-//  else
-//    n = node->GetNumEdges() > first_non_created_child_idx ? 1 : 0;
-
-//  for (int i = 0; i < node->GetNumChildren(); i++) {
-//    n += node->GetEdges()[i].GetChild()->GetNExtendable();
-//  }
-//  node->SetNExtendable(n);
-
-	int16_t max_idx = -1;
-	float max_w = 0.0;
-	int nidx = node->GetNextUnexpandedEdge();
-	if (nidx < node->GetNumEdges() && nidx - node->GetNumChildren() < MAX_NEW_SIBLINGS) {
-		max_w = node->GetEdges()[nidx].GetP();
-	}
-	for (int i = 0; i < node->GetNumChildren(); i++) {
-		float br_max_w = node->GetEdges()[i].GetChild()->GetW() * node->GetEdges()[i].GetChild()->GetMaxW();
-		if (br_max_w > max_w) {
-			max_w = br_max_w;
-			max_idx = i;
-		}
-	}
-	node->SetMaxW(max_w);
-	node->SetBestIdx(max_idx);
-}
-*/
-
 int SearchWorker_revamp::propagate() {
 	int count = 0;
-
-	//auto start_comp_time = std::chrono::steady_clock::now();
-	//auto stop_comp_time = std::chrono::steady_clock::now();
 
 	while (true) {
 		new_nodes_list_lock_.lock();
@@ -1029,8 +816,6 @@ int SearchWorker_revamp::propagate() {
 			Node_revamp* node = new_nodes_[j].node->GetParent();
 			uint16_t juncidx = new_nodes_[j].junction;
 
-			//LOGFILE << "node: " << node << ", juncidx: " << juncidx;
-
 			while (juncidx != 0xFFFF) {
 				while (node != junctions_[juncidx].node) {
 					recalcNode(node);
@@ -1053,27 +838,6 @@ int SearchWorker_revamp::propagate() {
 			}
 		}
 	}
-
-		//~ while (true) {
-			//~ node = node->GetParent();
-
-			//~ uint16_t &br = branching_[node];
-
-			//~ start_comp_time = std::chrono::steady_clock::now();
-			//~ branching_lock_.lock();
-			//~ stop_comp_time = std::chrono::steady_clock::now();
-			//~ duration_node_prio_queue_lock_ += (stop_comp_time - start_comp_time).count();
-
-			//~ int b = --br;
-
-			//~ branching_lock_.unlock();
-
-			//~ if (b > 0) break;
-			//~ recalcPropagatedQ(node);
-			//~ count++;
-			//~ if (node == root_node_) break;
-		//~ }
-	//}
 
   search_->count_propagate_node_visits_ += count;
 
