@@ -436,6 +436,100 @@ void Search_revamp::ExtendNode(PositionHistory* history, Node_revamp* node) {
 // Distribution
 //////////////////////////////////////////////////////////////////////////////
 
+// Let a d-fun be a funcion, f, defined on the interval [0,+inf[ such that
+// f is decreasing,
+// f(0) = 1 and
+// lim_x->+inf f(x) = 0
+// In order to easier switch between d-funs they all share parameter h, the half-life, such that
+// f(h) = 1/2
+// Note that, in general, it's not the case that f(x+h)/f(x) = 1/2 for all x (altough it is for f(x)=e^(-k*x)).
+
+float compute_d_fun_1_par(float half_life) {
+  return log(0.5) / half_life;
+}
+
+// par should be negative
+inline float d_fun_1(float par, float x) {
+  return exp(par * x);
+}
+
+// par1 should be positive and par2 should be negative
+float compute_d_fun_2_par1_from_par2(float par2, float half_life) {
+  return (pow(0.5, 1.0/par2) - 1.0) / half_life;
+}
+
+// par1 should be positive and par2 should be negative
+inline float d_fun_2(float par1, float par2, float x) {
+  return pow(1.0 + par1 * x, par2);
+}
+
+float const HALF_LIFE_Q_TO_W = 0.019254088;  // corresponds to old par = -36 (old q_concentration = 36)
+
+float const d_fun_1_par_q_to_w = compute_d_fun_1_par(HALF_LIFE_Q_TO_W);
+
+float const d_fun_2_par2_q_to_w = -2.0;
+float const d_fun_2_par1_q_to_w = compute_d_fun_2_par1_from_par2(d_fun_2_par2_q_to_w, HALF_LIFE_Q_TO_W);
+
+inline float d_fun_1_q_to_w(float highest_q, float q) {
+  return d_fun_1(d_fun_1_par_q_to_w, highest_q - q);
+}
+
+inline float d_fun_2_q_to_w(float highest_q, float q) {
+  return d_fun_2(d_fun_2_par1_q_to_w, d_fun_2_par2_q_to_w, highest_q - q);
+}
+
+int const MEMORY_FACTOR_THRESHOLD = 30;
+float const MEMORY_FACTOR_INITIAL = 0.95;
+float const MEMORY_FACTOR_FINAL = 0.0;
+
+void SearchWorker_revamp::recalcNode(Node_revamp *node) {
+  int old_n = node->GetN();
+  int n = 1;
+  float highest_q = 0.0;
+  for (int i = 0; i < node->GetNumChildren(); i++) {
+    n += node->GetEdges()[i].GetChild()->GetN();
+    float q = node->GetEdges()[i].GetChild()->GetQ();
+    if (q > highest_q) highest_q = q;
+  }
+  node->SetN(n);
+
+  float memory_factor = pow(n < MEMORY_FACTOR_THRESHOLD ? MEMORY_FACTOR_INITIAL : MEMORY_FACTOR_FINAL, n - old_n);
+  float one_minus_memory_factor = 1.0 - memory_factor;
+
+  float w_total = 0.0;
+  float p_total = 0.0;
+  float q_total = 0.0;
+  float max_max_w = 0.0;
+  int16_t max_max_w_idx = -1;
+  for (int i = 0; i < node->GetNumChildren(); i++) {
+    float q = node->GetEdges()[i].GetChild()->GetQ();
+    float w = memory_factor * node->GetEdges()[i].GetChild()->GetW() + one_minus_memory_factor * d_fun_1_q_to_w(highest_q, q);
+    node->GetEdges()[i].GetChild()->SetW(w);
+    w_total += w;
+    q_total -= w * q;
+    p_total += node->GetEdges()[i].GetP();
+    float max_w = w * node->GetEdges()[i].GetChild()->GetMaxW();
+    if (max_w > max_max_w) {
+      max_max_w = max_w;
+      max_max_w_idx = i;
+    }
+  }
+
+  node->SetQ(p_total * q_total / w_total + (1.0 - p_total) * node->GetOrigQ());
+  max_max_w *= p_total / w_total;
+
+  int nidx = node->GetNextUnexpandedEdge();
+  if (nidx < node->GetNumEdges() && nidx - node->GetNumChildren() < MAX_NEW_SIBLINGS) {
+    max_max_w = node->GetEdges()[nidx].GetP();
+    max_max_w_idx = -1;
+  }
+  node->SetMaxW(max_max_w);
+  node->SetBestIdx(max_max_w_idx);
+}
+
+
+
+/*
   inline float q_to_prob(const float q, const float max_q, const float q_concentration, int n, int parent_n) {
   switch (Q_TO_PROB_MODE) {
   case 1: {
@@ -558,7 +652,7 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
     return final_sum_of_weights_for_the_exanded_children;  // this should be same as sum_of_P_of_expanded_nodes
   }
 }
-
+*/
 
 void SearchWorker_revamp::pickNodesToExtend() {
 	Node_revamp* node;
@@ -745,6 +839,8 @@ int SearchWorker_revamp::extendTree(std::vector<Move> *movestack, PositionHistor
 
 		count++;
 
+    newchild->SetW(newchild->GetParent()->GetEdges()[newchild->GetIndex()].GetP() / newchild->GetParent()->GetEdges()[0].GetP());
+
 		int nappends = appendHistoryFromTo(movestack, history, root_node_, newchild);
 		//Node_revamp* newchild = node->GetEdges()[idx].GetChild();
 
@@ -835,6 +931,7 @@ void SearchWorker_revamp::retrieveNNResult(Node_revamp* node, int batchidx) {
 }
 
 
+/*
 void SearchWorker_revamp::recalcPropagatedQ(Node_revamp* node) {
   int n = 1;
   for (int i = 0; i < node->GetNumChildren(); i++) {
@@ -902,7 +999,7 @@ void SearchWorker_revamp::recalcPropagatedQ(Node_revamp* node) {
 	node->SetMaxW(max_w);
 	node->SetBestIdx(max_idx);
 }
-
+*/
 
 int SearchWorker_revamp::propagate() {
 	int count = 0;
@@ -936,7 +1033,7 @@ int SearchWorker_revamp::propagate() {
 
 			while (juncidx != 0xFFFF) {
 				while (node != junctions_[juncidx].node) {
-					recalcPropagatedQ(node);
+					recalcNode(node);
 					count++;
 					node = node->GetParent();
 				}
@@ -948,7 +1045,7 @@ int SearchWorker_revamp::propagate() {
 			}
 			if (juncidx == 0xFFFF) {
 				while (true) {
-					recalcPropagatedQ(node);
+					recalcNode(node);
 					count++;
 					if (node == root_node_) break;
 					node = node->GetParent();

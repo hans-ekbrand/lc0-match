@@ -188,7 +188,8 @@ private:
 
 	int AddNodeToComputation(Node_revamp* node, PositionHistory *history);
 	void retrieveNNResult(Node_revamp* node, int batchidx);
-	void recalcPropagatedQ(Node_revamp* node);
+	//void recalcPropagatedQ(Node_revamp* node);
+	void recalcNode(Node_revamp* node);
 	void pickNodesToExtend();
 	int appendHistoryFromTo(std::vector<Move> *movestack, PositionHistory *history, Node_revamp* from, Node_revamp* to);
 	float computeChildWeights(Node_revamp* node);
