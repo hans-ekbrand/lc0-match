@@ -40,14 +40,33 @@ namespace {
 
 // Alternatives:
 
-int const MAX_NEW_SIBLINGS = 10000;
-  // The maximum number of new siblings. If 1, then it's like old MULTIPLE_NEW_SIBLINGS = false, if >= maximum_number_of_legal_moves it's like MULTIPLE_NEW_SIBLINGS = true
 const int kUciInfoMinimumFrequencyMs = 500;
 
 int const N_HELPER_THREADS_PRE = 5;
 int const N_HELPER_THREADS_POST = 5;
 
-bool const LOG_RUNNING_INFO = false;  
+
+int const MAX_NEW_SIBLINGS = 10000;
+  // The maximum number of new siblings. If 1, then it's like old MULTIPLE_NEW_SIBLINGS = false, if >= maximum_number_of_legal_moves it's like MULTIPLE_NEW_SIBLINGS = true
+
+float const Q_CONCENTRATION = 36.0;
+
+//#define WEIGHT_MEMORY  // uncomment for WEIGHT_MEMORY mode
+
+#ifdef WEIGHT_MEMORY  // p:s influence on w controlled by having weight memory and initially setting w to p
+
+int const MEMORY_FACTOR_THRESHOLD = 30;
+float const MEMORY_FACTOR_INITIAL = 0.95;
+float const MEMORY_FACTOR_FINAL = 0.0;
+
+#else  // not WEIGHT_MEMORY  -- p:s influence on w by having a decreasing function of n in sub tree
+
+float const P_W_HALF_TIME = 10.0;  // P:s influence on W decreases and is 50% when N equals this constant
+
+#endif
+
+
+bool const LOG_RUNNING_INFO = false;
 
 }  // namespace
 
@@ -432,10 +451,6 @@ void Search_revamp::ExtendNode(PositionHistory* history, Node_revamp* node) {
 // Distribution
 //////////////////////////////////////////////////////////////////////////////
 
-float const Q_CONCENTRATION = 36.0;
-int const MEMORY_FACTOR_THRESHOLD = 30;
-float const MEMORY_FACTOR_INITIAL = 0.95;
-float const MEMORY_FACTOR_FINAL = 0.0;
 
 
 float compute_d_fun_1_par(float half_life) {
@@ -448,33 +463,39 @@ inline float d_fun_1(float par, float x) {
 }
 
 // par1 should be positive and par2 should be negative
-float compute_d_fun_2_par1_from_par2(float par2, float half_life) {
-  return (pow(0.5, 1.0/par2) - 1.0) / half_life;
-}
+//float compute_d_fun_2_par1_from_par2(float par2, float half_life) {
+//  return (pow(0.5, 1.0/par2) - 1.0) / half_life;
+//}
 
 // par1 should be positive and par2 should be negative
-inline float d_fun_2(float par1, float par2, float x) {
-  return pow(1.0 + par1 * x, par2);
-}
+//inline float d_fun_2(float par1, float par2, float x) {
+//  return pow(1.0 + par1 * x, par2);
+//}
 
 float const half_life_q_to_w = compute_d_fun_1_par(-Q_CONCENTRATION);
 
 float const d_fun_1_par_q_to_w = compute_d_fun_1_par(half_life_q_to_w);
 
-float const D_FUN_2_PAR2_Q_TO_W = -2.0;
-float const d_fun_2_par1_q_to_w = compute_d_fun_2_par1_from_par2(D_FUN_2_PAR2_Q_TO_W, half_life_q_to_w);
+//float const D_FUN_2_PAR2_Q_TO_W = -2.0;
+//float const d_fun_2_par1_q_to_w = compute_d_fun_2_par1_from_par2(D_FUN_2_PAR2_Q_TO_W, half_life_q_to_w);
 
 inline float d_fun_1_q_to_w(float highest_q, float q) {
   return d_fun_1(d_fun_1_par_q_to_w, highest_q - q);
 }
 
-inline float d_fun_2_q_to_w(float highest_q, float q) {
-  return d_fun_2(d_fun_2_par1_q_to_w, D_FUN_2_PAR2_Q_TO_W, highest_q - q);
-}
+//inline float d_fun_2_q_to_w(float highest_q, float q) {
+//  return d_fun_2(d_fun_2_par1_q_to_w, D_FUN_2_PAR2_Q_TO_W, highest_q - q);
+//}
 
+#ifndef WEIGHT_MEMORY
+float const d_fun_1_par_p_in_w = compute_d_fun_1_par(P_W_HALF_TIME);
+
+inline float d_fun_1_p_in_w(int n) {
+  return d_fun_1(d_fun_1_par_p_in_w, (float)n);
+}
+#endif
 
 void SearchWorker_revamp::recalcNode(Node_revamp *node) {
-  int old_n = node->GetN();
   int n = 1;
   float highest_q = 0.0;
   for (int i = 0; i < node->GetNumChildren(); i++) {
@@ -482,10 +503,12 @@ void SearchWorker_revamp::recalcNode(Node_revamp *node) {
     float q = node->GetEdges()[i].GetChild()->GetQ();
     if (q > highest_q) highest_q = q;
   }
-  node->SetN(n);
 
-  float memory_factor = pow(n < MEMORY_FACTOR_THRESHOLD ? MEMORY_FACTOR_INITIAL : MEMORY_FACTOR_FINAL, n - old_n);
+#ifdef WEIGHT_MEMORY
+  float memory_factor = pow(n < MEMORY_FACTOR_THRESHOLD ? MEMORY_FACTOR_INITIAL : MEMORY_FACTOR_FINAL, n - node->GetN());
   float one_minus_memory_factor = 1.0 - memory_factor;
+#endif
+  node->SetN(n);
 
   float w_total = 0.0;
   float p_total = 0.0;
@@ -494,7 +517,12 @@ void SearchWorker_revamp::recalcNode(Node_revamp *node) {
   int16_t max_max_w_idx = -1;
   for (int i = 0; i < node->GetNumChildren(); i++) {
     float q = node->GetEdges()[i].GetChild()->GetQ();
+#ifdef WEIGHT_MEMORY
     float w = memory_factor * node->GetEdges()[i].GetChild()->GetW() + one_minus_memory_factor * d_fun_1_q_to_w(highest_q, q);
+#else
+    float p_part = d_fun_1_p_in_w(node->GetEdges()[i].GetChild()->GetN());
+    float w = p_part * node->GetEdges()[i].GetP() / node->GetEdges()[0].GetP() + (1.0 - p_part) * d_fun_1_q_to_w(highest_q, q);
+#endif
     node->GetEdges()[i].GetChild()->SetW(w);
     w_total += w;
     q_total -= w * q;
@@ -715,7 +743,9 @@ int SearchWorker_revamp::extendTree(std::vector<Move> *movestack, PositionHistor
 
 		count++;
 
+#ifdef WEIGHT_MEMORY
     newchild->SetW(newchild->GetParent()->GetEdges()[newchild->GetIndex()].GetP() / newchild->GetParent()->GetEdges()[0].GetP());
+#endif
 
 		int nappends = appendHistoryFromTo(movestack, history, root_node_, newchild);
 
