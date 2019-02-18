@@ -51,17 +51,17 @@ int const MAX_NEW_SIBLINGS = 10000;
 
 float const Q_CONCENTRATION = 36.0;
 
-//#define WEIGHT_MEMORY  // uncomment for WEIGHT_MEMORY mode
+#define WEIGHT_MEMORY  // uncomment for WEIGHT_MEMORY mode
 
 #ifdef WEIGHT_MEMORY  // p:s influence on w controlled by having weight memory and initially setting w to p
 
 int const MEMORY_FACTOR_THRESHOLD = 30;
-float const MEMORY_FACTOR_INITIAL = 0.95;
-float const MEMORY_FACTOR_FINAL = 0.0;
+float const MEMORY_FACTOR_INITIAL = 0.90;
+float const MEMORY_FACTOR_FINAL = 0.001;
 
 #else  // not WEIGHT_MEMORY  -- p:s influence on w by having a decreasing function of n in sub tree
 
-float const P_W_HALF_TIME = 10.0;  // P:s influence on W decreases and is 50% when N equals this constant
+float const P_W_HALF_TIME = 15;  // P:s influence on W decreases and is 50% when N equals this constant
 
 #endif
 
@@ -454,7 +454,8 @@ void Search_revamp::ExtendNode(PositionHistory* history, Node_revamp* node) {
 
 
 float compute_d_fun_1_par(float half_life) {
-  return log(0.5) / half_life;
+  // return log(0.5) / half_life;
+  return log(0.5) / half_life;  
 }
 
 // par should be negative
@@ -489,6 +490,7 @@ inline float d_fun_1_q_to_w(float highest_q, float q) {
 
 #ifndef WEIGHT_MEMORY
 float const d_fun_1_par_p_in_w = compute_d_fun_1_par(P_W_HALF_TIME);
+// float const d_fun_1_par_p_in_w = compute_d_fun_1_par(search_->params_.GetTemperature());  
 
 inline float d_fun_1_p_in_w(int n) {
   return d_fun_1(d_fun_1_par_p_in_w, (float)n);
@@ -505,7 +507,8 @@ void SearchWorker_revamp::recalcNode(Node_revamp *node) {
   }
 
 #ifdef WEIGHT_MEMORY
-  float memory_factor = pow(n < MEMORY_FACTOR_THRESHOLD ? MEMORY_FACTOR_INITIAL : MEMORY_FACTOR_FINAL, n - node->GetN());
+  // float memory_factor = pow(n < MEMORY_FACTOR_THRESHOLD ? MEMORY_FACTOR_INITIAL : MEMORY_FACTOR_FINAL, n - node->GetN());
+  float memory_factor = pow(n < search_->params_.GetTemperature() ? search_->params_.GetCpuct() : MEMORY_FACTOR_FINAL, n - node->GetN());  
   float one_minus_memory_factor = 1.0 - memory_factor;
 #endif
   node->SetN(n);
