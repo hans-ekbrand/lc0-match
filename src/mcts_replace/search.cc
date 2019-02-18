@@ -441,6 +441,13 @@ void Search_revamp::ExtendNode(PositionHistory* history, Node_revamp* node) {
   case 1: {
     // double my_q_concentration_ = 35.2;
     // double my_q_concentration_ = 40;
+    // When a parent is well explored, we need to reward exploration instead of (more) exploitation.
+    // A0 and Lc0 does this by increase policy on children with relatively few visits.
+    // Let's try to do that instead by decreasing q_concentration as parent N increases.
+    // At higher visits counts, our policy term has no influence anymore.
+    // I've modelled a function after the dynamic cpuct invented by DeepMind, so that our function decreases by half at the same number parent nodes as the the dynamic cpuct is doubled (for zero visit at the child). We reward exploration regardless of number of child visits, which might not be as effective as their strategy, but let's give it a go.
+    //
+    q_concentration = q_concentration * (0.246 + (1 - 0.246) / pow((1 + parent_n / 30000), 0.795))
     return exp(q_concentration * (q - abs(max_q)/2)); // reduce the overflow risk.
   };
   case 2: {
