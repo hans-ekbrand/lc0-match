@@ -451,14 +451,14 @@ void Search_revamp::ExtendNode(PositionHistory* history, Node_revamp* node) {
       static const float inv_sqrt_2pi = 0.3989422804014327;
       static const float some_coeff = (36.2-20)/(0.4-0.05);
       float a = (parent_n - 100000) * 2 / 900000;
-      float dynamic_cpuct = 18.2 + inv_sqrt_2pi * std::exp(-0.5f * a * a) * some_coeff;
-      LOGFILE << "Got a node with more than 100.000 nodes: " << parent_n << " using cpuct=" << dynamic_cpuct << " this child has n=" << n ;
+      float dynamic_cpuct = 17.75 + inv_sqrt_2pi * std::exp(-0.5f * a * a) * some_coeff;
+      // LOGFILE << "Got a node with more than 100.000 nodes: " << parent_n << " using cpuct=" << dynamic_cpuct << " this child has n=" << n ;
       return exp(dynamic_cpuct * (q - abs(max_q)/2)); // reduce the overflow risk.
     } else {
       return exp(q_concentration * (q - abs(max_q)/2)); // reduce the overflow risk.
     }
     // Try again, with 0.5 instead of 0.795, so slower decrease
-    return exp(q_concentration * (0.246 + (1 - 0.246) / pow((1 + parent_n / 120000), 0.5)) * (q - abs(max_q)/2)); // reduce the overflow risk.
+    // return exp(q_concentration * (0.246 + (1 - 0.246) / pow((1 + parent_n / 120000), 0.5)) * (q - abs(max_q)/2)); // reduce the overflow risk.
     // 
   };
   case 2: {
