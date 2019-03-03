@@ -450,8 +450,8 @@ void Search_revamp::ExtendNode(PositionHistory* history, Node_revamp* node) {
     if(parent_n > 100000){
       static const float inv_sqrt_2pi = 0.3989422804014327;
       float a = (parent_n - 100000) * 2 / 900000;
-      static const float some_coeff = (36.2-25)/(0.4-0.05);      
-      float dynamic_cpuct = 23.4 + inv_sqrt_2pi * std::exp(-0.5f * a * a) * some_coeff;
+      static const float some_coeff = (36.2-30)/(0.4-0.05);      
+      float dynamic_cpuct = 29.4 + inv_sqrt_2pi * std::exp(-0.5f * a * a) * some_coeff;
       // LOGFILE << "Got a node with more than 100.000 nodes: " << parent_n << " using cpuct=" << dynamic_cpuct << " this child has n=" << n ;
       return exp(dynamic_cpuct * (q - abs(max_q)/2)); // reduce the overflow risk.
     } else {
