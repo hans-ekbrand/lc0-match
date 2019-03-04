@@ -448,12 +448,15 @@ void Search_revamp::ExtendNode(PositionHistory* history, Node_revamp* node) {
     // I've modelled a function after the dynamic cpuct invented by DeepMind, so that our function decreases by half at the same number parent nodes as the the dynamic cpuct is doubled (for zero visit at the child). We reward exploration regardless of number of child visits, which might not be as effective as their strategy, but let's give it a go.
     // New try
     if(parent_n > 100000){
-      static const float inv_sqrt_2pi = 0.3989422804014327;
-      float a = (parent_n - 100000) * 2 / 900000;
-      static const float some_coeff = (36.2-30)/(0.4-0.05);      
-      float dynamic_cpuct = 29.4 + inv_sqrt_2pi * std::exp(-0.5f * a * a) * some_coeff;
+      // This works OK, but what happens with a cyclic q_conc?
+      // static const float inv_sqrt_2pi = 0.3989422804014327;
+      // float a = (parent_n - 100000) * 2 / 900000;
+      // static const float some_coeff = (36.2-30)/(0.4-0.05);      
+      // float dynamic_cpuct = 29.4 + inv_sqrt_2pi * std::exp(-0.5f * a * a) * some_coeff;
+
+      float dynamic_q_concentration = (1 + cos(3.141592 * n / 50000)) * 3.1 + 30;
       // LOGFILE << "Got a node with more than 100.000 nodes: " << parent_n << " using cpuct=" << dynamic_cpuct << " this child has n=" << n ;
-      return exp(dynamic_cpuct * (q - abs(max_q)/2)); // reduce the overflow risk.
+      return exp(dynamic_q_concentration * (q - abs(max_q)/2)); // reduce the overflow risk.
     } else {
       return exp(q_concentration * (q - abs(max_q)/2)); // reduce the overflow risk.
     }
@@ -554,8 +557,8 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
     for (int i = 0; i < n; i++){
       double relative_weight_of_p = pow(node->GetEdges()[i].GetChild()->GetN(), my_policy_weight_exponent_) / ( 0.05 + node->GetEdges()[i].GetChild()->GetN()); // 0.05 is here to make Q have some influence after 1 visit.
       double relative_weight_of_q = 1 - relative_weight_of_p;
-      weighted_p_and_q[i] = relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() + relative_weight_of_p * node->GetEdges()[i].GetP() + node->GetEdges()[i].GetP() * search_->params_.GetCpuct() * log((node->GetN() + search_->params_.GetCpuctBase())/search_->params_.GetCpuctBase()) * sqrt(log(node->GetN())/(1+node->GetEdges()[i].GetChild()->GetN())); // with the cpuct term.
-      // weighted_p_and_q[i] = relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() + relative_weight_of_p * node->GetEdges()[i].GetP(); // without the cpuct term.
+      // weighted_p_and_q[i] = relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() + relative_weight_of_p * node->GetEdges()[i].GetP() + node->GetEdges()[i].GetP() * search_->params_.GetCpuct() * log((node->GetN() + search_->params_.GetCpuctBase())/search_->params_.GetCpuctBase()) * sqrt(log(node->GetN())/(1+node->GetEdges()[i].GetChild()->GetN())); // with the cpuct term.
+      weighted_p_and_q[i] = relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() + relative_weight_of_p * node->GetEdges()[i].GetP(); // without the cpuct term.
       if(DEBUG) { LOGFILE << "Weighted p and q for i=" << i << " " << weighted_p_and_q[i]; }
       sum_of_weighted_p_and_q += weighted_p_and_q[i];
     }
