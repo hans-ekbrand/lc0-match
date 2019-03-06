@@ -454,7 +454,8 @@ void Search_revamp::ExtendNode(PositionHistory* history, Node_revamp* node) {
       // static const float some_coeff = (36.2-30)/(0.4-0.05);      
       // float dynamic_cpuct = 29.4 + inv_sqrt_2pi * std::exp(-0.5f * a * a) * some_coeff;
 
-      float dynamic_q_concentration = (1 + cos(3.141592 * n / 50000)) * 3.1 + 30;
+      // float dynamic_q_concentration = (1 + cos(3.141592 * n / 50000)) * 3.1 + 30; // Good, but slightly too wild.
+      float dynamic_q_concentration = (1 + cos(3.141592 * n / 50000)) * 2.1 + 32;
       // LOGFILE << "Got a node with more than 100.000 nodes: " << parent_n << " using cpuct=" << dynamic_cpuct << " this child has n=" << n ;
       return exp(dynamic_q_concentration * (q - abs(max_q)/2)); // reduce the overflow risk.
     } else {
