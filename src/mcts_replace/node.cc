@@ -241,6 +241,7 @@ void Node_revamp::MakeTerminal(GameResult result) {
   } else if (result == GameResult::BLACK_WON) {
     SetOrigQ(-1.0f);
   }
+  SetQInacc(0.0f);
 }
 
 void Node_revamp::ReleaseChildren() {
@@ -269,6 +270,51 @@ void Node_revamp::IncrParentNumChildren() {
       //~ parent_->noofchildren_++;
     //~ }
   //~ }
+}
+
+int Node_revamp::CountInternal() {
+  if (noofchildren_ == 0) return 0;
+  int c = 1;
+  for (int i = 0; i < noofchildren_; i++) {
+    c += edges_[i].child_->CountInternal();
+  }
+  return c;
+}
+
+double Node_revamp::QMean() {
+  if (noofchildren_ == 0) return 0.0;
+  double qmean = orig_q_ - q_;
+  for (int i = 0; i < noofchildren_; i++) {
+    qmean += edges_[i].child_->QMean();
+  }
+  return qmean;
+}
+
+double Node_revamp::QVariance(double mean) {
+  if (noofchildren_ == 0) return 0.0;
+  double qvar = (double)(orig_q_ - q_) - mean;
+  qvar = qvar * qvar;
+  for (int i = 0; i < noofchildren_; i++) {
+    qvar += edges_[i].child_->QVariance(mean);
+  }
+  return qvar;
+}
+
+double Node_revamp::PMean() {
+  double pmean = parent_ == nullptr ? 0.0 : (parent_->edges_[index_].GetP() - w_);
+  for (int i = 0; i < noofchildren_; i++) {
+    pmean += edges_[i].child_->PMean();
+  }
+  return pmean;
+}
+
+double Node_revamp::PVariance(double mean) {
+  double pvar = parent_ == nullptr ? 0.0 : ((double)(parent_->edges_[index_].GetP() - w_) - mean);
+  pvar = pvar * pvar;
+  for (int i = 0; i < noofchildren_; i++) {
+    pvar += edges_[i].child_->PVariance(mean);
+  }
+  return pvar;
 }
 
 /////////////////////////////////////////////////////////////////////////

@@ -40,18 +40,16 @@ namespace {
 
 // Alternatives:
 
-int const Q_TO_PROB_MODE = 1;
-  // 1: e^(k * q)
-  // 2: 1 / (1 + k (maxq - q))^2
+float const NN_Q_INACCURACY = 0.028;
 
 int const MAX_NEW_SIBLINGS = 10000;
   // The maximum number of new siblings. If 1, then it's like old MULTIPLE_NEW_SIBLINGS = false, if >= maximum_number_of_legal_moves it's like MULTIPLE_NEW_SIBLINGS = true
 const int kUciInfoMinimumFrequencyMs = 500;
 
-int const N_HELPER_THREADS_PRE = 5;
-int const N_HELPER_THREADS_POST = 5;
+int const N_HELPER_THREADS_PRE = 0;
+int const N_HELPER_THREADS_POST = 0;
 
-bool const LOG_RUNNING_INFO = false;  
+bool const LOG_RUNNING_INFO = true;  
 
 }  // namespace
 
@@ -435,7 +433,7 @@ void Search_revamp::ExtendNode(PositionHistory* history, Node_revamp* node) {
 //////////////////////////////////////////////////////////////////////////////
 // Distribution
 //////////////////////////////////////////////////////////////////////////////
-
+/*
   inline float q_to_prob(const float q, const float max_q, const float q_concentration, int n, int parent_n) {
   switch (Q_TO_PROB_MODE) {
   case 1: {
@@ -566,7 +564,7 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
     return final_sum_of_weights_for_the_exanded_children;  // this should be same as sum_of_P_of_expanded_nodes
   }
 }
-
+*/
 
 void SearchWorker_revamp::pickNodesToExtend() {
 	Node_revamp* node;
@@ -806,6 +804,7 @@ void SearchWorker_revamp::retrieveNNResult(Node_revamp* node, int batchidx) {
     //if (q > 1.0) q = 1.0;
   }
   node->SetOrigQ(q);
+  node->SetQInacc(NN_Q_INACCURACY);
 
   float total = 0.0;
   int nedge = node->GetNumEdges();
@@ -850,50 +849,40 @@ void SearchWorker_revamp::recalcPropagatedQ(Node_revamp* node) {
   }
   node->SetN(n);
 
-  float total_children_weight = computeChildWeights(node);
-
-//  if (total_children_weight < 0.0 || total_children_weight - 1.0 > 1.00012) {
-//    std::cerr << "total_children_weight: " << total_children_weight << "\n";
-//    abort();
-//  }
-//  float totw = 0.0;
-//  for (int i = 0; i < node->GetNumChildren(); i++) {
-//    float w = node->GetEdges()[i].GetChild()->GetW();
-//    if (w < 0.0) {
-//      std::cerr << "w: " << w << "\n";
-//      abort();
-//    }
-//    totw += w;
-//  }
-//  if (abs(total_children_weight - totw) > 1.00012) {
-//    std::cerr << "total_children_weight: " << total_children_weight << ", totw: " << total_children_weight << "\n";
-//    abort();
-//  }
-
-  // Average Q START
-  float q = (1.0 - total_children_weight) * node->GetOrigQ();
-  for (int i = 0; i < node->GetNumChildren(); i++) {
-    q -= node->GetEdges()[i].GetChild()->GetW() * node->GetEdges()[i].GetChild()->GetQ();
+  int i = node->GetNumChildren() - 1;
+  float cur_q = node->GetEdges()[i].GetChild()->GetQ();
+  float cur_q_inacc = node->GetEdges()[i].GetChild()->GetQInacc();
+  float cur_p = node->GetEdges()[i].GetP();
+  for (i--; i >= 0; i--) {
+    if (cur_q_inacc == 0.0 && cur_q == 1.0) {
+      node->SetQ(-1.0);
+      node->SetQInacc(0.0);
+      node->SetMaxW(0.0);
+      node->SetBestIdx(-1);
+      return;
+    }
+    cur_p += node->GetEdges()[i].GetP();
+    MaxVs res = compute_max(cur_q, cur_q_inacc, node->GetEdges()[i].GetChild()->GetQ(), node->GetEdges()[i].GetChild()->GetQInacc());
+    cur_q = res.mean;
+    cur_q_inacc = res.std_dev;
+    node->GetEdges()[i].GetChild()->SetW(res.prob2);
   }
-  node->SetQ(q);
-  // Average Q STOP
+  if (cur_q_inacc == 0.0) {
+    node->SetQ(-cur_q);
+    node->SetQInacc(0.0);
+  } else {
+    ProbV res = compute_comb(-cur_q, cur_q_inacc, node->GetOrigQ(), NN_Q_INACCURACY);
+    node->SetQ(res.mean);
+    node->SetQInacc(res.std_dev);
+  }
 
+  for (i = 0; i < node->GetNumChildren() - 1; i++) {
+    float p = node->GetEdges()[i].GetChild()->GetW();
+    node->GetEdges()[i].GetChild()->SetW(cur_p * p);
+    cur_p *= 1.0 - p;
+  }
+  node->GetEdges()[i].GetChild()->SetW(cur_p);  
   
-	int first_non_created_child_idx = node->GetNumChildren();
-	while (first_non_created_child_idx < node->GetNumEdges() && node->GetEdges()[first_non_created_child_idx].GetChild() != nullptr) {
-		first_non_created_child_idx++;
-	}
-
-//  if (MULTIPLE_NEW_SIBLINGS)
-//    n = node->GetNumEdges() - first_non_created_child_idx;
-//  else
-//    n = node->GetNumEdges() > first_non_created_child_idx ? 1 : 0;
-
-//  for (int i = 0; i < node->GetNumChildren(); i++) {
-//    n += node->GetEdges()[i].GetChild()->GetNExtendable();
-//  }
-//  node->SetNExtendable(n);
-
 	int16_t max_idx = -1;
 	float max_w = 0.0;
 	int nidx = node->GetNextUnexpandedEdge();
@@ -901,11 +890,13 @@ void SearchWorker_revamp::recalcPropagatedQ(Node_revamp* node) {
 		max_w = node->GetEdges()[nidx].GetP();
 	}
 	for (int i = 0; i < node->GetNumChildren(); i++) {
-		float br_max_w = node->GetEdges()[i].GetChild()->GetW() * node->GetEdges()[i].GetChild()->GetMaxW();
-		if (br_max_w > max_w) {
-			max_w = br_max_w;
-			max_idx = i;
-		}
+    if (node->GetEdges()[i].GetChild()->GetQInacc() > 0) {  // if the value is known, don't spend time on the sub tree
+      float br_max_w = node->GetEdges()[i].GetChild()->GetW() * node->GetEdges()[i].GetChild()->GetMaxW();
+      if (br_max_w > max_w) {
+        max_w = br_max_w;
+        max_idx = i;
+      }
+    }
 	}
 	node->SetMaxW(max_w);
 	node->SetBestIdx(max_idx);
@@ -1230,7 +1221,7 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 		int64_t time = search_->GetTimeSinceStart();
 		if (time - search_->last_uci_time_ > kUciInfoMinimumFrequencyMs) {
 			search_->last_uci_time_ = time;
-			search_->SendUciInfo();
+			//search_->SendUciInfo();
 		}
 
 		if (search_->not_stop_searching_) {
@@ -1289,6 +1280,14 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
                 << ", propagate node visits: " << search_->count_propagate_node_visits_ / search_->count_iterations_
                 << ", junctions: " << search_->count_junctions_ / search_->count_iterations_;
       }
+      
+      int ninternal = root_node_->CountInternal();
+      double qmean = root_node_->QMean() / (double)ninternal;
+      double qvariance = root_node_->QVariance(qmean) / (double)ninternal;
+      LOGFILE << "Q diff mean: " << qmean << ", variance: " << qvariance << ", std dev: " << sqrt(qvariance) << " (ninternal: " << ninternal << ")";
+      double pmean = root_node_->PMean() / (double)(root_node_->GetN() - 1);
+      double pvariance = root_node_->PVariance(pmean) / (double)(root_node_->GetN() - 1);
+      LOGFILE << "P diff mean: " << pmean << ", variance: " << pvariance << ", std dev: " << sqrt(pvariance) << " (#non root: " << (root_node_->GetN() - 1) << ")";
     }
 	}
 
