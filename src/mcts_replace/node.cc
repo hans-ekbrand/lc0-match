@@ -272,32 +272,41 @@ void Node_revamp::IncrParentNumChildren() {
   //~ }
 }
 
-int Node_revamp::CountInternal() {
-  if (noofchildren_ == 0) return 0;
+int Node_revamp::CountInternal(uint32_t min_n) {
+  if (n_ <= min_n) return 0;
   int c = 1;
   for (int i = 0; i < noofchildren_; i++) {
-    c += edges_[i].child_->CountInternal();
+    c += edges_[i].child_->CountInternal(min_n);
   }
   return c;
 }
 
-double Node_revamp::QMean() {
-  if (noofchildren_ == 0) return 0.0;
+double Node_revamp::QMean(uint32_t min_n) {
+  if (n_ <= min_n) return 0.0;
   double qmean = orig_q_ - q_;
   for (int i = 0; i < noofchildren_; i++) {
-    qmean += edges_[i].child_->QMean();
+    qmean += edges_[i].child_->QMean(min_n);
   }
   return qmean;
 }
 
-double Node_revamp::QVariance(double mean) {
-  if (noofchildren_ == 0) return 0.0;
+double Node_revamp::QVariance(uint32_t min_n, double mean) {
+  if (n_ <= min_n) return 0.0;
   double qvar = (double)(orig_q_ - q_) - mean;
   qvar = qvar * qvar;
   for (int i = 0; i < noofchildren_; i++) {
-    qvar += edges_[i].child_->QVariance(mean);
+    qvar += edges_[i].child_->QVariance(min_n, mean);
   }
   return qvar;
+}
+
+double Node_revamp::QInaccMean(uint32_t min_n) {
+  if (n_ <= min_n) return 0.0;
+  double mean = q_inacc_;
+  for (int i = 0; i < noofchildren_; i++) {
+    mean += edges_[i].child_->QInaccMean(min_n);
+  }
+  return mean;
 }
 
 double Node_revamp::PMean() {
@@ -316,6 +325,33 @@ double Node_revamp::PVariance(double mean) {
   }
   return pvar;
 }
+
+int Node_revamp::LogPCount() {
+  int c = (parent_ == nullptr || parent_->edges_[index_].GetP() == 0.0 || w_ == 0.0) ? 0 : 1;
+  for (int i = 0; i < noofchildren_; i++) {
+    c += edges_[i].child_->LogPCount();
+  }
+  return c;
+}
+
+double Node_revamp::LogPMean() {
+  double pmean = (parent_ == nullptr || parent_->edges_[index_].GetP() == 0.0 || w_ == 0.0) ? 0.0 : log(parent_->edges_[index_].GetP() / w_);
+  for (int i = 0; i < noofchildren_; i++) {
+    pmean += edges_[i].child_->LogPMean();
+  }
+  return pmean;
+}
+
+double Node_revamp::LogPVariance(double mean) {
+  double pvar = (parent_ == nullptr || parent_->edges_[index_].GetP() == 0.0 || w_ == 0.0) ? 0.0 : ((double)log(parent_->edges_[index_].GetP() / w_) - mean);
+  pvar = pvar * pvar;
+  for (int i = 0; i < noofchildren_; i++) {
+    pvar += edges_[i].child_->LogPVariance(mean);
+  }
+  return pvar;
+}
+
+
 
 /////////////////////////////////////////////////////////////////////////
 // NodeTree_revamp

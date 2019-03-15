@@ -162,11 +162,15 @@ class Node_revamp {
   // Debug information about the node.
   std::string DebugString() const;
 
-  int CountInternal();
-  double QMean();
-  double QVariance(double mean);
+  int CountInternal(uint32_t min_n);
+  double QMean(uint32_t min_n);
+  double QVariance(uint32_t min_n, double mean);
+  double QInaccMean(uint32_t min_n);
   double PMean();
   double PVariance(double mean);
+  int LogPCount();
+  double LogPMean();
+  double LogPVariance(double mean);
 
 private:
 	// To minimize the number of padding bytes and to avoid having unnecessary

@@ -49,8 +49,8 @@ int const MAX_NEW_SIBLINGS = 10000;
   // The maximum number of new siblings. If 1, then it's like old MULTIPLE_NEW_SIBLINGS = false, if >= maximum_number_of_legal_moves it's like MULTIPLE_NEW_SIBLINGS = true
 const int kUciInfoMinimumFrequencyMs = 500;
 
-int const N_HELPER_THREADS_PRE = 5;
-int const N_HELPER_THREADS_POST = 5;
+int const N_HELPER_THREADS_PRE = 0;
+int const N_HELPER_THREADS_POST = 0;
 
 bool const LOG_RUNNING_INFO = false;
 
@@ -894,6 +894,10 @@ void SearchWorker_revamp::recalcPropagatedQ(Node_revamp* node) {
   }
 
   for (i = 0; i < node->GetNumChildren() - 1; i++) {
+//    MaxVs res1 = compute_max(cur_q, cur_q_inacc, node->GetEdges()[i].GetChild()->GetQ() + node->GetEdges()[i].GetChild()->GetQInacc(), node->GetEdges()[i].GetChild()->GetQInacc());
+//    MaxVs res2 = compute_max(cur_q, cur_q_inacc, node->GetEdges()[i].GetChild()->GetQ(), node->GetEdges()[i].GetChild()->GetQInacc());
+//    std::cerr << "n: " << node->GetEdges()[i].GetChild()->GetN() << ", deltaprob: " << res1.prob2 - res2.prob2 << ", logdeltaprob: " << log(res1.prob2 / res2.prob2) << "\n";
+    
     float part_w = 1.0 / (1.0 + policy_weight_exponent_ / (float)node->GetEdges()[i].GetChild()->GetN());  // NN_Q_P_INACCURACY_RATIO_SQUARED
     float p = node->GetEdges()[i].GetChild()->GetW();
 
@@ -1241,7 +1245,7 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 		int64_t time = search_->GetTimeSinceStart();
 		if (time - search_->last_uci_time_ > kUciInfoMinimumFrequencyMs) {
 			search_->last_uci_time_ = time;
-			search_->SendUciInfo();
+//			search_->SendUciInfo();
 		}
 
 		if (search_->not_stop_searching_) {
@@ -1264,7 +1268,7 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 
 		int64_t elapsed_time = search_->GetTimeSinceStart();
 		//LOGFILE << "Elapsed time when thread for node " << root_node_ << " which has size " << root_node_->GetN() << " nodes did " << i << " computations: " << elapsed_time << "ms";
-	  if(LOG_RUNNING_INFO){
+//	  if(LOG_RUNNING_INFO){
       LOGFILE << "Elapsed time for " << root_node_->GetN() << " nodes: " << elapsed_time << "ms";
       LOGFILE << "#helper threads pre: " << N_HELPER_THREADS_PRE << ", #helper threads post: " << N_HELPER_THREADS_POST;
       LOGFILE << "root Q: " << root_node_->GetQ() << ", inacc: " << root_node_->GetQInacc();
@@ -1302,14 +1306,23 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
                 << ", junctions: " << search_->count_junctions_ / search_->count_iterations_;
       }
       
-      int ninternal = root_node_->CountInternal();
-      double qmean = root_node_->QMean() / (double)ninternal;
-      double qvariance = root_node_->QVariance(qmean) / (double)ninternal;
-      LOGFILE << "Q diff mean: " << qmean << ", variance: " << qvariance << ", std dev: " << sqrt(qvariance) << " (ninternal: " << ninternal << ")";
+      for (uint32_t min_n = 1; min_n <= 10000; min_n *= 10) {
+        int ninternal = root_node_->CountInternal(min_n);
+        if (ninternal > 0) {
+          double qmean = root_node_->QMean(min_n) / (double)ninternal;
+          double qvariance = root_node_->QVariance(min_n, qmean) / (double)ninternal;
+          double qinaccmean = root_node_->QInaccMean(min_n) / (double)ninternal;
+          LOGFILE << "Q diff mean (min_n = " << min_n << "): " << qmean << ", variance: " << qvariance << ", std dev: " << sqrt(qvariance) << ", qinaccmean: " << qinaccmean << " (ninternal: " << ninternal << ")";
+        }
+      }
       double pmean = root_node_->PMean() / (double)(root_node_->GetN() - 1);
       double pvariance = root_node_->PVariance(pmean) / (double)(root_node_->GetN() - 1);
       LOGFILE << "P diff mean: " << pmean << ", variance: " << pvariance << ", std dev: " << sqrt(pvariance) << " (#non root: " << (root_node_->GetN() - 1) << ")";
-    }
+      int logpcount = root_node_->LogPCount();
+      double logpmean = root_node_->LogPMean() / (double)logpcount;
+      double logpvariance = root_node_->LogPVariance(logpmean) / (double)logpcount;
+      LOGFILE << "log P diff mean: " << logpmean << ", variance: " << logpvariance << ", std dev: " << sqrt(logpvariance) << " (count: " << logpcount << ")";
+//    }
 	}
 
 	while (!junction_locks_.empty()) {
