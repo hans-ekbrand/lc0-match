@@ -45,12 +45,16 @@ namespace {
 float const NN_Q_INACCURACY = 0.044;  // 0.028;  // now uses q_concentration_ = cpuct
 float const NN_Q_P_INACCURACY_RATIO_SQUARED = 5.6;  // now uses policy_weight_exponent_ = fpu-reduction
 
+float const PROPAGATE_POWER_INCREASING = 1.0;
+float const PROPAGATE_POWER_DECREASING = 1.0;  // 2.0
+
+
 int const MAX_NEW_SIBLINGS = 10000;
   // The maximum number of new siblings. If 1, then it's like old MULTIPLE_NEW_SIBLINGS = false, if >= maximum_number_of_legal_moves it's like MULTIPLE_NEW_SIBLINGS = true
 const int kUciInfoMinimumFrequencyMs = 500;
 
-int const N_HELPER_THREADS_PRE = 0;
-int const N_HELPER_THREADS_POST = 0;
+int const N_HELPER_THREADS_PRE = 5;
+int const N_HELPER_THREADS_POST = 5;
 
 bool const LOG_RUNNING_INFO = false;
 
@@ -600,21 +604,37 @@ void SearchWorker_revamp::pickNodesToExtend() {
 		uint16_t ccidx = (new_nodes_size_ - 1) | 0x8000;
 
 		while (true) {
-			int16_t max_idx = -1;
-			float max_w = 0.0;
-			int nidx = node->GetNextUnexpandedEdge();
-			if (nidx < node->GetNumEdges() && nidx - node->GetNumChildren() < MAX_NEW_SIBLINGS) {
-				max_w = node->GetEdges()[nidx].GetP();
-			}
-			for (int i = 0; i < node->GetNumChildren(); i++) {
-				float br_max_w = node->GetEdges()[i].GetChild()->GetW() * node->GetEdges()[i].GetChild()->GetMaxW();
-				if (br_max_w > max_w) {
-					max_w = br_max_w;
-					max_idx = i;
-				}
-			}
-			node->SetMaxW(max_w);
-			node->SetBestIdx(max_idx);
+      int16_t max_idx = -1;
+      float max_w_incr = 0.0;
+      float max_w_decr = 0.0;
+      int nidx = node->GetNextUnexpandedEdge();
+      if (nidx < node->GetNumEdges() && nidx - node->GetNumChildren() < MAX_NEW_SIBLINGS) {
+        max_w_decr = node->GetEdges()[nidx].GetP();
+        if (nidx == 0) {
+          max_w_incr = max_w_decr;
+        }
+      }
+      float propagate_power_decreasing = node->GetNumChildren() == 1 ? PROPAGATE_POWER_INCREASING : PROPAGATE_POWER_DECREASING;
+      for (int i = 0; i < node->GetNumChildren(); i++) {
+        float br_max_w_incr = pow(node->GetEdges()[i].GetChild()->GetW(), propagate_power_decreasing) * node->GetEdges()[i].GetChild()->GetMaxWDecr();
+        if (br_max_w_incr > max_w_incr) {
+          max_w_incr = br_max_w_incr;
+          if (br_max_w_incr > max_w_decr) {
+            max_idx = i;
+          }
+        }
+        float br_max_w_decr = pow(node->GetEdges()[i].GetChild()->GetW(), PROPAGATE_POWER_INCREASING) * node->GetEdges()[i].GetChild()->GetMaxWIncr();
+        if (br_max_w_decr > max_w_decr) {
+          max_w_decr = br_max_w_decr;
+          if (br_max_w_decr > max_w_incr) {
+            max_idx = i;
+          }
+        }
+      }
+      node->SetMaxWIncr(max_w_incr);
+      node->SetMaxWDecr(max_w_decr);
+      node->SetBestIdx(max_idx);
+
 
 			if (junction_mode == 0) {
 				uint16_t n = node->GetBranchingInFlight();
@@ -841,15 +861,17 @@ void SearchWorker_revamp::retrieveNNResult(Node_revamp* node, int batchidx) {
       (node->GetEdges())[k].SetP(x);
     }
   }
-	node->SetMaxW(node->GetEdges()[0].GetP());
+	node->SetMaxWIncr(node->GetEdges()[0].GetP());
+	node->SetMaxWDecr(node->GetEdges()[0].GetP());
 }
 
 
 void SearchWorker_revamp::recalcKnownWin(Node_revamp* node, int win_idx) {
   node->SetQ(-1.0);
   node->SetQInacc(0.0);
-  node->SetMaxW(node->GetEdges()[win_idx].GetChild()->GetMaxW());
-  if (node->GetMaxW() == 0.0) {
+  node->SetMaxWIncr(node->GetEdges()[win_idx].GetChild()->GetMaxWDecr());
+  node->SetMaxWDecr(node->GetEdges()[win_idx].GetChild()->GetMaxWIncr());
+  if (node->GetMaxWIncr() == 0.0 && node->GetMaxWDecr() == 0.0) {
     node->SetBestIdx(-1);
   } else {
     node->SetBestIdx(win_idx);
@@ -910,19 +932,34 @@ void SearchWorker_revamp::recalcPropagatedQ(Node_revamp* node) {
   node->GetEdges()[i].GetChild()->SetW(part_w * cur_p + (1.0 - part_w) * node->GetEdges()[i].GetP());
   
 	int16_t max_idx = -1;
-	float max_w = 0.0;
+	float max_w_incr = 0.0;
+	float max_w_decr = 0.0;
 	int nidx = node->GetNextUnexpandedEdge();
 	if (nidx < node->GetNumEdges() && nidx - node->GetNumChildren() < MAX_NEW_SIBLINGS) {
-		max_w = node->GetEdges()[nidx].GetP();
-	}
-	for (int i = 0; i < node->GetNumChildren(); i++) {
-    float br_max_w = node->GetEdges()[i].GetChild()->GetW() * node->GetEdges()[i].GetChild()->GetMaxW();
-    if (br_max_w > max_w) {
-      max_w = br_max_w;
-      max_idx = i;
+		max_w_decr = node->GetEdges()[nidx].GetP();
+    if (nidx == 0) {
+      max_w_incr = max_w_decr;
     }
 	}
-	node->SetMaxW(max_w);
+  float propagate_power_decreasing = node->GetNumChildren() == 1 ? PROPAGATE_POWER_INCREASING : PROPAGATE_POWER_DECREASING;
+  for (int i = 0; i < node->GetNumChildren(); i++) {
+    float br_max_w_incr = pow(node->GetEdges()[i].GetChild()->GetW(), propagate_power_decreasing) * node->GetEdges()[i].GetChild()->GetMaxWDecr();
+    if (br_max_w_incr > max_w_incr) {
+      max_w_incr = br_max_w_incr;
+      if (br_max_w_incr > max_w_decr) {
+        max_idx = i;
+      }
+    }
+    float br_max_w_decr = pow(node->GetEdges()[i].GetChild()->GetW(), PROPAGATE_POWER_INCREASING) * node->GetEdges()[i].GetChild()->GetMaxWIncr();
+    if (br_max_w_decr > max_w_decr) {
+      max_w_decr = br_max_w_decr;
+      if (br_max_w_decr > max_w_incr) {
+        max_idx = i;
+      }
+    }
+  }
+	node->SetMaxWIncr(max_w_incr);
+	node->SetMaxWDecr(max_w_decr);
 	node->SetBestIdx(max_idx);
 }
 
@@ -1245,7 +1282,7 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 		int64_t time = search_->GetTimeSinceStart();
 		if (time - search_->last_uci_time_ > kUciInfoMinimumFrequencyMs) {
 			search_->last_uci_time_ = time;
-//			search_->SendUciInfo();
+			search_->SendUciInfo();
 		}
 
 		if (search_->not_stop_searching_) {
@@ -1266,9 +1303,11 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 			search_->reportBestMove();
 		}
 
+		//search_->SendUciInfo();
+
 		int64_t elapsed_time = search_->GetTimeSinceStart();
 		//LOGFILE << "Elapsed time when thread for node " << root_node_ << " which has size " << root_node_->GetN() << " nodes did " << i << " computations: " << elapsed_time << "ms";
-//	  if(LOG_RUNNING_INFO){
+	  if(LOG_RUNNING_INFO){
       LOGFILE << "Elapsed time for " << root_node_->GetN() << " nodes: " << elapsed_time << "ms";
       LOGFILE << "#helper threads pre: " << N_HELPER_THREADS_PRE << ", #helper threads post: " << N_HELPER_THREADS_POST;
       LOGFILE << "root Q: " << root_node_->GetQ() << ", inacc: " << root_node_->GetQInacc();
@@ -1322,7 +1361,7 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
       double logpmean = root_node_->LogPMean() / (double)logpcount;
       double logpvariance = root_node_->LogPVariance(logpmean) / (double)logpcount;
       LOGFILE << "log P diff mean: " << logpmean << ", variance: " << logpvariance << ", std dev: " << sqrt(logpvariance) << " (count: " << logpcount << ")";
-//    }
+    }
 	}
 
 	while (!junction_locks_.empty()) {
