@@ -42,7 +42,7 @@ namespace {
 
 // Alternatives:
 
-float const NN_Q_INACCURACY = 0.044;  // 0.028;  // now uses q_concentration_ = cpuct
+float const NN_Q_INACCURACY = 0.44;  // 0.028;  // now uses q_concentration_ = cpuct
 float const NN_Q_P_INACCURACY_RATIO_SQUARED = 5.6;  // now uses policy_weight_exponent_ = fpu-reduction
 
 float const PROPAGATE_POWER_INCREASING = 1.0;
@@ -162,19 +162,29 @@ bool Search_revamp::IsSearchActive() const {
 
 namespace {
 
-int indexOfHighestQEdge(Node_revamp* node) {
-	float highestq = -2.0;
-	int bestidx = -1;
-	for (int i = 0; i < node->GetNumChildren(); i++) {
-		float q = node->GetEdges()[i].GetChild()->GetQ();
-		if (q > highestq) {
-			highestq = q;
-			bestidx = i;
-		}
+  int indexOfHighestQEdge(Node_revamp* node, int tree_size) {
+    float highestq = -2.0;
+    int bestidx = -1;
+    // Veto moves with too high uncertainty in Q, by requiring at least 5 visits if Total tree size is above 1000 nodes.
+    if(tree_size >= 1000){
+      for (int i = 0; i < node->GetNumChildren(); i++) {
+	float q = node->GetEdges()[i].GetChild()->GetQ();
+	if (q > highestq && node->GetEdges()[i].GetChild()->GetN() >= 6) {
+	  highestq = q;
+	  bestidx = i;
 	}
-	return bestidx;
-}
-
+      }
+    } else {
+      for (int i = 0; i < node->GetNumChildren(); i++) {
+	float q = node->GetEdges()[i].GetChild()->GetQ();
+	if (q > highestq) {
+	  highestq = q;
+	  bestidx = i;
+	}
+      }
+    }
+    return bestidx;
+  }
 }
 
 void Search_revamp::Wait() {
@@ -246,7 +256,7 @@ void Search_revamp::SendUciInfo() {
     Node_revamp* n = root_node_->GetEdges()[bestidx].GetChild();
     while (n && n->GetNumChildren() > 0) {
       flip = !flip;
-      int bestidx = indexOfHighestQEdge(n);
+      int bestidx = indexOfHighestQEdge(n, 0);
       uci_info.pv.push_back(n->GetEdges()[bestidx].GetMove(flip));
       n = n->GetEdges()[bestidx].GetChild();
     }
@@ -358,9 +368,9 @@ void Search_revamp::SendMovesStats() {
 }
 
 void Search_revamp::reportBestMove() {
-	int bestidx = indexOfHighestQEdge(root_node_);
+        int bestidx = indexOfHighestQEdge(root_node_, root_node_->GetN());
 	Move best_move = root_node_->GetEdges()[bestidx].GetMove(played_history_.IsBlackToMove());
-	int ponderidx = indexOfHighestQEdge(root_node_->GetEdges()[bestidx].GetChild());
+	int ponderidx = indexOfHighestQEdge(root_node_->GetEdges()[bestidx].GetChild(), 0);
 	// If the move we make is terminal, then there is nothing to ponder about.
 	// Also, if the bestmove doesn't have any children, then don't report a ponder move.
 	if(!root_node_->GetEdges()[bestidx].GetChild()->IsTerminal() &&
