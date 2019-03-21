@@ -45,8 +45,8 @@ namespace {
 float const NN_Q_INACCURACY = 0.44;  // 0.028;  // now uses q_concentration_ = cpuct
 float const NN_Q_P_INACCURACY_RATIO_SQUARED = 5.6;  // now uses policy_weight_exponent_ = fpu-reduction
 
-float const PROPAGATE_POWER_INCREASING = 0.9;
-float const PROPAGATE_POWER_DECREASING = 1.1;  // 2.0
+float const PROPAGATE_POWER_INCREASING = 0.85;
+float const PROPAGATE_POWER_DECREASING = 1.2;  // 2.0
 
 
 int const MAX_NEW_SIBLINGS = 10000;
@@ -624,7 +624,12 @@ void SearchWorker_revamp::pickNodesToExtend() {
           max_w_incr = max_w_decr;
         }
       }
-      float propagate_power_decreasing = node->GetNumChildren() == 1 ? PROPAGATE_POWER_INCREASING : PROPAGATE_POWER_DECREASING;
+      // When you lead by far (Root Q is large and negative), don't prune, play safe when winning.
+      float propagate_power_decreasing = node->GetNumChildren() == 1 ? PROPAGATE_POWER_INCREASING : PROPAGATE_POWER_DECREASING;      
+      if(root_node_->GetQ() < -0.5){
+	propagate_power_decreasing = 1.0f;
+      } else {
+      }
       for (int i = 0; i < node->GetNumChildren(); i++) {
         float br_max_w_incr = pow(node->GetEdges()[i].GetChild()->GetW(), propagate_power_decreasing) * node->GetEdges()[i].GetChild()->GetMaxWDecr();
         if (br_max_w_incr > max_w_incr) {
@@ -633,7 +638,11 @@ void SearchWorker_revamp::pickNodesToExtend() {
             max_idx = i;
           }
         }
-        float br_max_w_decr = pow(node->GetEdges()[i].GetChild()->GetW(), PROPAGATE_POWER_INCREASING) * node->GetEdges()[i].GetChild()->GetMaxWIncr();
+	// When you lead by far (Root Q is large and negative), don't inverse-prune, play safe when winning.
+	float br_max_w_decr = pow(node->GetEdges()[i].GetChild()->GetW(), PROPAGATE_POWER_INCREASING) * node->GetEdges()[i].GetChild()->GetMaxWIncr();	
+	if(root_node_->GetQ() < -0.5){	
+	  br_max_w_decr = node->GetEdges()[i].GetChild()->GetW() * node->GetEdges()[i].GetChild()->GetMaxWIncr();	  
+	}
         if (br_max_w_decr > max_w_decr) {
           max_w_decr = br_max_w_decr;
           if (br_max_w_decr > max_w_incr) {
