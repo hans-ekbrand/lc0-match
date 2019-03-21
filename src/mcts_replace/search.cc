@@ -165,11 +165,11 @@ namespace {
   int indexOfHighestQEdge(Node_revamp* node, int tree_size) {
     float highestq = -2.0;
     int bestidx = -1;
-    // Veto moves with too high uncertainty in Q, by requiring at least 5 visits if Total tree size is above 1000 nodes.
+    // Veto moves with too high uncertainty in Q, by requiring at least 20 visits if Total tree size is above 1000 nodes.
     if(tree_size >= 1000){
       for (int i = 0; i < node->GetNumChildren(); i++) {
 	float q = node->GetEdges()[i].GetChild()->GetQ();
-	if (q > highestq && node->GetEdges()[i].GetChild()->GetN() >= 6) {
+	if (q > highestq && node->GetEdges()[i].GetChild()->GetN() >= 20) {
 	  highestq = q;
 	  bestidx = i;
 	}
