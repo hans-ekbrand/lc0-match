@@ -160,13 +160,13 @@ public:
 		search_(search),
 		q_concentration_(search->params_.GetCpuct()),
 		p_concentration_(search->params_.GetPolicySoftmaxTemp()),
-		policy_weight_exponent_(search->params_.GetFpuValue()),
+		policy_weight_exponent_(search->params_.GetFpuReduction()),
 		batch_size_(search->params_.GetMiniBatchSize()),
     new_nodes_amount_limit_(batch_size_ * 2),
 		history_fill_(search->params_.GetHistoryFill()),
 		played_history_length_(search_->played_history_.GetLength()),
 		cache_history_length_plus_1_(search_->params_.GetCacheHistoryLength() + 1),
-		root_node_(search->root_node_) {}
+		root_node_(search->root_node_) { }
 
 	void ThreadLoop(int thread_id);
 	void HelperThreadLoop(int helper_thread_id, std::mutex* lock);
@@ -188,6 +188,7 @@ private:
 
 	int AddNodeToComputation(Node_revamp* node, PositionHistory *history);
 	void retrieveNNResult(Node_revamp* node, int batchidx);
+  void recalcKnownWin(Node_revamp* node, int win_idx);
 	void recalcPropagatedQ(Node_revamp* node);
 	void pickNodesToExtend();
 	int appendHistoryFromTo(std::vector<Move> *movestack, PositionHistory *history, Node_revamp* from, Node_revamp* to);

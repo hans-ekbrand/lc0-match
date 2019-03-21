@@ -116,12 +116,16 @@ class Node_revamp {
   // for terminal nodes.
   float GetQ() const { return q_; }
   void SetQ(float q) { q_ = q; }
+  float GetQInacc() const { return q_inacc_; }
+  void SetQInacc(float q_inacc) { q_inacc_ = q_inacc; }
   float GetOrigQ() const { return orig_q_; }
   void SetOrigQ(float q) { orig_q_ = q; q_ = q; }
   float GetW() const { return w_; }
   void SetW(float w) { w_ = w; }
-  float GetMaxW() const { return max_w_; }
-  void SetMaxW(float w) { max_w_ = w; }
+  float GetMaxWIncr() const { return max_w_incr_; }
+  void SetMaxWIncr(float w) { max_w_incr_ = w; }
+  float GetMaxWDecr() const { return max_w_decr_; }
+  void SetMaxWDecr(float w) { max_w_decr_ = w; }
   uint16_t GetBranchingInFlight() const { return branching_in_flight_; }
   void SetBranchingInFlight(uint16_t b) { branching_in_flight_ = b; }
 
@@ -160,6 +164,16 @@ class Node_revamp {
   // Debug information about the node.
   std::string DebugString() const;
 
+  int CountInternal(uint32_t min_n);
+  double QMean(uint32_t min_n);
+  double QVariance(uint32_t min_n, double mean);
+  double QInaccMean(uint32_t min_n);
+  double PMean();
+  double PVariance(double mean);
+  int LogPCount();
+  double LogPMean();
+  double LogPVariance(double mean);
+
 private:
 	// To minimize the number of padding bytes and to avoid having unnecessary
 	// padding when new fields are added, we arrange the fields by size, largest
@@ -179,9 +193,11 @@ private:
 	// of the player who "just" moved to reach this position, rather than from the
 	// perspective of the player-to-move for the position.
 	float q_ = 0.0f;
+  float q_inacc_ = 0.0f;
 	float orig_q_ = 0.0f;
 	float w_ = 0.0f;
-	float max_w_ = 0.0f;
+	float max_w_incr_ = 0.0f;
+	float max_w_decr_ = 0.0f;
 
 	uint32_t n_ = 1;
 	//uint32_t n_extendable_ = 0;

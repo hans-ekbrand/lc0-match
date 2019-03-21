@@ -98,6 +98,7 @@ files += [
   'src/mcts/search.cc',
   'src/mcts_replace/node.cc',
   'src/mcts_replace/search.cc',
+  'src/mcts_replace/prob_functions.cc',
   'src/neural/cache.cc',
   'src/neural/encoder.cc',
   'src/neural/factory.cc',
