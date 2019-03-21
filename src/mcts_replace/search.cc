@@ -45,8 +45,8 @@ namespace {
 float const NN_Q_INACCURACY = 0.44;  // 0.028;  // now uses q_concentration_ = cpuct
 float const NN_Q_P_INACCURACY_RATIO_SQUARED = 5.6;  // now uses policy_weight_exponent_ = fpu-reduction
 
-float const PROPAGATE_POWER_INCREASING = 1.0;
-float const PROPAGATE_POWER_DECREASING = 1.0;  // 2.0
+float const PROPAGATE_POWER_INCREASING = 0.95;
+float const PROPAGATE_POWER_DECREASING = 1.05;  // 2.0
 
 
 int const MAX_NEW_SIBLINGS = 10000;
@@ -165,11 +165,11 @@ namespace {
   int indexOfHighestQEdge(Node_revamp* node, int tree_size) {
     float highestq = -2.0;
     int bestidx = -1;
-    // Veto moves with too high uncertainty in Q, by requiring at least 20 visits if Total tree size is above 1000 nodes.
+    // Veto moves with too high uncertainty in Q, by requiring at least 20 visits if Total tree size is above 1000 nodes, and the suggested move is not a terminal node.
     if(tree_size >= 1000){
       for (int i = 0; i < node->GetNumChildren(); i++) {
 	float q = node->GetEdges()[i].GetChild()->GetQ();
-	if (q > highestq && node->GetEdges()[i].GetChild()->GetN() >= 20) {
+	if (q > highestq && (node->GetEdges()[i].GetChild()->IsTerminal() || node->GetEdges()[i].GetChild()->GetN() >= 30)) {
 	  highestq = q;
 	  bestidx = i;
 	}
