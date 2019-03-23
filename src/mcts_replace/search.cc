@@ -251,7 +251,7 @@ void Search_revamp::SendUciInfo() {
     Node_revamp* n = root_node_->GetEdges()[bestidx].GetChild();
     while (n && n->GetNumChildren() > 0) {
       flip = !flip;
-      int bestidx = indexOfHighestQEdge(n, 0);
+      int bestidx = indexOfHighestQEdge(n, root_node_->GetN());
       uci_info.pv.push_back(n->GetEdges()[bestidx].GetMove(flip));
       n = n->GetEdges()[bestidx].GetChild();
     }
@@ -365,7 +365,7 @@ void Search_revamp::SendMovesStats() {
 void Search_revamp::reportBestMove() {
         int bestidx = indexOfHighestQEdge(root_node_, root_node_->GetN());
 	Move best_move = root_node_->GetEdges()[bestidx].GetMove(played_history_.IsBlackToMove());
-	int ponderidx = indexOfHighestQEdge(root_node_->GetEdges()[bestidx].GetChild(), 0);
+	int ponderidx = indexOfHighestQEdge(root_node_->GetEdges()[bestidx].GetChild(), root_node_->GetN());
 	// If the move we make is terminal, then there is nothing to ponder about.
 	// Also, if the bestmove doesn't have any children, then don't report a ponder move.
 	if(!root_node_->GetEdges()[bestidx].GetChild()->IsTerminal() &&
