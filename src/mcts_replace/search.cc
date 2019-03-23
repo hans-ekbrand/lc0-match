@@ -157,19 +157,29 @@ bool Search_revamp::IsSearchActive() const {
 
 namespace {
 
-int indexOfHighestQEdge(Node_revamp* node) {
-	float highestq = -2.0;
-	int bestidx = -1;
-	for (int i = 0; i < node->GetNumChildren(); i++) {
-		float q = node->GetEdges()[i].GetChild()->GetQ();
-		if (q > highestq) {
-			highestq = q;
-			bestidx = i;
-		}
+  int indexOfHighestQEdge(Node_revamp* node, int tree_size) {
+    float highestq = -2.0;
+    int bestidx = -1;
+    // Veto moves with too high uncertainty in Q, by requiring at least 50 visits if Total tree size is above 1000 nodes, and the suggested move is not a terminal node.
+    if(tree_size >= 1000){
+      for (int i = 0; i < node->GetNumChildren(); i++) {
+	float q = node->GetEdges()[i].GetChild()->GetQ();
+	if (q > highestq && (node->GetEdges()[i].GetChild()->IsTerminal() || node->GetEdges()[i].GetChild()->GetN() >= 50)) {
+	  highestq = q;
+	  bestidx = i;
 	}
-	return bestidx;
-}
-
+      }
+    } else {
+      for (int i = 0; i < node->GetNumChildren(); i++) {
+	float q = node->GetEdges()[i].GetChild()->GetQ();
+	if (q > highestq) {
+	  highestq = q;
+	  bestidx = i;
+	}
+      }
+    }
+    return bestidx;
+  }
 }
 
 void Search_revamp::Wait() {
@@ -241,7 +251,7 @@ void Search_revamp::SendUciInfo() {
     Node_revamp* n = root_node_->GetEdges()[bestidx].GetChild();
     while (n && n->GetNumChildren() > 0) {
       flip = !flip;
-      int bestidx = indexOfHighestQEdge(n);
+      int bestidx = indexOfHighestQEdge(n, 0);
       uci_info.pv.push_back(n->GetEdges()[bestidx].GetMove(flip));
       n = n->GetEdges()[bestidx].GetChild();
     }
@@ -353,9 +363,9 @@ void Search_revamp::SendMovesStats() {
 }
 
 void Search_revamp::reportBestMove() {
-	int bestidx = indexOfHighestQEdge(root_node_);
+        int bestidx = indexOfHighestQEdge(root_node_, root_node_->GetN());
 	Move best_move = root_node_->GetEdges()[bestidx].GetMove(played_history_.IsBlackToMove());
-	int ponderidx = indexOfHighestQEdge(root_node_->GetEdges()[bestidx].GetChild());
+	int ponderidx = indexOfHighestQEdge(root_node_->GetEdges()[bestidx].GetChild(), 0);
 	// If the move we make is terminal, then there is nothing to ponder about.
 	// Also, if the bestmove doesn't have any children, then don't report a ponder move.
 	if(!root_node_->GetEdges()[bestidx].GetChild()->IsTerminal() &&
@@ -541,9 +551,19 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
     // }
 
     for (int i = 0; i < n; i++){
-      double relative_weight_of_p = pow(node->GetEdges()[i].GetChild()->GetN(), my_policy_weight_exponent_) / ( 0.05 + node->GetEdges()[i].GetChild()->GetN()); // 0.05 is here to make Q have some influence after 1 visit.
+      // double relative_weight_of_p = pow(node->GetEdges()[i].GetChild()->GetN(), my_policy_weight_exponent_) / ( 0.05 + node->GetEdges()[i].GetChild()->GetN()); // 0.05 is here to make Q have some influence after 1 visit.
+      double cpuct = search_->params_.GetCpuct() * log((node->GetN() + search_->params_.GetCpuctBase())/search_->params_.GetCpuctBase()) * sqrt(log(node->GetN())/(1+node->GetEdges()[i].GetChild()->GetN()));
+      // transform cpuct with the sigmoid function (the logistic function)
+      double cpuct_as_prob = 2 * (exp(cpuct)/(1 + exp(cpuct)) - 0.5); // f(0) would be 0.5, we want it to be zero.
+      double relative_weight_of_p = pow(node->GetEdges()[i].GetChild()->GetN(), my_policy_weight_exponent_) / ( 0.05 + node->GetEdges()[i].GetChild()->GetN()) + cpuct_as_prob; // 0.05 is here to make Q have some influence after 1 visit.
       double relative_weight_of_q = 1 - relative_weight_of_p;
-      weighted_p_and_q[i] = relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() + relative_weight_of_p * node->GetEdges()[i].GetP() + node->GetEdges()[i].GetP() * search_->params_.GetCpuct() * log((node->GetN() + search_->params_.GetCpuctBase())/search_->params_.GetCpuctBase()) * sqrt(log(node->GetN())/(1+node->GetEdges()[i].GetChild()->GetN()));
+      // get an new term which should encourage exploration by multiplying both policy and q with this number.
+      // or, for just add it in, the exploration bonus is for _everyone_.
+      // old version
+      // weighted_p_and_q[i] = relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() + relative_weight_of_p * node->GetEdges()[i].GetP() + node->GetEdges()[i].GetP() * search_->params_.GetCpuct() * log((node->GetN() + search_->params_.GetCpuctBase())/search_->params_.GetCpuctBase()) * sqrt(log(node->GetN())/(1+node->GetEdges()[i].GetChild()->GetN()));
+      // new version
+      weighted_p_and_q[i] = relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() + relative_weight_of_p * node->GetEdges()[i].GetP(); // + cpuct_as_prob * node->GetEdges()[i].GetP(); // * node->GetEdges()[i].GetChild()->GetW();
+      
       // weighted_p_and_q[i] = relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() + relative_weight_of_p * node->GetEdges()[i].GetP(); // without the cpuct term.
       if(DEBUG) { LOGFILE << "Weighted p and q for i=" << i << " " << weighted_p_and_q[i]; }
       sum_of_weighted_p_and_q += weighted_p_and_q[i];
