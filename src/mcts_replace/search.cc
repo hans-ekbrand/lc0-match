@@ -173,15 +173,13 @@ namespace {
     }
     // return bestidx;
     // This is mostly relevant for games played with very low nodecounts.
-    // Veto moves with too high uncertainty in Q, by requiring at least 20 visits if number of subnodes is above 1000, and the suggested move is not a terminal node.
+    // Veto moves with too high uncertainty in Q, by requiring at least 3 * log(n) visits if number of subnodes is above n, and the suggested move is not a terminal node. TODO use some lookup table for log here
+    unsigned int threshold = ceil(3 * log(node->GetN()));
     if (! filter_uncertain_moves ||
     	node->GetN() < 1000 ||
-    	node->GetEdges()[bestidx].GetChild()->GetN() >= 20 ||
+    	node->GetEdges()[bestidx].GetChild()->GetN() >= threshold ||
         node->GetEdges()[bestidx].GetChild()->IsTerminal())
     	 {
-    	   if(filter_uncertain_moves){
-    	     LOGFILE << "bestmove has " << node->GetEdges()[bestidx].GetChild()->GetN() << " visits.";
-    	   }
     	   return bestidx;
     }
 
@@ -200,7 +198,7 @@ namespace {
     	  }
     	}
       }
-      if (node->GetEdges()[bestidx].GetChild()->GetN() >= 50 ||
+      if (node->GetEdges()[bestidx].GetChild()->GetN() >= threshold ||
     	  node->GetEdges()[bestidx].GetChild()->IsTerminal()) {
     	return bestidx;
       } else {
