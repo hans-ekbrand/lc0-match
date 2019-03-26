@@ -189,7 +189,7 @@ EdgeList_revamp::EdgeList_revamp(MoveList moves)
 
 Node_revamp* Node_revamp::CreateSingleChildNode(Move move) {
   assert(!edges_);
-  assert(!child_);
+  // assert(!child_); // error: ‘child_’ was not declared in this scope
   edges_ = EdgeList_revamp({move});
   edges_[0].CreateChild(this, 0);
   return edges_[0].GetChild();
@@ -197,7 +197,7 @@ Node_revamp* Node_revamp::CreateSingleChildNode(Move move) {
 
 void Node_revamp::CreateEdges(const MoveList& moves) {
   assert(!edges_);
-  assert(!child_);
+  // assert(!child_); // error: ‘child_’ was not declared in this scope
   edges_ = EdgeList_revamp(moves);
 }
 

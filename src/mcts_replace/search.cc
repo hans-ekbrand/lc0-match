@@ -30,6 +30,7 @@
 #include <iostream>
 #include <fstream>
 #include <math.h>
+#include <cassert>  // assert() used for debugging during development
 #include <iomanip>
 
 #include "neural/encoder.h"
@@ -162,28 +163,56 @@ bool Search_revamp::IsSearchActive() const {
 
 namespace {
 
-  int indexOfHighestQEdge(Node_revamp* node, int tree_size) {
+  int indexOfHighestQEdge(Node_revamp* node, bool black_to_move, bool filter_uncertain_moves) {
     float highestq = -2.0;
     int bestidx = -1;
-    // Veto moves with too high uncertainty in Q, by requiring at least 50 visits if Total tree size is above 1000 nodes, and the suggested move is not a terminal node.
-    if(tree_size >= 1000){
-      for (int i = 0; i < node->GetNumChildren(); i++) {
-	float q = node->GetEdges()[i].GetChild()->GetQ();
-	if (q > highestq && (node->GetEdges()[i].GetChild()->IsTerminal() || node->GetEdges()[i].GetChild()->GetN() >= 50)) {
-	  highestq = q;
-	  bestidx = i;
-	}
+    for (int i = 0; i < node->GetNumChildren(); i++) {
+      float q = node->GetEdges()[i].GetChild()->GetQ();
+      if(q < -1 || q > 1){
+	LOGFILE << "Warning abs(Q) is above 1, q=" << q;
       }
-    } else {
-      for (int i = 0; i < node->GetNumChildren(); i++) {
-	float q = node->GetEdges()[i].GetChild()->GetQ();
-	if (q > highestq) {
-	  highestq = q;
-	  bestidx = i;
-	}
+      if (q > highestq) {
+	highestq = q;
+	bestidx = i;
       }
     }
-    return bestidx;
+    // return bestidx;
+    // This is mostly relevant for games played with very low nodecounts.
+    // Veto moves with too high uncertainty in Q, by requiring at least 3 * log(n) visits if number of subnodes is above n, and the suggested move is not a terminal node. TODO use some lookup table for log here
+    unsigned int threshold = ceil(3 * log(node->GetN()));
+    if (! filter_uncertain_moves ||
+    	node->GetN() < 1000 ||
+    	node->GetEdges()[bestidx].GetChild()->GetN() >= threshold ||
+        node->GetEdges()[bestidx].GetChild()->IsTerminal())
+    	 {
+    	   return bestidx;
+    }
+
+    // Search until an acceptable move is found. Should be a rare event to even end up here, so no point in optimising the code below.
+    std::vector<int> bad_moves(1);
+    bad_moves[0] = bestidx;
+    while(true){
+      LOGFILE << "VETO against the uncertain move " << node->GetEdges()[bestidx].GetMove(black_to_move).as_string() << " with only " << node->GetEdges()[bestidx].GetChild()->GetN() << " visits. Not acceptable.";
+      highestq = -2.0;
+      for (int i = 0; i < node->GetNumChildren(); i++) {
+    	if ( std::find(bad_moves.begin(), bad_moves.end(), i) == bad_moves.end() ){ // no match
+    	  float q = node->GetEdges()[i].GetChild()->GetQ();
+    	  if (q > highestq) {
+    	    highestq = q;
+    	    bestidx = i;
+    	  }
+    	}
+      }
+      if (node->GetEdges()[bestidx].GetChild()->GetN() >= threshold ||
+    	  node->GetEdges()[bestidx].GetChild()->IsTerminal()) {
+    	return bestidx;
+      } else {
+    	// add bestidx to the list of unacceptable moves
+    	LOGFILE << "So many bad moves. Sad.";
+    	bad_moves.push_back(bestidx);
+    	LOGFILE << "Storing succeeded.";	
+      }
+    }
   }
 }
 
@@ -256,7 +285,7 @@ void Search_revamp::SendUciInfo() {
     Node_revamp* n = root_node_->GetEdges()[bestidx].GetChild();
     while (n && n->GetNumChildren() > 0) {
       flip = !flip;
-      int bestidx = indexOfHighestQEdge(n, 0);
+      int bestidx = indexOfHighestQEdge(n, played_history_.IsBlackToMove(), true); // Filter out uncertain moves from uci-info.
       uci_info.pv.push_back(n->GetEdges()[bestidx].GetMove(flip));
       n = n->GetEdges()[bestidx].GetChild();
     }
@@ -265,7 +294,6 @@ void Search_revamp::SendUciInfo() {
   // reverse the order
   std::reverse(uci_infos.begin(), uci_infos.end());
   info_callback_(uci_infos);
-
 }
 
 void Search_revamp::checkLimitsAndMaybeTriggerStop() {
@@ -368,9 +396,9 @@ void Search_revamp::SendMovesStats() {
 }
 
 void Search_revamp::reportBestMove() {
-        int bestidx = indexOfHighestQEdge(root_node_, root_node_->GetN());
+	int bestidx = indexOfHighestQEdge(root_node_, played_history_.IsBlackToMove(), true);
 	Move best_move = root_node_->GetEdges()[bestidx].GetMove(played_history_.IsBlackToMove());
-	int ponderidx = indexOfHighestQEdge(root_node_->GetEdges()[bestidx].GetChild(), 0);
+	int ponderidx = indexOfHighestQEdge(root_node_->GetEdges()[bestidx].GetChild(), played_history_.IsBlackToMove(), false); // harmless to report a bad pondermove.
 	// If the move we make is terminal, then there is nothing to ponder about.
 	// Also, if the bestmove doesn't have any children, then don't report a ponder move.
 	if(!root_node_->GetEdges()[bestidx].GetChild()->IsTerminal() &&
@@ -461,9 +489,10 @@ void Search_revamp::ExtendNode(PositionHistory* history, Node_revamp* node) {
     // Let's try to do that instead by decreasing q_concentration as parent N increases.
     // At higher visits counts, our policy term has no influence anymore.
     // I've modelled a function after the dynamic cpuct invented by DeepMind, so that our function decreases by half at the same number parent nodes as the the dynamic cpuct is doubled (for zero visit at the child). We reward exploration regardless of number of child visits, which might not be as effective as their strategy, but let's give it a go.
+
     // Try again, with 0.5 instead of 0.795, so slower decrease
-    return exp(q_concentration * (0.246 + (1 - 0.246) / pow((1 + parent_n / 60000), 0.5)) * (q - abs(max_q)/2)); // reduce the overflow risk.
-    // return exp(q_concentration * (q - abs(max_q)/2)); // reduce the overflow risk.
+    // return exp(q_concentration * (0.246 + (1 - 0.246) / pow((1 + parent_n / 30000), 0.795)) * (q - abs(max_q)/2)); // reduce the overflow risk.
+    return exp(q_concentration * (q - abs(max_q)/2)); // reduce the overflow risk. However, with the default q_concentration 36.2, overflow isn't possible since exp(36.2 * 1) is less than max float. TODO restrict the parameter so that it cannot overflow and remove this division.
   };
   case 2: {
     float x = 1.0 + 20.0 * (max_q - q);
@@ -556,10 +585,24 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
     // }
 
     for (int i = 0; i < n; i++){
-      double relative_weight_of_p = pow(node->GetEdges()[i].GetChild()->GetN(), my_policy_weight_exponent_) / ( 0.05 + node->GetEdges()[i].GetChild()->GetN()); // 0.05 is here to make Q have some influence after 1 visit.
+      // double relative_weight_of_p = pow(node->GetEdges()[i].GetChild()->GetN(), my_policy_weight_exponent_) / ( 0.05 + node->GetEdges()[i].GetChild()->GetN()); // 0.05 is here to make Q have some influence after 1 visit.
+      assert(node->GetN() > 0);
+      double cpuct = log((node->GetN() + search_->params_.GetCpuctBase())/search_->params_.GetCpuctBase()) * sqrt(log(node->GetN())/(1+node->GetEdges()[i].GetChild()->GetN()));
+      // transform cpuct with the sigmoid function (the logistic function, 1/(1 + exp(-x))
+      double cpuct_as_prob = 2 * search_->params_.GetCpuct() * (1/(1 + exp(-cpuct)) - 0.5); // f(0) would be 0.5, we want it f(0) to be zero.
+      double relative_weight_of_p = pow(node->GetEdges()[i].GetChild()->GetN(), my_policy_weight_exponent_) / (0.05 + node->GetEdges()[i].GetChild()->GetN()) + cpuct_as_prob; // 0.05 is here to make Q have some influence after 1 visit.
+      if (relative_weight_of_p > 1){
+      	relative_weight_of_p = 1;
+      }
       double relative_weight_of_q = 1 - relative_weight_of_p;
+      // get an new term which should encourage exploration by multiplying both policy and q with this number.
+      // or, for just add it in, the exploration bonus is for _everyone_.
+      // old version
       // weighted_p_and_q[i] = relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() + relative_weight_of_p * node->GetEdges()[i].GetP() + node->GetEdges()[i].GetP() * search_->params_.GetCpuct() * log((node->GetN() + search_->params_.GetCpuctBase())/search_->params_.GetCpuctBase()) * sqrt(log(node->GetN())/(1+node->GetEdges()[i].GetChild()->GetN()));
-      weighted_p_and_q[i] = relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() + relative_weight_of_p * node->GetEdges()[i].GetP(); // without the cpuct term.
+      // new version
+      weighted_p_and_q[i] = relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() + relative_weight_of_p * node->GetEdges()[i].GetP(); // + cpuct_as_prob * node->GetEdges()[i].GetP(); // * node->GetEdges()[i].GetChild()->GetW();
+      
+      // weighted_p_and_q[i] = relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() + relative_weight_of_p * node->GetEdges()[i].GetP(); // without the cpuct term.
       if(DEBUG) { LOGFILE << "Weighted p and q for i=" << i << " " << weighted_p_and_q[i]; }
       sum_of_weighted_p_and_q += weighted_p_and_q[i];
     }
@@ -577,6 +620,10 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
       // 	    << " sum of p for the expanded nodes: " << sum_of_P_of_expanded_nodes
       // 	    << " weighted sum of P and q_as_prob: " << weighted_p_and_q[i]
       // 	    << " (weighted sum of P and q_as_prob) divided the product of sum_of_weighted_p_and_q and sum_of_P_of_expanded_nodes: " << node->GetEdges()[i].GetChild()->GetW();
+    }
+    if(final_sum_of_weights_for_the_exanded_children > 1.0007){
+      LOGFILE << "Error: sum of weights too high." << final_sum_of_weights_for_the_exanded_children;
+      // final_sum_of_weights_for_the_exanded_children = 1;
     }
     return final_sum_of_weights_for_the_exanded_children;  // this should be same as sum_of_P_of_expanded_nodes
   }
