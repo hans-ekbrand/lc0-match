@@ -1301,7 +1301,8 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 		search_->ponder_lock_.lock();
 		bool ponder = search_->ponder_;
 		search_->ponder_lock_.unlock();
-		if (!ponder && !search_->abort_) {
+		search_->SendUciInfo(); // Make sure uci-info is updated just before we make our move.
+		if (!ponder && !search_->abort_) { // Not sure if ponder should be here
 	    search_->SendMovesStats(); // Support VerboseMoveStats
 			search_->reportBestMove();
 		}
