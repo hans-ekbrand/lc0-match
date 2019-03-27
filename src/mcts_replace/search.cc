@@ -35,20 +35,15 @@
 
 #include "neural/encoder.h"
 
-#include "mcts_replace/prob_functions.h"
-
 namespace lczero {
 
 namespace {
 
 // Alternatives:
 
-float const NN_Q_INACCURACY = 0.44;  // 0.028;  // now uses q_concentration_ = cpuct
-float const NN_Q_P_INACCURACY_RATIO_SQUARED = 5.6;  // now uses policy_weight_exponent_ = fpu-reduction
-
-float const PROPAGATE_POWER_INCREASING = 0.85;
-float const PROPAGATE_POWER_DECREASING = 1.2;  // 2.0
-
+int const Q_TO_PROB_MODE = 1;
+  // 1: e^(k * q)
+  // 2: 1 / (1 + k (maxq - q))^2
 
 int const MAX_NEW_SIBLINGS = 10000;
   // The maximum number of new siblings. If 1, then it's like old MULTIPLE_NEW_SIBLINGS = false, if >= maximum_number_of_legal_moves it's like MULTIPLE_NEW_SIBLINGS = true
@@ -57,7 +52,7 @@ const int kUciInfoMinimumFrequencyMs = 500;
 int const N_HELPER_THREADS_PRE = 5;
 int const N_HELPER_THREADS_POST = 5;
 
-bool const LOG_RUNNING_INFO = false;
+bool const LOG_RUNNING_INFO = false;  
 
 }  // namespace
 
@@ -478,7 +473,7 @@ void Search_revamp::ExtendNode(PositionHistory* history, Node_revamp* node) {
 //////////////////////////////////////////////////////////////////////////////
 // Distribution
 //////////////////////////////////////////////////////////////////////////////
-/*
+
   inline float q_to_prob(const float q, const float max_q, const float q_concentration, int n, int parent_n) {
   switch (Q_TO_PROB_MODE) {
   case 1: {
@@ -489,8 +484,6 @@ void Search_revamp::ExtendNode(PositionHistory* history, Node_revamp* node) {
     // Let's try to do that instead by decreasing q_concentration as parent N increases.
     // At higher visits counts, our policy term has no influence anymore.
     // I've modelled a function after the dynamic cpuct invented by DeepMind, so that our function decreases by half at the same number parent nodes as the the dynamic cpuct is doubled (for zero visit at the child). We reward exploration regardless of number of child visits, which might not be as effective as their strategy, but let's give it a go.
-
-    // Try again, with 0.5 instead of 0.795, so slower decrease
     // return exp(q_concentration * (0.246 + (1 - 0.246) / pow((1 + parent_n / 30000), 0.795)) * (q - abs(max_q)/2)); // reduce the overflow risk.
     return exp(q_concentration * (q - abs(max_q)/2)); // reduce the overflow risk. However, with the default q_concentration 36.2, overflow isn't possible since exp(36.2 * 1) is less than max float. TODO restrict the parameter so that it cannot overflow and remove this division.
   };
@@ -628,7 +621,7 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
     return final_sum_of_weights_for_the_exanded_children;  // this should be same as sum_of_P_of_expanded_nodes
   }
 }
-*/
+
 
 void SearchWorker_revamp::pickNodesToExtend() {
 	Node_revamp* node;
@@ -661,46 +654,21 @@ void SearchWorker_revamp::pickNodesToExtend() {
 		uint16_t ccidx = (new_nodes_size_ - 1) | 0x8000;
 
 		while (true) {
-      int16_t max_idx = -1;
-      float max_w_incr = 0.0;
-      float max_w_decr = 0.0;
-      int nidx = node->GetNextUnexpandedEdge();
-      if (nidx < node->GetNumEdges() && nidx - node->GetNumChildren() < MAX_NEW_SIBLINGS) {
-        max_w_decr = node->GetEdges()[nidx].GetP();
-        if (nidx == 0) {
-          max_w_incr = max_w_decr;
-        }
-      }
-      // When you lead by far (Root Q is large and negative), don't prune, play safe when winning.
-      float propagate_power_decreasing = node->GetNumChildren() == 1 ? PROPAGATE_POWER_INCREASING : PROPAGATE_POWER_DECREASING;      
-      if(root_node_->GetQ() < -0.5){
-	propagate_power_decreasing = 1.0f;
-      } else {
-      }
-      for (int i = 0; i < node->GetNumChildren(); i++) {
-        float br_max_w_incr = pow(node->GetEdges()[i].GetChild()->GetW(), propagate_power_decreasing) * node->GetEdges()[i].GetChild()->GetMaxWDecr();
-        if (br_max_w_incr > max_w_incr) {
-          max_w_incr = br_max_w_incr;
-          if (br_max_w_incr > max_w_decr) {
-            max_idx = i;
-          }
-        }
-	// When you lead by far (Root Q is large and negative), don't inverse-prune, play safe when winning.
-	float br_max_w_decr = pow(node->GetEdges()[i].GetChild()->GetW(), PROPAGATE_POWER_INCREASING) * node->GetEdges()[i].GetChild()->GetMaxWIncr();	
-	if(root_node_->GetQ() < -0.5){	
-	  br_max_w_decr = node->GetEdges()[i].GetChild()->GetW() * node->GetEdges()[i].GetChild()->GetMaxWIncr();	  
-	}
-        if (br_max_w_decr > max_w_decr) {
-          max_w_decr = br_max_w_decr;
-          if (br_max_w_decr > max_w_incr) {
-            max_idx = i;
-          }
-        }
-      }
-      node->SetMaxWIncr(max_w_incr);
-      node->SetMaxWDecr(max_w_decr);
-      node->SetBestIdx(max_idx);
-
+			int16_t max_idx = -1;
+			float max_w = 0.0;
+			int nidx = node->GetNextUnexpandedEdge();
+			if (nidx < node->GetNumEdges() && nidx - node->GetNumChildren() < MAX_NEW_SIBLINGS) {
+				max_w = node->GetEdges()[nidx].GetP();
+			}
+			for (int i = 0; i < node->GetNumChildren(); i++) {
+				float br_max_w = node->GetEdges()[i].GetChild()->GetW() * node->GetEdges()[i].GetChild()->GetMaxW();
+				if (br_max_w > max_w) {
+					max_w = br_max_w;
+					max_idx = i;
+				}
+			}
+			node->SetMaxW(max_w);
+			node->SetBestIdx(max_idx);
 
 			if (junction_mode == 0) {
 				uint16_t n = node->GetBranchingInFlight();
@@ -893,7 +861,6 @@ void SearchWorker_revamp::retrieveNNResult(Node_revamp* node, int batchidx) {
     //if (q > 1.0) q = 1.0;
   }
   node->SetOrigQ(q);
-  node->SetQInacc(q_concentration_);  // NN_Q_INACCURACY
 
   float total = 0.0;
   int nedge = node->GetNumEdges();
@@ -927,22 +894,9 @@ void SearchWorker_revamp::retrieveNNResult(Node_revamp* node, int batchidx) {
       (node->GetEdges())[k].SetP(x);
     }
   }
-	node->SetMaxWIncr(node->GetEdges()[0].GetP());
-	node->SetMaxWDecr(node->GetEdges()[0].GetP());
+	node->SetMaxW(node->GetEdges()[0].GetP());
 }
 
-
-void SearchWorker_revamp::recalcKnownWin(Node_revamp* node, int win_idx) {
-  node->SetQ(-1.0);
-  node->SetQInacc(0.0);
-  node->SetMaxWIncr(node->GetEdges()[win_idx].GetChild()->GetMaxWDecr());
-  node->SetMaxWDecr(node->GetEdges()[win_idx].GetChild()->GetMaxWIncr());
-  if (node->GetMaxWIncr() == 0.0 && node->GetMaxWDecr() == 0.0) {
-    node->SetBestIdx(-1);
-  } else {
-    node->SetBestIdx(win_idx);
-  }
-}
 
 void SearchWorker_revamp::recalcPropagatedQ(Node_revamp* node) {
   int n = 1;
@@ -951,81 +905,64 @@ void SearchWorker_revamp::recalcPropagatedQ(Node_revamp* node) {
   }
   node->SetN(n);
 
-//std::cerr << "recalc\n";
+  float total_children_weight = computeChildWeights(node);
 
-  int i = node->GetNumChildren() - 1;
-  float cur_q = node->GetEdges()[i].GetChild()->GetQ();
-  float cur_q_inacc = node->GetEdges()[i].GetChild()->GetQInacc();
-//std::cerr << cur_q << ", " << cur_q_inacc << "\n";
-  if (cur_q_inacc == 0.0 && cur_q == 1.0) { recalcKnownWin(node, i); return; }
-  float cur_p = node->GetEdges()[i].GetP();
-  for (i--; i >= 0; i--) {
-    float q = node->GetEdges()[i].GetChild()->GetQ();
-    float q_inacc = node->GetEdges()[i].GetChild()->GetQInacc();
-//std::cerr << q << ", " << q_inacc << "\n";
-    if (q_inacc == 0.0 && q == 1.0) { recalcKnownWin(node, i); return; }
-    MaxVs res = compute_max(cur_q, cur_q_inacc, q, q_inacc);
-    cur_q = res.mean;
-    cur_q_inacc = res.std_dev;
-    node->GetEdges()[i].GetChild()->SetW(res.prob2);
-    cur_p += node->GetEdges()[i].GetP();
-//std::cerr << "-> " << cur_q << ", " << cur_q_inacc << ", " << res.prob2 << "\n";
+//  if (total_children_weight < 0.0 || total_children_weight - 1.0 > 1.00012) {
+//    std::cerr << "total_children_weight: " << total_children_weight << "\n";
+//    abort();
+//  }
+//  float totw = 0.0;
+//  for (int i = 0; i < node->GetNumChildren(); i++) {
+//    float w = node->GetEdges()[i].GetChild()->GetW();
+//    if (w < 0.0) {
+//      std::cerr << "w: " << w << "\n";
+//      abort();
+//    }
+//    totw += w;
+//  }
+//  if (abs(total_children_weight - totw) > 1.00012) {
+//    std::cerr << "total_children_weight: " << total_children_weight << ", totw: " << total_children_weight << "\n";
+//    abort();
+//  }
+
+  // Average Q START
+  float q = (1.0 - total_children_weight) * node->GetOrigQ();
+  for (int i = 0; i < node->GetNumChildren(); i++) {
+    q -= node->GetEdges()[i].GetChild()->GetW() * node->GetEdges()[i].GetChild()->GetQ();
   }
+  node->SetQ(q);
+  // Average Q STOP
 
-  if (cur_q_inacc == 0.0) {
-    node->SetQ(cur_q > 1.0 ? -1.0 : -cur_q);
-    node->SetQInacc(0.0);
-  } else {
-    ProbV res = compute_comb(cur_q > 1.0 ? -1.0 : -cur_q, cur_q_inacc, node->GetOrigQ(), q_concentration_);  // NN_Q_INACCURACY
-    node->SetQ(res.mean);
-    node->SetQInacc(res.std_dev);
-  }
-
-  for (i = 0; i < node->GetNumChildren() - 1; i++) {
-//    MaxVs res1 = compute_max(cur_q, cur_q_inacc, node->GetEdges()[i].GetChild()->GetQ() + node->GetEdges()[i].GetChild()->GetQInacc(), node->GetEdges()[i].GetChild()->GetQInacc());
-//    MaxVs res2 = compute_max(cur_q, cur_q_inacc, node->GetEdges()[i].GetChild()->GetQ(), node->GetEdges()[i].GetChild()->GetQInacc());
-//    std::cerr << "n: " << node->GetEdges()[i].GetChild()->GetN() << ", deltaprob: " << res1.prob2 - res2.prob2 << ", logdeltaprob: " << log(res1.prob2 / res2.prob2) << "\n";
-    
-    float part_w = 1.0 / (1.0 + policy_weight_exponent_ / (float)node->GetEdges()[i].GetChild()->GetN());  // NN_Q_P_INACCURACY_RATIO_SQUARED
-    float p = node->GetEdges()[i].GetChild()->GetW();
-
-//std::cerr << ": " << part_w << ", " << p << ", " << cur_p << "\n";
-    node->GetEdges()[i].GetChild()->SetW(part_w * cur_p * p + (1.0 - part_w) * node->GetEdges()[i].GetP());
-    cur_p *= 1.0 - p;
-  }
-  float part_w = 1.0 / (1.0 + policy_weight_exponent_ / (float)node->GetEdges()[i].GetChild()->GetN());  // NN_Q_P_INACCURACY_RATIO_SQUARED
-//std::cerr << "= " << part_w << ", " << cur_p << "\n";
-  node->GetEdges()[i].GetChild()->SetW(part_w * cur_p + (1.0 - part_w) * node->GetEdges()[i].GetP());
   
+	int first_non_created_child_idx = node->GetNumChildren();
+	while (first_non_created_child_idx < node->GetNumEdges() && node->GetEdges()[first_non_created_child_idx].GetChild() != nullptr) {
+		first_non_created_child_idx++;
+	}
+
+//  if (MULTIPLE_NEW_SIBLINGS)
+//    n = node->GetNumEdges() - first_non_created_child_idx;
+//  else
+//    n = node->GetNumEdges() > first_non_created_child_idx ? 1 : 0;
+
+//  for (int i = 0; i < node->GetNumChildren(); i++) {
+//    n += node->GetEdges()[i].GetChild()->GetNExtendable();
+//  }
+//  node->SetNExtendable(n);
+
 	int16_t max_idx = -1;
-	float max_w_incr = 0.0;
-	float max_w_decr = 0.0;
+	float max_w = 0.0;
 	int nidx = node->GetNextUnexpandedEdge();
 	if (nidx < node->GetNumEdges() && nidx - node->GetNumChildren() < MAX_NEW_SIBLINGS) {
-		max_w_decr = node->GetEdges()[nidx].GetP();
-    if (nidx == 0) {
-      max_w_incr = max_w_decr;
-    }
+		max_w = node->GetEdges()[nidx].GetP();
 	}
-  float propagate_power_decreasing = node->GetNumChildren() == 1 ? PROPAGATE_POWER_INCREASING : PROPAGATE_POWER_DECREASING;
-  for (int i = 0; i < node->GetNumChildren(); i++) {
-    float br_max_w_incr = pow(node->GetEdges()[i].GetChild()->GetW(), propagate_power_decreasing) * node->GetEdges()[i].GetChild()->GetMaxWDecr();
-    if (br_max_w_incr > max_w_incr) {
-      max_w_incr = br_max_w_incr;
-      if (br_max_w_incr > max_w_decr) {
-        max_idx = i;
-      }
-    }
-    float br_max_w_decr = pow(node->GetEdges()[i].GetChild()->GetW(), PROPAGATE_POWER_INCREASING) * node->GetEdges()[i].GetChild()->GetMaxWIncr();
-    if (br_max_w_decr > max_w_decr) {
-      max_w_decr = br_max_w_decr;
-      if (br_max_w_decr > max_w_incr) {
-        max_idx = i;
-      }
-    }
-  }
-	node->SetMaxWIncr(max_w_incr);
-	node->SetMaxWDecr(max_w_decr);
+	for (int i = 0; i < node->GetNumChildren(); i++) {
+		float br_max_w = node->GetEdges()[i].GetChild()->GetW() * node->GetEdges()[i].GetChild()->GetMaxW();
+		if (br_max_w > max_w) {
+			max_w = br_max_w;
+			max_idx = i;
+		}
+	}
+	node->SetMaxW(max_w);
 	node->SetBestIdx(max_idx);
 }
 
@@ -1364,20 +1301,19 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 		search_->ponder_lock_.lock();
 		bool ponder = search_->ponder_;
 		search_->ponder_lock_.unlock();
-		if (!ponder && !search_->abort_) {
+		search_->SendUciInfo(); // Make sure uci-info is updated just before we make our move.
+		if (!ponder && !search_->abort_) { // Not sure if ponder should be here
 	    search_->SendMovesStats(); // Support VerboseMoveStats
 			search_->reportBestMove();
 		}
-
-		//search_->SendUciInfo();
 
 		int64_t elapsed_time = search_->GetTimeSinceStart();
 		//LOGFILE << "Elapsed time when thread for node " << root_node_ << " which has size " << root_node_->GetN() << " nodes did " << i << " computations: " << elapsed_time << "ms";
 	  if(LOG_RUNNING_INFO){
       LOGFILE << "Elapsed time for " << root_node_->GetN() << " nodes: " << elapsed_time << "ms";
       LOGFILE << "#helper threads pre: " << N_HELPER_THREADS_PRE << ", #helper threads post: " << N_HELPER_THREADS_POST;
-      LOGFILE << "root Q: " << root_node_->GetQ() << ", inacc: " << root_node_->GetQInacc();
-      LOGFILE << "move   P                 n   norm n     Q          inacc      w";
+      LOGFILE << "root Q: " << root_node_->GetQ();
+      LOGFILE << "move   P                 n   norm n     Q          w";
 	    for (int i = 0; i < root_node_->GetNumChildren(); i++) {
 	      LOGFILE << std::fixed << std::setfill(' ') 
 		      << (root_node_->GetEdges())[i].move_.as_string() << " "
@@ -1386,7 +1322,6 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 		      << std::setw(10) << (float)(root_node_->GetEdges())[i].GetChild()->GetN() / (float)(root_node_->GetN() - 1) << " "
 		// << std::setw(4) << (root_node_->GetEdges())[i].GetChild()->ComputeHeight() << " "
 		      << std::setw(10) << (float)(root_node_->GetEdges())[i].GetChild()->GetQ() << " "
-		      << std::setw(10) << (float)(root_node_->GetEdges())[i].GetChild()->GetQInacc() << " "
 		      << std::setw(10) << root_node_->GetEdges()[i].GetChild()->GetW();
 	    }
 
@@ -1410,23 +1345,6 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
                 << ", propagate node visits: " << search_->count_propagate_node_visits_ / search_->count_iterations_
                 << ", junctions: " << search_->count_junctions_ / search_->count_iterations_;
       }
-      
-      for (uint32_t min_n = 1; min_n <= 10000; min_n *= 10) {
-        int ninternal = root_node_->CountInternal(min_n);
-        if (ninternal > 0) {
-          double qmean = root_node_->QMean(min_n) / (double)ninternal;
-          double qvariance = root_node_->QVariance(min_n, qmean) / (double)ninternal;
-          double qinaccmean = root_node_->QInaccMean(min_n) / (double)ninternal;
-          LOGFILE << "Q diff mean (min_n = " << min_n << "): " << qmean << ", variance: " << qvariance << ", std dev: " << sqrt(qvariance) << ", qinaccmean: " << qinaccmean << " (ninternal: " << ninternal << ")";
-        }
-      }
-      double pmean = root_node_->PMean() / (double)(root_node_->GetN() - 1);
-      double pvariance = root_node_->PVariance(pmean) / (double)(root_node_->GetN() - 1);
-      LOGFILE << "P diff mean: " << pmean << ", variance: " << pvariance << ", std dev: " << sqrt(pvariance) << " (#non root: " << (root_node_->GetN() - 1) << ")";
-      int logpcount = root_node_->LogPCount();
-      double logpmean = root_node_->LogPMean() / (double)logpcount;
-      double logpvariance = root_node_->LogPVariance(logpmean) / (double)logpcount;
-      LOGFILE << "log P diff mean: " << logpmean << ", variance: " << logpvariance << ", std dev: " << sqrt(logpvariance) << " (count: " << logpcount << ")";
     }
 	}
 
