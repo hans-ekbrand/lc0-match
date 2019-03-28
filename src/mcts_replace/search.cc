@@ -579,8 +579,8 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
 
     for (int i = 0; i < n; i++){
       // double relative_weight_of_p = pow(node->GetEdges()[i].GetChild()->GetN(), my_policy_weight_exponent_) / ( 0.05 + node->GetEdges()[i].GetChild()->GetN()); // 0.05 is here to make Q have some influence after 1 visit.
-      double cpuct_as_prob = 0;      
-      if(node->GetEdges()[i].GetChild()->GetN() > 800){
+      double cpuct_as_prob = 0;
+      if(node->GetEdges()[i].GetChild()->GetN() > search_->params_.GetMaxCollisionVisitsId()){
 	double cpuct = log((node->GetN() + search_->params_.GetCpuctBase())/search_->params_.GetCpuctBase()) * sqrt(log(node->GetN())/(1+node->GetEdges()[i].GetChild()->GetN()));
 	// transform cpuct with the sigmoid function (the logistic function, 1/(1 + exp(-x))
 	cpuct_as_prob = 2 * search_->params_.GetCpuct() * (1/(1 + exp(-cpuct)) - 0.5); // f(0) would be 0.5, we want it f(0) to be zero.
