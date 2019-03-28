@@ -122,6 +122,8 @@ class Node_revamp {
   void SetOrigQ(float q) { orig_q_ = q; q_ = q; }
   float GetW() const { return w_; }
   void SetW(float w) { w_ = w; }
+  float GetMaxW() const { return max_w_; }
+  void SetMaxW(float w) { max_w_ = w; }
   float GetMaxWIncr() const { return max_w_incr_; }
   void SetMaxWIncr(float w) { max_w_incr_ = w; }
   float GetMaxWDecr() const { return max_w_decr_; }
@@ -198,6 +200,7 @@ private:
 	float w_ = 0.0f;
 	float max_w_incr_ = 0.0f;
 	float max_w_decr_ = 0.0f;
+	float max_w_ = 0.0f;
 
 	uint32_t n_ = 1;
 	//uint32_t n_extendable_ = 0;
