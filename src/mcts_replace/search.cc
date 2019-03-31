@@ -486,9 +486,11 @@ void Search_revamp::ExtendNode(PositionHistory* history, Node_revamp* node) {
     // I've modelled a function after the dynamic cpuct invented by DeepMind, so that our function decreases by half at the same number parent nodes as the the dynamic cpuct is doubled (for zero visit at the child). We reward exploration regardless of number of child visits, which might not be as effective as their strategy, but let's give it a go.
     // return exp(q_concentration * (0.246 + (1 - 0.246) / pow((1 + parent_n / 30000), 0.795)) * (q - abs(max_q)/2)); // reduce the overflow risk.
 
-    // Reduce q_concentration to 35.3 by 1E6 and 34.8 by 3E6.
     if(parent_n > 100000){
-      float dynamic_q_concentration = q_concentration - (log(parent_n)/2.5 - 4.6);
+      // Reduce q_concentration to 35.3 by 1E6 and 34.8 by 3E6.
+      // float dynamic_q_concentration = q_concentration - (log(parent_n)/2.5 - 4.6);
+      // Reduce q_concentration to 34.7 by 1E6 and 33.9 by 3E6.      
+      float dynamic_q_concentration = q_concentration - (log(parent_n)/1.5 - 7.67);      
       return exp(dynamic_q_concentration * (q - abs(max_q)/2)); // reduce the overflow risk.
     } else {
       return exp(q_concentration * (q - abs(max_q)/2)); // reduce the overflow risk. However, with the default q_concentration 36.2, overflow isn't possible since exp(36.2 * 1) is less than max float. TODO restrict the parameter so that it cannot overflow and remove this division.
@@ -586,15 +588,19 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
 
     for (int i = 0; i < n; i++){
       // double relative_weight_of_p = pow(node->GetEdges()[i].GetChild()->GetN(), my_policy_weight_exponent_) / ( 0.05 + node->GetEdges()[i].GetChild()->GetN()); // 0.05 is here to make Q have some influence after 1 visit.
-      // Second try: Let's just say policy weight is zero after 10.000 nodes
+      // Second try: Let's just say policy weight is zero after 100.000 nodes
       double relative_weight_of_p = 0;
-      if(node->GetEdges()[i].GetChild()->GetN() < 10000){
+      // if(node->GetEdges()[i].GetChild()->GetN() < 100000){
 	double cpuct=0;
 	double cpuct_as_prob=0;
 	if(node->GetEdges()[i].GetChild()->GetN() > search_->params_.GetMaxCollisionVisitsId()){
 	  cpuct = log((node->GetN() + search_->params_.GetCpuctBase())/search_->params_.GetCpuctBase()) * sqrt(log(node->GetN())/(1+node->GetEdges()[i].GetChild()->GetN()));
-	// transform cpuct with the sigmoid function (the logistic function, 1/(1 + exp(-x))
+	  // transform cpuct with the sigmoid function (the logistic function, 1/(1 + exp(-x))
 	  cpuct_as_prob = 2 * search_->params_.GetCpuct() * (1/(1 + exp(-cpuct)) - 0.5); // f(0) would be 0.5, we want it f(0) to be zero.
+	  // // Do a double log instead sigmoid.
+	  // // This mean policy stays relevant much longer
+	  // cpuct_as_prob = 2 * search_->params_.GetCpuct() * (log(cpuct) - 0.5); // f(0) would be 0.5, we want it f(0) to be zero.
+
       }
 	relative_weight_of_p = pow(node->GetEdges()[i].GetChild()->GetN(), my_policy_weight_exponent_) / (0.05 + node->GetEdges()[i].GetChild()->GetN()) + cpuct_as_prob; // 0.05 is here to make Q have some influence after 1 visit.
 	// First try to defend better: let's stop boosting policy after 50.000 nodes
@@ -605,7 +611,7 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
 	if (relative_weight_of_p > 1){
 	  relative_weight_of_p = 1;
 	}
-      }
+      // }
       double relative_weight_of_q = 1 - relative_weight_of_p;
       // get an new term which should encourage exploration by multiplying both policy and q with this number.
       // or, for just add it in, the exploration bonus is for _everyone_.
