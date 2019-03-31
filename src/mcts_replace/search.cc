@@ -47,7 +47,7 @@ int const Q_TO_PROB_MODE = 1;
 
 int const MAX_NEW_SIBLINGS = 10000;
   // The maximum number of new siblings. If 1, then it's like old MULTIPLE_NEW_SIBLINGS = false, if >= maximum_number_of_legal_moves it's like MULTIPLE_NEW_SIBLINGS = true
-const int kUciInfoMinimumFrequencyMs = 500;
+const int kUciInfoMinimumFrequencyMs = 5000;
 
 int const N_HELPER_THREADS_PRE = 5;
 int const N_HELPER_THREADS_POST = 5;
@@ -586,6 +586,11 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
 	cpuct_as_prob = 2 * search_->params_.GetCpuct() * (1/(1 + exp(-cpuct)) - 0.5); // f(0) would be 0.5, we want it f(0) to be zero.
       }
       double relative_weight_of_p = pow(node->GetEdges()[i].GetChild()->GetN(), my_policy_weight_exponent_) / (0.05 + node->GetEdges()[i].GetChild()->GetN()) + cpuct_as_prob; // 0.05 is here to make Q have some influence after 1 visit.
+      // First try to defend better: let's stop boosting policy after 62.500 nodes
+      // Second try: cap policy_weight to 0.1 at 80000 nodes
+      if(relative_weight_of_p > 0.1 && node->GetEdges()[i].GetChild()->GetN() > 50000){ 
+	relative_weight_of_p = 0.2;
+      }
       if (relative_weight_of_p > 1){
       	relative_weight_of_p = 1;
       }
