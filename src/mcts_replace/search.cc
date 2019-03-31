@@ -579,20 +579,23 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
 
     for (int i = 0; i < n; i++){
       // double relative_weight_of_p = pow(node->GetEdges()[i].GetChild()->GetN(), my_policy_weight_exponent_) / ( 0.05 + node->GetEdges()[i].GetChild()->GetN()); // 0.05 is here to make Q have some influence after 1 visit.
-      double cpuct_as_prob = 0;
-      if(node->GetEdges()[i].GetChild()->GetN() > search_->params_.GetMaxCollisionVisitsId()){
-	double cpuct = log((node->GetN() + search_->params_.GetCpuctBase())/search_->params_.GetCpuctBase()) * sqrt(log(node->GetN())/(1+node->GetEdges()[i].GetChild()->GetN()));
+      // Second try: Let's just say policy weight is zero after 20.000 nodes
+      double relative_weight_of_p = 0;
+      if(node->GetEdges()[i].GetChild()->GetN() < 20000){
+	if(node->GetEdges()[i].GetChild()->GetN() > search_->params_.GetMaxCollisionVisitsId()){
+	  double cpuct = log((node->GetN() + search_->params_.GetCpuctBase())/search_->params_.GetCpuctBase()) * sqrt(log(node->GetN())/(1+node->GetEdges()[i].GetChild()->GetN()));
 	// transform cpuct with the sigmoid function (the logistic function, 1/(1 + exp(-x))
-	cpuct_as_prob = 2 * search_->params_.GetCpuct() * (1/(1 + exp(-cpuct)) - 0.5); // f(0) would be 0.5, we want it f(0) to be zero.
+	  cpuct_as_prob = 2 * search_->params_.GetCpuct() * (1/(1 + exp(-cpuct)) - 0.5); // f(0) would be 0.5, we want it f(0) to be zero.
       }
-      double relative_weight_of_p = pow(node->GetEdges()[i].GetChild()->GetN(), my_policy_weight_exponent_) / (0.05 + node->GetEdges()[i].GetChild()->GetN()) + cpuct_as_prob; // 0.05 is here to make Q have some influence after 1 visit.
-      // First try to defend better: let's stop boosting policy after 62.500 nodes
-      // Second try: cap policy_weight to 0.1 at 80000 nodes
-      if(relative_weight_of_p > 0.1 && node->GetEdges()[i].GetChild()->GetN() > 50000){ 
-	relative_weight_of_p = 0.2;
-      }
-      if (relative_weight_of_p > 1){
-      	relative_weight_of_p = 1;
+	relative_weight_of_p = pow(node->GetEdges()[i].GetChild()->GetN(), my_policy_weight_exponent_) / (0.05 + node->GetEdges()[i].GetChild()->GetN()) + cpuct_as_prob; // 0.05 is here to make Q have some influence after 1 visit.
+	// First try to defend better: let's stop boosting policy after 50.000 nodes
+	// if(relative_weight_of_p > 0.1 && node->GetEdges()[i].GetChild()->GetN() > 50000){ 
+	// 	relative_weight_of_p = 0.2; // this was a bug but it made two draws
+	// }
+
+	if (relative_weight_of_p > 1){
+	  relative_weight_of_p = 1;
+	}
       }
       double relative_weight_of_q = 1 - relative_weight_of_p;
       // get an new term which should encourage exploration by multiplying both policy and q with this number.
