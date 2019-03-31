@@ -485,7 +485,14 @@ void Search_revamp::ExtendNode(PositionHistory* history, Node_revamp* node) {
     // At higher visits counts, our policy term has no influence anymore.
     // I've modelled a function after the dynamic cpuct invented by DeepMind, so that our function decreases by half at the same number parent nodes as the the dynamic cpuct is doubled (for zero visit at the child). We reward exploration regardless of number of child visits, which might not be as effective as their strategy, but let's give it a go.
     // return exp(q_concentration * (0.246 + (1 - 0.246) / pow((1 + parent_n / 30000), 0.795)) * (q - abs(max_q)/2)); // reduce the overflow risk.
-    return exp(q_concentration * (q - abs(max_q)/2)); // reduce the overflow risk. However, with the default q_concentration 36.2, overflow isn't possible since exp(36.2 * 1) is less than max float. TODO restrict the parameter so that it cannot overflow and remove this division.
+
+    // Reduce q_concentration to 35.5 by 1E6 and 35.1 by 3E6.
+    if(parent_n > 100000){
+      float dynamic_q_concentration = - (log(parent.n, base = 25) - 3.575);
+      return exp(dynamic_q_concentration * (q - abs(max_q)/2)); // reduce the overflow risk.
+    } else {
+      return exp(q_concentration * (q - abs(max_q)/2)); // reduce the overflow risk. However, with the default q_concentration 36.2, overflow isn't possible since exp(36.2 * 1) is less than max float. TODO restrict the parameter so that it cannot overflow and remove this division.
+    }
   };
   case 2: {
     float x = 1.0 + 20.0 * (max_q - q);
