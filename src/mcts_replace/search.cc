@@ -582,8 +582,10 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
       // Second try: Let's just say policy weight is zero after 20.000 nodes
       double relative_weight_of_p = 0;
       if(node->GetEdges()[i].GetChild()->GetN() < 20000){
+	double cpuct=0;
+	double cpuct_as_prob=0;
 	if(node->GetEdges()[i].GetChild()->GetN() > search_->params_.GetMaxCollisionVisitsId()){
-	  double cpuct = log((node->GetN() + search_->params_.GetCpuctBase())/search_->params_.GetCpuctBase()) * sqrt(log(node->GetN())/(1+node->GetEdges()[i].GetChild()->GetN()));
+	  cpuct = log((node->GetN() + search_->params_.GetCpuctBase())/search_->params_.GetCpuctBase()) * sqrt(log(node->GetN())/(1+node->GetEdges()[i].GetChild()->GetN()));
 	// transform cpuct with the sigmoid function (the logistic function, 1/(1 + exp(-x))
 	  cpuct_as_prob = 2 * search_->params_.GetCpuct() * (1/(1 + exp(-cpuct)) - 0.5); // f(0) would be 0.5, we want it f(0) to be zero.
       }
