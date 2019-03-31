@@ -486,9 +486,9 @@ void Search_revamp::ExtendNode(PositionHistory* history, Node_revamp* node) {
     // I've modelled a function after the dynamic cpuct invented by DeepMind, so that our function decreases by half at the same number parent nodes as the the dynamic cpuct is doubled (for zero visit at the child). We reward exploration regardless of number of child visits, which might not be as effective as their strategy, but let's give it a go.
     // return exp(q_concentration * (0.246 + (1 - 0.246) / pow((1 + parent_n / 30000), 0.795)) * (q - abs(max_q)/2)); // reduce the overflow risk.
 
-    // Reduce q_concentration to 35.5 by 1E6 and 35.1 by 3E6.
+    // Reduce q_concentration to 35.3 by 1E6 and 34.8 by 3E6.
     if(parent_n > 100000){
-      float dynamic_q_concentration = - (log(parent.n, base = 25) - 3.575);
+      float dynamic_q_concentration = - (log(parent_n)/2.5 - 4.6);
       return exp(dynamic_q_concentration * (q - abs(max_q)/2)); // reduce the overflow risk.
     } else {
       return exp(q_concentration * (q - abs(max_q)/2)); // reduce the overflow risk. However, with the default q_concentration 36.2, overflow isn't possible since exp(36.2 * 1) is less than max float. TODO restrict the parameter so that it cannot overflow and remove this division.
