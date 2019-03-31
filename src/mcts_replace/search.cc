@@ -579,9 +579,9 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
 
     for (int i = 0; i < n; i++){
       // double relative_weight_of_p = pow(node->GetEdges()[i].GetChild()->GetN(), my_policy_weight_exponent_) / ( 0.05 + node->GetEdges()[i].GetChild()->GetN()); // 0.05 is here to make Q have some influence after 1 visit.
-      // Second try: Let's just say policy weight is zero after 20.000 nodes
+      // Second try: Let's just say policy weight is zero after 50.000 nodes
       double relative_weight_of_p = 0;
-      if(node->GetEdges()[i].GetChild()->GetN() < 20000){
+      if(node->GetEdges()[i].GetChild()->GetN() < 50000){
 	double cpuct=0;
 	double cpuct_as_prob=0;
 	if(node->GetEdges()[i].GetChild()->GetN() > search_->params_.GetMaxCollisionVisitsId()){
