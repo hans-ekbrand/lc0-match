@@ -490,7 +490,10 @@ void Search_revamp::ExtendNode(PositionHistory* history, Node_revamp* node) {
       // float dynamic_q_concentration = q_concentration - (log(parent_n)/2.5 - 4.6);
       // Reduce q_concentration to 34.7 by 1E6 and 33.9 by 3E6.      
       // float dynamic_q_concentration = q_concentration - (log(parent_n)/1.5 - 7.67);
-      float dynamic_q_concentration = q_concentration - (log(parent_n)/1.2 - 9.59);            
+      // Reduce q_concentration to 34.3 by 1E6 and 33.4 by 3E6.            
+      // float dynamic_q_concentration = q_concentration - (log(parent_n)/1.2 - 9.59);            
+      // Reduce q_concentration to 33.9 by 1E6 and 32.8 by 3E6.            
+      float dynamic_q_concentration = q_concentration - (log(parent_n) - 11.51);            
       return exp(dynamic_q_concentration * (q - abs(max_q)/2)); // reduce the overflow risk.
     } else {
       return exp(q_concentration * (q - abs(max_q)/2)); // reduce the overflow risk. However, with the default q_concentration 36.2, overflow isn't possible since exp(36.2 * 1) is less than max float. TODO restrict the parameter so that it cannot overflow and remove this division.
