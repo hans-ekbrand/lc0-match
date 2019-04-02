@@ -494,10 +494,9 @@ void Search_revamp::ExtendNode(PositionHistory* history, Node_revamp* node) {
       // float dynamic_q_concentration = q_concentration - (log(parent_n)/1.2 - 9.59);            
       // Reduce q_concentration to 33.9 by 1E6 and 32.8 by 3E6.            
       // float dynamic_q_concentration = q_concentration - (log(parent_n) - 11.51);
-      // monotonic (logaritmic) decrease works fine, but lets try cycling also
-      // float dynamic_q_concentration = (1 + cos(3.141592 * parent_n / 50000)) * 2.1 + 32; // New try with cycling q_concentration but this time dependent on root->GetN, not n. (parent_n is root->GetN() now).
-      // Try combining reduction and cycling
-      float dynamic_q_concentration = (1 + cos(3.141592 * parent_n / 50000)) * 2.1 + q_concentration - (log(parent_n) - 11.51) - 4.2;
+      // cyclic, mean = q_concentration - amplitude
+      float amplitude = 2.1;
+      float dynamic_q_concentration = (1 + cos(3.141592 * n / 50000)) * amplitude + q_concentration - 2 * amplitude;
       return exp(dynamic_q_concentration * (q - abs(max_q)/2)); // reduce the overflow risk.
     } else {
       return exp(q_concentration * (q - abs(max_q)/2)); // reduce the overflow risk. However, with the default q_concentration 36.2, overflow isn't possible since exp(36.2 * 1) is less than max float. TODO restrict the parameter so that it cannot overflow and remove this division.
@@ -534,8 +533,7 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
     double sum_of_P_of_expanded_nodes = 0.0;
     double sum_of_w_of_expanded_nodes = 0.0;
     for (int i = 0; i < n; i++) {
-      // double w = q_to_prob(node->GetEdges()[i].GetChild()->GetQ(), maxq, search_->params_.GetTemperature(), node->GetEdges()[i].GetChild()->GetN(), node->GetN());
-      double w = q_to_prob(node->GetEdges()[i].GetChild()->GetQ(), maxq, search_->params_.GetTemperature(), node->GetEdges()[i].GetChild()->GetN(), root_node_->GetN());      
+      double w = q_to_prob(node->GetEdges()[i].GetChild()->GetQ(), maxq, search_->params_.GetTemperature(), node->GetEdges()[i].GetChild()->GetN(), node->GetN());
       node->GetEdges()[i].GetChild()->SetW(w);
       sum_of_w_of_expanded_nodes += w;
       sum_of_P_of_expanded_nodes += node->GetEdges()[i].GetP();
@@ -595,40 +593,21 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
     // }
 
     for (int i = 0; i < n; i++){
-      // double relative_weight_of_p = pow(node->GetEdges()[i].GetChild()->GetN(), my_policy_weight_exponent_) / ( 0.05 + node->GetEdges()[i].GetChild()->GetN()); // 0.05 is here to make Q have some influence after 1 visit.
-      // Second try: Let's just say policy weight is zero after 20.000 nodes
       double relative_weight_of_p = 0;
-      if(node->GetEdges()[i].GetChild()->GetN() < 20000){
-	double cpuct=0;
-	double cpuct_as_prob=0;
-	if(node->GetEdges()[i].GetChild()->GetN() > search_->params_.GetMaxCollisionVisitsId()){
-	  cpuct = log((node->GetN() + search_->params_.GetCpuctBase())/search_->params_.GetCpuctBase()) * sqrt(log(node->GetN())/(1+node->GetEdges()[i].GetChild()->GetN()));
-	  // transform cpuct with the sigmoid function (the logistic function, 1/(1 + exp(-x))
-	  cpuct_as_prob = 2 * search_->params_.GetCpuct() * (1/(1 + exp(-cpuct)) - 0.5); // f(0) would be 0.5, we want it f(0) to be zero.
-	  // // Do a double log instead sigmoid.
-	  // // This mean policy stays relevant much longer
-	  // cpuct_as_prob = 2 * search_->params_.GetCpuct() * (log(cpuct) - 0.5); // f(0) would be 0.5, we want it f(0) to be zero.
-
+      double cpuct=0;
+      double cpuct_as_prob=0;
+      if(node->GetEdges()[i].GetChild()->GetN() > search_->params_.GetMaxCollisionVisitsId()){
+	cpuct = log((node->GetN() + search_->params_.GetCpuctBase())/search_->params_.GetCpuctBase()) * sqrt(log(node->GetN())/(1+node->GetEdges()[i].GetChild()->GetN()));
+	// transform cpuct with the sigmoid function (the logistic function, 1/(1 + exp(-x))
+	cpuct_as_prob = 2 * search_->params_.GetCpuct() * (1/(1 + exp(-cpuct)) - 0.5); // f(0) would be 0.5, we want it f(0) to be zero.
       }
-	relative_weight_of_p = pow(node->GetEdges()[i].GetChild()->GetN(), my_policy_weight_exponent_) / (0.05 + node->GetEdges()[i].GetChild()->GetN()) + cpuct_as_prob; // 0.05 is here to make Q have some influence after 1 visit.
-	// First try to defend better: let's stop boosting policy after 50.000 nodes
-	// if(relative_weight_of_p > 0.1 && node->GetEdges()[i].GetChild()->GetN() > 50000){ 
-	// 	relative_weight_of_p = 0.2; // this was a bug but it made two draws
-	// }
-
-	if (relative_weight_of_p > 1){
-	  relative_weight_of_p = 1;
-	}
+      relative_weight_of_p = pow(node->GetEdges()[i].GetChild()->GetN(), my_policy_weight_exponent_) / (0.05 + node->GetEdges()[i].GetChild()->GetN()) + cpuct_as_prob; // 0.05 is here to make Q have some influence after 1 visit.
+      if (relative_weight_of_p > 1){
+	relative_weight_of_p = 1;
       }
       double relative_weight_of_q = 1 - relative_weight_of_p;
-      // get an new term which should encourage exploration by multiplying both policy and q with this number.
-      // or, for just add it in, the exploration bonus is for _everyone_.
-      // old version
-      // weighted_p_and_q[i] = relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() + relative_weight_of_p * node->GetEdges()[i].GetP() + node->GetEdges()[i].GetP() * search_->params_.GetCpuct() * log((node->GetN() + search_->params_.GetCpuctBase())/search_->params_.GetCpuctBase()) * sqrt(log(node->GetN())/(1+node->GetEdges()[i].GetChild()->GetN()));
-      // new version
-      weighted_p_and_q[i] = relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() + relative_weight_of_p * node->GetEdges()[i].GetP(); // + cpuct_as_prob * node->GetEdges()[i].GetP(); // * node->GetEdges()[i].GetChild()->GetW();
+      weighted_p_and_q[i] = relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() + relative_weight_of_p * node->GetEdges()[i].GetP();
       
-      // weighted_p_and_q[i] = relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() + relative_weight_of_p * node->GetEdges()[i].GetP(); // without the cpuct term.
       if(DEBUG) { LOGFILE << "Weighted p and q for i=" << i << " " << weighted_p_and_q[i]; }
       sum_of_weighted_p_and_q += weighted_p_and_q[i];
     }
