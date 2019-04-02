@@ -495,7 +495,7 @@ void Search_revamp::ExtendNode(PositionHistory* history, Node_revamp* node) {
       // Reduce q_concentration to 33.9 by 1E6 and 32.8 by 3E6.            
       // float dynamic_q_concentration = q_concentration - (log(parent_n) - 11.51);
       // cyclic, mean = q_concentration - amplitude
-      float amplitude = 2.1;
+      float amplitude = 1.1;
       float dynamic_q_concentration = (1 + cos(3.141592 * n / 50000)) * amplitude + q_concentration - 2 * amplitude;
       return exp(dynamic_q_concentration * (q - abs(max_q)/2)); // reduce the overflow risk.
     } else {
