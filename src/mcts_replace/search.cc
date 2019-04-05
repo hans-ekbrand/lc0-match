@@ -45,8 +45,8 @@ namespace {
 float const NN_Q_INACCURACY = 0.044;  // 0.028;  // now uses q_concentration_ = cpuct
 float const NN_Q_P_INACCURACY_RATIO_SQUARED = 5.6;  // now uses policy_weight_exponent_ = fpu-reduction
 
-float const PROPAGATE_POWER_INCREASING = 1.0;
-float const PROPAGATE_POWER_DECREASING = 1.0;  // 2.0
+float const PROPAGATE_POWER_INCREASING = 0.9;
+float const PROPAGATE_POWER_DECREASING = 1.2;  // 2.0
 
 
 int const MAX_NEW_SIBLINGS = 10000;
