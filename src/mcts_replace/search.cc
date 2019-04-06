@@ -547,8 +547,6 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
       node->GetEdges()[i].GetChild()->SetW(node->GetEdges()[i].GetChild()->GetW() * normalise_to_sum_of_p );
     }
 
-    // End of computeChildweights part one
-    
     // We want to use P even if there is a Q available, since single Q values are always uncertain, but becomes more certain the more subnodes there are.
 
     // In UCT the choice of node to descend/expand is made using the formula (highest score gets picked):
@@ -919,70 +917,25 @@ void SearchWorker_revamp::recalcPropagatedQ(Node_revamp* node) {
   }
   node->SetN(n);
 
-  int m = node->GetNumChildren();
-  float maxq = -2.0;
-  if (Q_TO_PROB_MODE == 2) {  // maxq not used for Q_TO_PROB_MODE = 1
-    for (int i = 0; i < m; i++) {
-      float q = node->GetEdges()[i].GetChild()->GetQ();
-      if (q > maxq) maxq = q;
-    }
-  }
-  double sum_of_P_of_expanded_nodes = 0.0;
-  double sum_of_w_of_expanded_nodes = 0.0;
-  for (int i = 0; i < m; i++) {
-    double w = q_to_prob(node->GetEdges()[i].GetChild()->GetQ(), maxq, search_->params_.GetTemperature(), node->GetEdges()[i].GetChild()->GetN(), node->GetN());
-    node->GetEdges()[i].GetChild()->SetW(w);
-    sum_of_w_of_expanded_nodes += w;
-    sum_of_P_of_expanded_nodes += node->GetEdges()[i].GetP();
-    // LOGFILE << "Raw P of node: " << i << " is " << node->GetEdges()[i].GetP();
-    // LOGFILE << "Raw Q of node: " << i << " is " << node->GetEdges()[i].GetChild()->GetOrigQ();	    
-  }
-  // factor for normalising w:s so their sum matches sum_of_P_of_expanded_nodes
-  double normalise_to_sum_of_p = sum_of_P_of_expanded_nodes / sum_of_w_of_expanded_nodes;
-  
-  for (int i = 0; i < m; i++) {
-    node->GetEdges()[i].GetChild()->SetW(node->GetEdges()[i].GetChild()->GetW() * normalise_to_sum_of_p );
-  }
+  float total_children_weight = computeChildWeights(node);
 
-  // End of first part of computeChildWeights
-  float total_children_weight = sum_of_P_of_expanded_nodes;
-
-  // Start of second part of computeChildWeights   
-  std::vector<double> weighted_p_and_q(m);
-  double sum_of_weighted_p_and_q = 0.0;
-  const float my_policy_weight_exponent_ = search_->params_.GetFpuValue();
-
-  for (int i = 0; i < m; i++){
-    double relative_weight_of_p = 0;
-    double cpuct=0;
-    double cpuct_as_prob=0;
-    if(node->GetEdges()[i].GetChild()->GetN() > search_->params_.GetMaxCollisionVisitsId()){
-      cpuct = log((node->GetN() + search_->params_.GetCpuctBase())/search_->params_.GetCpuctBase()) * sqrt(log(node->GetN())/(1+node->GetEdges()[i].GetChild()->GetN()));
-      // transform cpuct with the sigmoid function (the logistic function, 1/(1 + exp(-x))
-      cpuct_as_prob = 2 * search_->params_.GetCpuct() * (1/(1 + exp(-cpuct)) - 0.5); // f(0) would be 0.5, we want it f(0) to be zero.
-      }
-    relative_weight_of_p = pow(node->GetEdges()[i].GetChild()->GetN(), my_policy_weight_exponent_) / (0.05 + node->GetEdges()[i].GetChild()->GetN()) + cpuct_as_prob; // 0.05 is here to make Q have some influence after 1 visit.
-    if (relative_weight_of_p > 1){
-      relative_weight_of_p = 1;
-    }
-    double relative_weight_of_q = 1 - relative_weight_of_p;
-    weighted_p_and_q[i] = relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() + relative_weight_of_p * node->GetEdges()[i].GetP();
-    
-    // if(DEBUG) { LOGFILE << "Weighted p and q for i=" << i << " " << weighted_p_and_q[i]; }
-    sum_of_weighted_p_and_q += weighted_p_and_q[i];
-  }
-  
-  // make these sum to the sum of P of all the expanded children
-  double final_sum_of_weights_for_the_exanded_children = 0.0; // save the final sum here, we will return it.
-  for (int i = 0; i < m; i++){
-    node->GetEdges()[i].GetChild()->SetW(weighted_p_and_q[i] / sum_of_weighted_p_and_q * sum_of_P_of_expanded_nodes);
-    final_sum_of_weights_for_the_exanded_children += node->GetEdges()[i].GetChild()->GetW();
-  }
-  if(final_sum_of_weights_for_the_exanded_children > 1.0007){
-    LOGFILE << "Error: sum of weights too high." << final_sum_of_weights_for_the_exanded_children;
-  }
-  // End of second part of computeChildWeights  
-  
+//  if (total_children_weight < 0.0 || total_children_weight - 1.0 > 1.00012) {
+//    std::cerr << "total_children_weight: " << total_children_weight << "\n";
+//    abort();
+//  }
+//  float totw = 0.0;
+//  for (int i = 0; i < node->GetNumChildren(); i++) {
+//    float w = node->GetEdges()[i].GetChild()->GetW();
+//    if (w < 0.0) {
+//      std::cerr << "w: " << w << "\n";
+//      abort();
+//    }
+//    totw += w;
+//  }
+//  if (abs(total_children_weight - totw) > 1.00012) {
+//    std::cerr << "total_children_weight: " << total_children_weight << ", totw: " << total_children_weight << "\n";
+//    abort();
+//  }
 
   // Average Q START
   float q = (1.0 - total_children_weight) * node->GetOrigQ();
@@ -992,13 +945,21 @@ void SearchWorker_revamp::recalcPropagatedQ(Node_revamp* node) {
   node->SetQ(q);
   // Average Q STOP
 
-  // Start of second part of computeChildWeights
-  // End of second part of computeChildWeights
   
 	int first_non_created_child_idx = node->GetNumChildren();
 	while (first_non_created_child_idx < node->GetNumEdges() && node->GetEdges()[first_non_created_child_idx].GetChild() != nullptr) {
 		first_non_created_child_idx++;
 	}
+
+//  if (MULTIPLE_NEW_SIBLINGS)
+//    n = node->GetNumEdges() - first_non_created_child_idx;
+//  else
+//    n = node->GetNumEdges() > first_non_created_child_idx ? 1 : 0;
+
+//  for (int i = 0; i < node->GetNumChildren(); i++) {
+//    n += node->GetEdges()[i].GetChild()->GetNExtendable();
+//  }
+//  node->SetNExtendable(n);
 
 	int16_t max_idx = -1;
 	float max_w = 0.0;
