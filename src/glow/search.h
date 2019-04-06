@@ -165,7 +165,7 @@ private:
 	void recalcPropagatedQ(Node_revamp* node);
 	void pickNodesToExtend();
 	int appendHistoryFromTo(std::vector<Move> *movestack, PositionHistory *history, Node_revamp* from, Node_revamp* to);
-	float computeChildWeights(Node_revamp* node);
+	float computeChildWeights(Node_revamp* node, bool evalution_weights);
 	int propagate();
 	int extendTree(std::vector<Move> *movestack, PositionHistory *history);
 	void buildJunctionRTree();

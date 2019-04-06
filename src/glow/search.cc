@@ -495,7 +495,7 @@ void Search_revamp::ExtendNode(PositionHistory* history, Node_revamp* node) {
 }
 
 
-float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
+  float SearchWorker_revamp::computeChildWeights(Node_revamp* node, bool evalution_weights) {
   int n = node->GetNumChildren();
   bool DEBUG = false;
   // If no child is extended, then just use P.
@@ -581,7 +581,7 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
       double relative_weight_of_p = 0;
       double cpuct=0;
       double cpuct_as_prob=0;
-      if(node->GetEdges()[i].GetChild()->GetN() > search_->params_.GetMaxCollisionVisitsId()){
+      if(node->GetEdges()[i].GetChild()->GetN() > (uint32_t)search_->params_.GetMaxCollisionVisitsId()){
 	cpuct = log((node->GetN() + search_->params_.GetCpuctBase())/search_->params_.GetCpuctBase()) * sqrt(log(node->GetN())/(1+node->GetEdges()[i].GetChild()->GetN()));
 	// transform cpuct with the sigmoid function (the logistic function, 1/(1 + exp(-x))
 	cpuct_as_prob = 2 * search_->params_.GetCpuct() * (1/(1 + exp(-cpuct)) - 0.5); // f(0) would be 0.5, we want it f(0) to be zero.
@@ -591,7 +591,11 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
 	relative_weight_of_p = 1;
       }
       double relative_weight_of_q = 1 - relative_weight_of_p;
-      weighted_p_and_q[i] = relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() + relative_weight_of_p * node->GetEdges()[i].GetP();
+      if(node->GetEdges()[i].GetChild()->GetN() > (uint32_t)search_->params_.GetMaxCollisionVisitsId() && evalution_weights == false){
+	weighted_p_and_q[i] = relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() + relative_weight_of_p * node->GetEdges()[i].GetP() + cpuct; // Weight for exploration
+      } else {
+	weighted_p_and_q[i] = relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() + relative_weight_of_p * node->GetEdges()[i].GetP();  // Weight for evaluation
+      }
       
       if(DEBUG) { LOGFILE << "Weighted p and q for i=" << i << " " << weighted_p_and_q[i]; }
       sum_of_weighted_p_and_q += weighted_p_and_q[i];
@@ -902,7 +906,7 @@ void SearchWorker_revamp::recalcPropagatedQ(Node_revamp* node) {
   }
   node->SetN(n);
 
-  float total_children_weight = computeChildWeights(node);
+  float total_children_weight = computeChildWeights(node, true);
 
 //  if (total_children_weight < 0.0 || total_children_weight - 1.0 > 1.00012) {
 //    std::cerr << "total_children_weight: " << total_children_weight << "\n";
@@ -929,6 +933,8 @@ void SearchWorker_revamp::recalcPropagatedQ(Node_revamp* node) {
   }
   node->SetQ(q);
   // Average Q STOP
+
+  total_children_weight = computeChildWeights(node, false);
 
   
 	int first_non_created_child_idx = node->GetNumChildren();
