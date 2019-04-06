@@ -947,16 +947,7 @@ void SearchWorker_revamp::recalcPropagatedQ(Node_revamp* node) {
   // End of first part of computeChildWeights
   float total_children_weight = sum_of_P_of_expanded_nodes;
 
-  // Average Q START
-  float q = (1.0 - total_children_weight) * node->GetOrigQ();
-  for (int i = 0; i < node->GetNumChildren(); i++) {
-    q -= node->GetEdges()[i].GetChild()->GetW() * node->GetEdges()[i].GetChild()->GetQ();
-  }
-  node->SetQ(q);
-  // Average Q STOP
-
-  // Start of second part of computeChildWeights 
-
+  // Start of second part of computeChildWeights   
   std::vector<double> weighted_p_and_q(m);
   double sum_of_weighted_p_and_q = 0.0;
   const float my_policy_weight_exponent_ = search_->params_.GetFpuValue();
@@ -990,6 +981,18 @@ void SearchWorker_revamp::recalcPropagatedQ(Node_revamp* node) {
   if(final_sum_of_weights_for_the_exanded_children > 1.0007){
     LOGFILE << "Error: sum of weights too high." << final_sum_of_weights_for_the_exanded_children;
   }
+  // End of second part of computeChildWeights  
+  
+
+  // Average Q START
+  float q = (1.0 - total_children_weight) * node->GetOrigQ();
+  for (int i = 0; i < node->GetNumChildren(); i++) {
+    q -= node->GetEdges()[i].GetChild()->GetW() * node->GetEdges()[i].GetChild()->GetQ();
+  }
+  node->SetQ(q);
+  // Average Q STOP
+
+  // Start of second part of computeChildWeights
   // End of second part of computeChildWeights
   
 	int first_non_created_child_idx = node->GetNumChildren();
