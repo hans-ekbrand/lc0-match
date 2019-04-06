@@ -616,7 +616,7 @@ void SearchWorker_revamp::pickNodesToExtend() {
       }
       float propagate_power_decreasing = node->GetNumChildren() == 1 ? PROPAGATE_POWER_INCREASING : PROPAGATE_POWER_DECREASING;
       for (int i = 0; i < node->GetNumChildren(); i++) {
-        float br_max_w_incr = pow(node->GetEdges()[i].GetChild()->GetW(), propagate_power_decreasing) * node->GetEdges()[i].GetChild()->GetMaxWDecr() * search_->params_.GetCpuctBase();
+        float br_max_w_incr = pow(node->GetEdges()[i].GetChild()->GetW(), propagate_power_decreasing) * node->GetEdges()[i].GetChild()->GetMaxWDecr() * search_->params_.GetCpuctFactor();
         if (br_max_w_incr > max_w_incr) {
           max_w_incr = br_max_w_incr;
           if (br_max_w_incr > max_w_decr) {
