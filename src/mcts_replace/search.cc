@@ -623,7 +623,7 @@ void SearchWorker_revamp::pickNodesToExtend() {
             max_idx = i;
           }
         }
-        float br_max_w_decr = pow(node->GetEdges()[i].GetChild()->GetW(), PROPAGATE_POWER_INCREASING) * node->GetEdges()[i].GetChild()->GetMaxWIncr();
+        float br_max_w_decr = pow(node->GetEdges()[i].GetChild()->GetW(), PROPAGATE_POWER_INCREASING) * node->GetEdges()[i].GetChild()->GetMaxWIncr() * search_->params_.GetCpuctFactor();
         if (br_max_w_decr > max_w_decr) {
           max_w_decr = br_max_w_decr;
           if (br_max_w_decr > max_w_incr) {
@@ -930,9 +930,9 @@ void SearchWorker_revamp::recalcPropagatedQ(Node_revamp* node) {
     node->GetEdges()[i].GetChild()->SetW(part_w * cur_p * p + (1.0 - part_w) * node->GetEdges()[i].GetP());
     cur_p *= 1.0 - p;
   }
-  float part_w = 1.0 / (1.0 + policy_weight_exponent_ / (float)node->GetEdges()[i].GetChild()->GetN());  // NN_Q_P_INACCURACY_RATIO_SQUARED
-//std::cerr << "= " << part_w << ", " << cur_p << "\n";
-  node->GetEdges()[i].GetChild()->SetW(part_w * cur_p + (1.0 - part_w) * node->GetEdges()[i].GetP());
+//   float part_w = 1.0 / (1.0 + policy_weight_exponent_ / (float)node->GetEdges()[i].GetChild()->GetN());  // NN_Q_P_INACCURACY_RATIO_SQUARED
+// //std::cerr << "= " << part_w << ", " << cur_p << "\n";
+//   node->GetEdges()[i].GetChild()->SetW(part_w * cur_p + (1.0 - part_w) * node->GetEdges()[i].GetP());
   
 	int16_t max_idx = -1;
 	float max_w_incr = 0.0;
