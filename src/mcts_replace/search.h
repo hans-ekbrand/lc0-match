@@ -156,11 +156,16 @@ private:
 
 class SearchWorker_revamp {
 public:
+
+  // Variance of Q: CPuct: q_concentration_
+  // Policy_weight Exponent: FpuValue: policy_weight_exponent_
+  // Depth Penalty: CPuctBase: (params)
+  // Flatten P distribution: PolicySoftmaxTemp: p_concentration_
 	SearchWorker_revamp(Search_revamp *search) :
 		search_(search),
 		q_concentration_(search->params_.GetCpuct()),
 		p_concentration_(search->params_.GetPolicySoftmaxTemp()),
-		policy_weight_exponent_(search->params_.GetCpuctBase()),
+		policy_weight_exponent_(search->params_.GetFpuValue()),
 		batch_size_(search->params_.GetMiniBatchSize()),
     new_nodes_amount_limit_(batch_size_ * 2),
 		history_fill_(search->params_.GetHistoryFill()),

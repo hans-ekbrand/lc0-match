@@ -45,8 +45,8 @@ namespace {
 float const NN_Q_INACCURACY = 0.044;  // 0.028;  // now uses q_concentration_ = cpuct
 float const NN_Q_P_INACCURACY_RATIO_SQUARED = 5.6;  // now uses policy_weight_exponent_ = fpu-reduction
 
-float const PROPAGATE_POWER_INCREASING = 0.9;
-float const PROPAGATE_POWER_DECREASING = 1.2;  // 2.0
+float const PROPAGATE_POWER_INCREASING = 1;
+float const PROPAGATE_POWER_DECREASING = 1;  // 2.0
 
 
 int const MAX_NEW_SIBLINGS = 10000;
@@ -616,7 +616,7 @@ void SearchWorker_revamp::pickNodesToExtend() {
       }
       float propagate_power_decreasing = node->GetNumChildren() == 1 ? PROPAGATE_POWER_INCREASING : PROPAGATE_POWER_DECREASING;
       for (int i = 0; i < node->GetNumChildren(); i++) {
-        float br_max_w_incr = pow(node->GetEdges()[i].GetChild()->GetW(), propagate_power_decreasing) * node->GetEdges()[i].GetChild()->GetMaxWDecr();
+        float br_max_w_incr = pow(node->GetEdges()[i].GetChild()->GetW(), propagate_power_decreasing) * node->GetEdges()[i].GetChild()->GetMaxWDecr() * search_->params_.GetCpuctBase();
         if (br_max_w_incr > max_w_incr) {
           max_w_incr = br_max_w_incr;
           if (br_max_w_incr > max_w_decr) {
@@ -920,7 +920,10 @@ void SearchWorker_revamp::recalcPropagatedQ(Node_revamp* node) {
 //    MaxVs res2 = compute_max(cur_q, cur_q_inacc, node->GetEdges()[i].GetChild()->GetQ(), node->GetEdges()[i].GetChild()->GetQInacc());
 //    std::cerr << "n: " << node->GetEdges()[i].GetChild()->GetN() << ", deltaprob: " << res1.prob2 - res2.prob2 << ", logdeltaprob: " << log(res1.prob2 / res2.prob2) << "\n";
     
-    float part_w = 1.0 / (1.0 + policy_weight_exponent_ / (float)node->GetEdges()[i].GetChild()->GetN());  // NN_Q_P_INACCURACY_RATIO_SQUARED
+    //float part_w = 1.0 / (1.0 + policy_weight_exponent_ / (float)node->GetEdges()[i].GetChild()->GetN());  // NN_Q_P_INACCURACY_RATIO_SQUARED
+
+    float part_w = 1.0 - pow(node->GetEdges()[i].GetChild()->GetN(), policy_weight_exponent_) / ( 0.05 + node->GetEdges()[i].GetChild()->GetN()); // 0.05 is here to make Q have some influence after 1 visit.
+
     float p = node->GetEdges()[i].GetChild()->GetW();
 
 //std::cerr << ": " << part_w << ", " << p << ", " << cur_p << "\n";
