@@ -33,7 +33,8 @@
 #include "chess/callbacks.h"
 #include "chess/uciloop.h"
 #include "mcts/node.h"
-#include "mcts/params.h"
+#include "search/search.h"
+#include "search/params.h"
 #include "neural/cache.h"
 #include "neural/network.h"
 #include "syzygy/syzygy.h"
@@ -43,20 +44,8 @@
 
 namespace lczero {
 
-struct SearchLimits {
-  // Type for N in nodes is currently uint32_t, so set limit in order not to
-  // overflow it.
-  std::int64_t visits = 4000000000;
-  std::int64_t playouts = -1;
-  int depth = -1;
-  optional<std::chrono::steady_clock::time_point> search_deadline;
-  bool infinite = false;
-  MoveList searchmoves;
 
-  std::string DebugString() const;
-};
-
-class Search {
+class Search : public SearchCommon {
  public:
   Search(const NodeTree& tree, Network* network,
          BestMoveInfo::Callback best_move_callback,
@@ -89,11 +78,10 @@ class Search {
   // Returns the evaluation of the best move, WITHOUT temperature. This differs
   // from the above function; with temperature enabled, these two functions may
   // return results from different possible moves.
-  float GetBestEval() const;
+  // Returns pair {Q, D}.
+  std::pair<float, float> GetBestEval() const;
   // Returns the total number of playouts in the search.
   std::int64_t GetTotalPlayouts() const;
-  // Returns the search parameters.
-  const SearchParams& GetParams() const { return params_; }
 
  private:
   // Computes the best move, maybe with temperature (according to the settings).
@@ -111,6 +99,7 @@ class Search {
   int64_t GetTimeSinceStart() const;
   int64_t GetTimeToDeadline() const;
   void UpdateRemainingMoves();
+  void UpdateKLDGain();
   void MaybeTriggerStop();
   void MaybeOutputInfo();
   void SendUciInfo();  // Requires nodes_mutex_ to be held.
@@ -156,16 +145,9 @@ class Search {
   std::vector<std::thread> threads_ GUARDED_BY(threads_mutex_);
 
   Node* root_node_;
-  NNCache* cache_;
-  SyzygyTablebase* syzygy_tb_;
-  // Fixed positions which happened before the search.
-  const PositionHistory& played_history_;
-
-  Network* const network_;
-  const SearchLimits limits_;
-  const std::chrono::steady_clock::time_point start_time_;
-  const int64_t initial_visits_;
   optional<std::chrono::steady_clock::time_point> nps_start_time_;
+
+  const int64_t initial_visits_;
 
   mutable SharedMutex nodes_mutex_;
   EdgeAndNode current_best_edge_ GUARDED_BY(nodes_mutex_);
@@ -174,15 +156,17 @@ class Search {
   int64_t total_playouts_ GUARDED_BY(nodes_mutex_) = 0;
   int64_t remaining_playouts_ GUARDED_BY(nodes_mutex_) =
       std::numeric_limits<int64_t>::max();
+  // If kldgain minimum checks enabled, this was the visit distribution at the
+  // last kldgain interval triggering.
+  std::vector<uint32_t> prev_dist_ GUARDED_BY(counters_mutex_);
+  // Total visits at the last time prev_dist_ was cached.
+  uint32_t prev_dist_visits_total_ GUARDED_BY(counters_mutex_) = 0;
+  // If true, search should exit as kldgain evaluation showed too little change.
+  bool kldgain_too_small_ GUARDED_BY(counters_mutex_) = false;
   // Maximum search depth = length of longest path taken in PickNodetoExtend.
   uint16_t max_depth_ GUARDED_BY(nodes_mutex_) = 0;
   // Cummulative depth of all paths taken in PickNodetoExtend.
   uint64_t cum_depth_ GUARDED_BY(nodes_mutex_) = 0;
-  std::atomic<int> tb_hits_{0};
-
-  BestMoveInfo::Callback best_move_callback_;
-  ThinkingInfo::Callback info_callback_;
-  const SearchParams params_;
 
   friend class SearchWorker;
 };
@@ -250,6 +234,8 @@ class SearchWorker {
     Node* node;
     // Value from NN's value head, or -1/0/1 for terminal nodes.
     float v;
+    // Draw probability for NN's with WDL value head
+    float d;
     int multivisit = 0;
     uint16_t depth;
     bool nn_queried = false;

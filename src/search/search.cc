@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018 The LCZero Authors
+  Copyright (C) 2018-2019 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -25,43 +25,50 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "neural/writer.h"
+#include "search/search.h"
 
+#include <algorithm>
+#include <chrono>
+#include <cmath>
 #include <iomanip>
+#include <iostream>
+#include <iterator>
 #include <sstream>
-#include "utils/commandline.h"
-#include "utils/exception.h"
-#include "utils/filesystem.h"
+#include <thread>
+
+#include "neural/cache.h"
+#include "neural/encoder.h"
+#include "utils/fastmath.h"
 #include "utils/random.h"
 
 namespace lczero {
 
-TrainingDataWriter::TrainingDataWriter(int game_id) {
-  static std::string directory =
-      CommandLine::BinaryDirectory() + "/data-" + Random::Get().GetString(12);
-  // It's fine if it already exists.
-  CreateDirectory(directory.c_str());
-
-  std::ostringstream oss;
-  oss << directory << '/' << "game_" << std::setfill('0') << std::setw(6)
-      << game_id << ".gz";
-
-  filename_ = oss.str();
-  fout_ = gzopen(filename_.c_str(), "wb");
-  if (!fout_) throw Exception("Cannot create gzip file " + filename_);
-}
-
-void TrainingDataWriter::WriteChunk(const V4TrainingData& data) {
-  auto bytes_written =
-      gzwrite(fout_, reinterpret_cast<const char*>(&data), sizeof(data));
-  if (bytes_written != sizeof(data)) {
-    throw Exception("Unable to write into " + filename_);
+std::string SearchLimits::DebugString() const {
+  std::ostringstream ss;
+  ss << "visits:" << visits << " playouts:" << playouts << " depth:" << depth
+     << " infinite:" << infinite;
+  if (search_deadline) {
+    ss << " search_deadline:"
+       << FormatTime(SteadyClockToSystemClock(*search_deadline));
   }
+  return ss.str();
 }
 
-void TrainingDataWriter::Finalize() {
-  gzclose(fout_);
-  fout_ = nullptr;
-}
+
+SearchCommon::SearchCommon(const NodeTreeCommon& tree, Network* network,
+               BestMoveInfo::Callback best_move_callback,
+               ThinkingInfo::Callback info_callback, const SearchLimits& limits,
+               const OptionsDict& options, NNCache* cache,
+               SyzygyTablebase* syzygy_tb)
+    : cache_(cache),
+      syzygy_tb_(syzygy_tb),
+      played_history_(tree.GetPositionHistory()),
+      network_(network),
+      limits_(limits),
+      start_time_(std::chrono::steady_clock::now()),
+      best_move_callback_(best_move_callback),
+      info_callback_(info_callback),
+      params_(options) {}
+
 
 }  // namespace lczero

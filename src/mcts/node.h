@@ -38,6 +38,7 @@
 #include "neural/encoder.h"
 #include "neural/writer.h"
 #include "utils/mutex.h"
+#include "search/node.h"
 
 namespace lczero {
 
@@ -154,6 +155,7 @@ class Node {
   // Returns node eval, i.e. average subtree V for non-terminal node and -1/0/1
   // for terminal nodes.
   float GetQ() const { return q_; }
+  float GetD() const { return d_; }
 
   // Returns whether the node is known to be draw/lose/win.
   bool IsTerminal() const { return is_terminal_; }
@@ -174,7 +176,7 @@ class Node {
   // * Q (weighted average of all V in a subtree)
   // * N (+=1)
   // * N-in-flight (-=1)
-  void FinalizeScoreUpdate(float v, int multivisit);
+  void FinalizeScoreUpdate(float v, float d, int multivisit);
   // When search decides to treat one visit as several (in case of collisions
   // or visiting terminal nodes several times), it amplifies the visit by
   // incrementing n_in_flight.
@@ -204,9 +206,10 @@ class Node {
   // in depth parameter, and returns true if it was indeed updated.
   bool UpdateFullDepth(uint16_t* depth);
 
-  V3TrainingData GetV3TrainingData(GameResult result,
+  V4TrainingData GetV4TrainingData(GameResult result,
                                    const PositionHistory& history,
-                                   FillEmptyHistory fill_empty_history) const;
+                                   FillEmptyHistory fill_empty_history,
+                                   float best_q, float best_d) const;
 
   // Returns range for iterating over edges.
   ConstIterator Edges() const;
@@ -265,6 +268,9 @@ class Node {
   // of the player who "just" moved to reach this position, rather than from the
   // perspective of the player-to-move for the position.
   float q_ = 0.0f;
+  // Averaged draw probability. Works similarly to Q, except that D is not
+  // flipped depending on the side to move.
+  float d_ = 0.0f;
   // Sum of policy priors which have had at least one playout.
   float visited_policy_ = 0.0f;
   // How many completed visits this node had.
@@ -303,9 +309,9 @@ class Node {
 
 // A basic sanity check. This must be adjusted when Node members are adjusted.
 #if defined(__i386__) || (defined(__arm__) && !defined(__aarch64__))
-static_assert(sizeof(Node) == 48, "Unexpected size of Node for 32bit compile");
+static_assert(sizeof(Node) == 52, "Unexpected size of Node for 32bit compile");
 #else
-static_assert(sizeof(Node) == 72, "Unexpected size of Node");
+static_assert(sizeof(Node) == 80, "Unexpected size of Node");
 #endif
 
 // Contains Edge and Node pair and set of proxy functions to simplify access
@@ -331,6 +337,9 @@ class EdgeAndNode {
   // Proxy functions for easier access to node/edge.
   float GetQ(float default_q) const {
     return (node_ && node_->GetN() > 0) ? node_->GetQ() : default_q;
+  }
+  float GetD() const {
+    return (node_ && node_->GetN() > 0) ? node_->GetD() : 0.0f;
   }
   // N-related getters, from Node (if exists).
   uint32_t GetN() const { return node_ ? node_->GetN() : 0; }
@@ -506,7 +515,7 @@ class Node::NodeRange {
   friend class Node;
 };
 
-class NodeTree {
+class NodeTree : public NodeTreeCommon {
  public:
   ~NodeTree() { DeallocateTree(); }
   // Adds a move to current_head_.
@@ -522,12 +531,8 @@ class NodeTree {
   // or if it's shorter than before.
   bool ResetToPosition(const std::string& starting_fen,
                        const std::vector<Move>& moves);
-  const Position& HeadPosition() const { return history_.Last(); }
-  int GetPlyCount() const { return HeadPosition().GetGamePly(); }
-  bool IsBlackToMove() const { return HeadPosition().IsBlackToMove(); }
   Node* GetCurrentHead() const { return current_head_; }
   Node* GetGameBeginNode() const { return gamebegin_node_.get(); }
-  const PositionHistory& GetPositionHistory() const { return history_; }
 
  private:
   void DeallocateTree();
@@ -535,7 +540,6 @@ class NodeTree {
   Node* current_head_ = nullptr;
   // Root node of a game tree.
   std::unique_ptr<Node> gamebegin_node_;
-  PositionHistory history_;
 };
 
 }  // namespace lczero

@@ -34,8 +34,9 @@
 #include <atomic>
 #include "chess/callbacks.h"
 #include "chess/uciloop.h"
-#include "mcts/params.h"
-#include "mcts_replace/node.h"
+#include "search/params.h"
+#include "glow/node.h"
+#include "search/search.h"
 #include "neural/network.h"
 #include "neural/cache.h"
 #include "syzygy/syzygy.h"
@@ -45,24 +46,11 @@
 
 namespace lczero {
 
-struct SearchLimits_revamp {
-	// Type for N in nodes is currently uint32_t, so set limit in order not to
-	// overflow it.
-	std::int64_t visits = -1;  // Why is this 4000000000 in mcts code?
-	std::int64_t playouts = -1;
-	int depth = -1;
-	optional<std::chrono::steady_clock::time_point> search_deadline;
-	bool infinite = false;
-	MoveList searchmoves;
-
-	std::string DebugString() const;
-};
-
-class Search_revamp {
+class Search_revamp : public SearchCommon {
 public:
 	Search_revamp(const NodeTree_revamp& tree, Network* network,
 		 BestMoveInfo::Callback best_move_callback,
-		 ThinkingInfo::Callback info_callback, const SearchLimits_revamp& limits,
+		 ThinkingInfo::Callback info_callback, const SearchLimits& limits,
 		 const OptionsDict& options, NNCache* cache,
 		 SyzygyTablebase* syzygy_tb,
 		 bool ponder = false);
@@ -103,24 +91,11 @@ private:
 	std::vector<std::thread> threads_;
 
 	Node_revamp* root_node_;
-	NNCache* cache_;
-	SyzygyTablebase* syzygy_tb_;
-	// Fixed positions which happened before the search.
-	const PositionHistory& played_history_;
 
-	Network* const network_;
-	const SearchLimits_revamp limits_;
-
-	const SearchParams params_;
+        const int64_t initial_visits_;
 
 	bool ponder_ = false;
 	std::mutex ponder_lock_;
-
-	const std::chrono::steady_clock::time_point start_time_;
-	const int64_t initial_visits_;
-
-	BestMoveInfo::Callback best_move_callback_;
-	ThinkingInfo::Callback info_callback_;
 
 	std::mutex busy_mutex_;
 	int iteration_count_a_ = 0;
@@ -130,8 +105,6 @@ private:
 	int full_tree_depth_ = 0;
 	uint64_t cum_depth_ = 0;
 	//std::mutex counters_lock_;
-  std::atomic<int> tb_hits_{0};
-
 
 	int64_t last_uci_time_ = 0;
 	std::atomic<bool> not_stop_searching_{true};
@@ -160,7 +133,7 @@ public:
 		search_(search),
 		q_concentration_(search->params_.GetCpuct()),
 		p_concentration_(search->params_.GetPolicySoftmaxTemp()),
-		policy_weight_exponent_(search->params_.GetFpuReduction()),
+		policy_weight_exponent_(search->params_.GetCpuctFactor()),
 		batch_size_(search->params_.GetMiniBatchSize()),
     new_nodes_amount_limit_(batch_size_ * 2),
 		history_fill_(search->params_.GetHistoryFill()),

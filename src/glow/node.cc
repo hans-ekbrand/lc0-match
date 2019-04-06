@@ -25,7 +25,7 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "mcts_replace/node.h"
+#include "glow/node.h"
 
 #include <algorithm>
 #include <cassert>

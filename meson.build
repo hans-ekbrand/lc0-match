@@ -1,5 +1,5 @@
 # This file is part of Leela Chess Zero.
-# Copyright (C) 2018 The LCZero Authors
+# Copyright (C) 2018-2019 The LCZero Authors
 #
 # Leela Chess is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -26,7 +26,6 @@ endif
 if cc.get_id() == 'clang' or cc.get_id() == 'gcc'
   add_project_arguments('-Wextra', language : 'cpp')
   add_project_arguments('-pedantic', language : 'cpp')
-  add_project_arguments('-ffast-math', language : 'cpp')
 
   if get_option('buildtype') == 'release'
     add_project_arguments('-march=native', language : 'cpp')
@@ -93,12 +92,12 @@ files += [
   'src/chess/board.cc',
   'src/chess/position.cc',
   'src/chess/uciloop.cc',
+  'src/search/params.cc',
+  'src/search/search.cc',
   'src/mcts/node.cc',
-  'src/mcts/params.cc',
   'src/mcts/search.cc',
-  'src/mcts_replace/node.cc',
-  'src/mcts_replace/search.cc',
-  'src/mcts_replace/prob_functions.cc',
+  'src/glow/node.cc',
+  'src/glow/search.cc',
   'src/neural/cache.cc',
   'src/neural/encoder.cc',
   'src/neural/factory.cc',
@@ -282,7 +281,6 @@ if get_option('build_backends')
 
     shared_files = [
     'src/neural/shared/activation.cc',
-    'src/neural/shared/batchnorm.cc',
     'src/neural/shared/winograd_filter.cc',
     ]
 
@@ -329,7 +327,6 @@ if get_option('build_backends')
 
     shared_files = [
     'src/neural/shared/activation.cc',
-    'src/neural/shared/batchnorm.cc',
     'src/neural/shared/winograd_filter.cc',
     ]
 
@@ -348,8 +345,8 @@ if get_option('build_backends')
   cu_blas = cc.find_library('cublas', dirs: cudnn_libdirs, required: false)
   cu_dnn = cc.find_library('cudnn', dirs: cudnn_libdirs, required: false)
   cu_dart = cc.find_library('cudart', dirs: cudnn_libdirs, required: false)
-  nvcc = find_program('/usr/local/cuda/bin/nvcc', '/opt/cuda/bin/nvcc',
-                      'nvcc', required: false)
+  nvcc = find_program('nvcc', '/usr/local/cuda/bin/nvcc', '/opt/cuda/bin/nvcc',
+                      required: false)
 
   #.cc files
   cuda_files = [
@@ -437,6 +434,10 @@ endif
 
 if not get_option('popcnt')
   add_project_arguments('-DNO_POPCNT', language : 'cpp')
+endif
+
+if not get_option('pext')
+  add_project_arguments('-DNO_PEXT', language : 'cpp')
 endif
 
 executable('lc0', 'src/main.cc',

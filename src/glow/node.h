@@ -36,6 +36,7 @@
 #include "chess/position.h"
 #include "neural/writer.h"
 #include "utils/mutex.h"
+#include "search/node.h"
 
 namespace lczero {
 
@@ -222,7 +223,7 @@ private:
 	friend class Edge_revamp;
 };
 
-class NodeTree_revamp {
+class NodeTree_revamp : public NodeTreeCommon {
  public:
   ~NodeTree_revamp() { DeallocateTree(); }
   // Adds a move to current_head_.
@@ -238,12 +239,8 @@ class NodeTree_revamp {
   // or if it's shorter than before.
   bool ResetToPosition(const std::string& starting_fen,
                        const std::vector<Move>& moves);
-  const Position& HeadPosition() const { return history_.Last(); }
-  int GetPlyCount() const { return HeadPosition().GetGamePly(); }
-  bool IsBlackToMove() const { return HeadPosition().IsBlackToMove(); }
   Node_revamp* GetCurrentHead() const { return current_head_; }
   Node_revamp* GetGameBeginNode() const { return gamebegin_node_.get(); }
-  const PositionHistory& GetPositionHistory() const { return history_; }
 
  private:
   void DeallocateTree();
@@ -251,7 +248,6 @@ class NodeTree_revamp {
   Node_revamp* current_head_ = nullptr;
   // Root node of a game tree.
   std::unique_ptr<Node_revamp> gamebegin_node_;
-  PositionHistory history_;
 };
 
 

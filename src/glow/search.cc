@@ -25,7 +25,7 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "mcts_replace/search.h"
+#include "glow/search.h"
 
 #include <iostream>
 #include <fstream>
@@ -56,17 +56,6 @@ bool const LOG_RUNNING_INFO = false;
 
 }  // namespace
 
-std::string SearchLimits_revamp::DebugString() const {
-  std::ostringstream ss;
-  ss << "visits:" << visits << " playouts:" << playouts << " depth:" << depth
-     << " infinite:" << infinite;
-  if (search_deadline) {
-    ss << " search_deadline:"
-       << FormatTime(SteadyClockToSystemClock(*search_deadline));
-  }
-  return ss.str();
-}
-
 
 //////////////////////////////////////////////////////////////////////////////
 // Search
@@ -74,22 +63,18 @@ std::string SearchLimits_revamp::DebugString() const {
 
 Search_revamp::Search_revamp(const NodeTree_revamp& tree, Network* network,
                BestMoveInfo::Callback best_move_callback,
-               ThinkingInfo::Callback info_callback, const SearchLimits_revamp& limits,
+               ThinkingInfo::Callback info_callback, const SearchLimits& limits,
                const OptionsDict& options, NNCache* cache,
                SyzygyTablebase* syzygy_tb,
                bool ponder)
-    : root_node_(tree.GetCurrentHead()),
-      cache_(cache),
-      syzygy_tb_(syzygy_tb),
-      played_history_(tree.GetPositionHistory()),
-      network_(network),
-      limits_(limits),
-      params_(options),
-      ponder_(ponder),
-      start_time_(std::chrono::steady_clock::now()),
+    : SearchCommon(tree, network,
+                   best_move_callback,
+                   info_callback, limits,
+                   options, cache,
+                   syzygy_tb),
+      root_node_(tree.GetCurrentHead()),
       initial_visits_(root_node_->GetN()),
-      best_move_callback_(best_move_callback),
-      info_callback_(info_callback)
+      ponder_(ponder)
     {}
 
 int64_t Search_revamp::GetTimeSinceStart() const {
@@ -444,7 +429,7 @@ void Search_revamp::ExtendNode(PositionHistory* history, Node_revamp* node) {
 		// Neither by-position or by-rule termination, but maybe it's a TB position.
 		if (syzygy_tb_ && board.castlings().no_legal_castle() &&
 				history->Last().GetNoCaptureNoPawnPly() == 0 &&
-				(board.ours() + board.theirs()).count() <=
+				(board.ours() | board.theirs()).count() <=
 						syzygy_tb_->max_cardinality()) {
 			ProbeState state;
 			WDLScore wdl = syzygy_tb_->probe_wdl(history->Last(), &state);
@@ -560,7 +545,7 @@ float SearchWorker_revamp::computeChildWeights(Node_revamp* node) {
     std::vector<double> weighted_p_and_q(n);
     double sum_of_weighted_p_and_q = 0.0;
 
-    const float my_policy_weight_exponent_ = search_->params_.GetFpuValue();
+    const float my_policy_weight_exponent_ = search_->params_.GetFpuValue(false);
 
     // // Imitate MCTS with dynamic cpuct weight like AlphaZero
     // // However, apply our own mixing of q and p as before
