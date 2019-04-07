@@ -580,19 +580,16 @@ void Search_revamp::ExtendNode(PositionHistory* history, Node_revamp* node) {
     for (int i = 0; i < n; i++){
       double relative_weight_of_p = 0;
       double cpuct=0;
-      double cpuct_as_prob=0;
       if(node->GetEdges()[i].GetChild()->GetN() > (uint32_t)search_->params_.GetMaxCollisionVisitsId()){
 	cpuct = log((node->GetN() + search_->params_.GetCpuctBase())/search_->params_.GetCpuctBase()) * sqrt(log(node->GetN())/(1+node->GetEdges()[i].GetChild()->GetN()));
-	// transform cpuct with the sigmoid function (the logistic function, 1/(1 + exp(-x))
-	cpuct_as_prob = 2 * search_->params_.GetCpuct() * (1/(1 + exp(-cpuct)) - 0.5); // f(0) would be 0.5, we want it f(0) to be zero.
       }
-      relative_weight_of_p = pow(node->GetEdges()[i].GetChild()->GetN(), my_policy_weight_exponent_) / (0.05 + node->GetEdges()[i].GetChild()->GetN()) + cpuct_as_prob; // 0.05 is here to make Q have some influence after 1 visit.
+      relative_weight_of_p = pow(node->GetEdges()[i].GetChild()->GetN(), my_policy_weight_exponent_) / (0.05 + node->GetEdges()[i].GetChild()->GetN()); // 0.05 is here to make Q have some influence after 1 visit.
       if (relative_weight_of_p > 1){
 	relative_weight_of_p = 1;
       }
       double relative_weight_of_q = 1 - relative_weight_of_p;
       if(node->GetEdges()[i].GetChild()->GetN() > (uint32_t)search_->params_.GetMaxCollisionVisitsId() && evalution_weights == false){
-	weighted_p_and_q[i] = relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() + relative_weight_of_p * node->GetEdges()[i].GetP() + search_->params_.GetTemperatureWinpctCutoff() * cpuct * node->GetEdges()[i].GetP(); // Weight for exploration
+	weighted_p_and_q[i] = relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() + relative_weight_of_p * node->GetEdges()[i].GetP() + search_->params_.GetTemperatureWinpctCutoff() * cpuct * node->GetEdges()[i].GetP() + search_->params_.GetCpuct() * cpuct; // Weight for exploration. This one has four components 1) q, 2) p as in the evaluation weight formula, and two more: one cpuct * policy and one raw cpuct (=give all moves visits, regardless of p).
       } else {
 	weighted_p_and_q[i] = relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() + relative_weight_of_p * node->GetEdges()[i].GetP();  // Weight for evaluation
       }
