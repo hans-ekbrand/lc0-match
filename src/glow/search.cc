@@ -592,7 +592,7 @@ void Search_revamp::ExtendNode(PositionHistory* history, Node_revamp* node) {
       }
       double relative_weight_of_q = 1 - relative_weight_of_p;
       if(node->GetEdges()[i].GetChild()->GetN() > (uint32_t)search_->params_.GetMaxCollisionVisitsId() && evalution_weights == false){
-	weighted_p_and_q[i] = relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() + relative_weight_of_p * node->GetEdges()[i].GetP() + search_->params_.GetTemperatureWinpctCutoff() * cpuct; // Weight for exploration
+	weighted_p_and_q[i] = relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() + relative_weight_of_p * node->GetEdges()[i].GetP() + search_->params_.GetTemperatureWinpctCutoff() * cpuct * node->GetEdges()[i].GetP(); // Weight for exploration
       } else {
 	weighted_p_and_q[i] = relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() + relative_weight_of_p * node->GetEdges()[i].GetP();  // Weight for evaluation
       }
