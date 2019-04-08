@@ -93,7 +93,7 @@ const OptionId kRamLimitMbId{
     "positions have 30 possible moves. When set to 0, no RAM limit is "
     "enforced."};
 
-const size_t kAvgNodeSize = sizeof(Node_revamp) + kAvgMovesPerPosition * sizeof(Edge_revamp);
+const size_t kAvgNodeSize = sizeof(NodeGlow) + kAvgMovesPerPosition * sizeof(EdgeGlow);
 const size_t kAvgCacheItemSize =
     NNCache::GetItemStructSize() + sizeof(CachedNNRequest) +
     sizeof(CachedNNRequest::IdxAndProb) * kAvgMovesPerPosition;
@@ -315,7 +315,7 @@ void EngineController::SetupPosition(
   UpdateFromUciOptions();
 
 //  if (!tree_) tree_ = std::make_unique<NodeTree>();
-  if (!tree_) tree_ = std::make_unique<NodeTree_revamp>();
+  if (!tree_) tree_ = std::make_unique<NodeTreeGlow>();
 
   std::vector<Move> moves;
   for (const auto& move : moves_str) moves.emplace_back(move);
@@ -389,7 +389,7 @@ void EngineController::Go(const GoParams& params) {
 //  search_ = std::make_unique<Search>(*(NodeTree *)(tree_.get()), network_.get(), best_move_callback,
 //                                     info_callback, limits, options_, &cache_,
 //                                     syzygy_tb_.get());
-  search_ = std::make_unique<Search_revamp>(*(NodeTree_revamp *)(tree_.get()), network_.get(), best_move_callback,
+  search_ = std::make_unique<SearchGlow>(*(NodeTreeGlow *)(tree_.get()), network_.get(), best_move_callback,
                                      info_callback, limits, options_, &cache_,
                                      syzygy_tb_.get(), params.ponder);
 

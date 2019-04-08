@@ -46,16 +46,16 @@
 
 namespace lczero {
 
-class Search_revamp : public SearchCommon {
+class SearchGlow : public SearchCommon {
 public:
-	Search_revamp(const NodeTree_revamp& tree, Network* network,
+	SearchGlow(const NodeTreeGlow& tree, Network* network,
 		 BestMoveInfo::Callback best_move_callback,
 		 ThinkingInfo::Callback info_callback, const SearchLimits& limits,
 		 const OptionsDict& options, NNCache* cache,
 		 SyzygyTablebase* syzygy_tb,
 		 bool ponder = false);
 
-	~Search_revamp();
+	~SearchGlow();
 
 	// Starts worker threads and returns immediately.
 	void StartThreads(size_t how_many);
@@ -81,16 +81,16 @@ private:
 	void SendUciInfo();
 	void checkLimitsAndMaybeTriggerStop();
 	void SendMovesStats();
-	std::vector<std::string> GetVerboseStats(Node_revamp* node, bool is_black_to_move);
-	NNCacheLock GetCachedNNEval(Node_revamp* node) const;
+	std::vector<std::string> GetVerboseStats(NodeGlow* node, bool is_black_to_move);
+	NNCacheLock GetCachedNNEval(NodeGlow* node) const;
 	void reportBestMove();
-	void ExtendNode(PositionHistory* history, Node_revamp* node);
+	void ExtendNode(PositionHistory* history, NodeGlow* node);
 
 	mutable std::mutex threads_list_mutex_;
 	std::atomic<int> n_thread_active_{0};
 	std::vector<std::thread> threads_;
 
-	Node_revamp* root_node_;
+	NodeGlow* root_node_;
 
         const int64_t initial_visits_;
 
@@ -124,12 +124,12 @@ private:
 
 	std::atomic<int> count_iterations_{0};
 
-	friend class SearchWorker_revamp;
+	friend class SearchWorkerGlow;
 };
 
-class SearchWorker_revamp {
+class SearchWorkerGlow {
 public:
-	SearchWorker_revamp(Search_revamp *search) :
+	SearchWorkerGlow(SearchGlow *search) :
 		search_(search),
 		q_concentration_(search->params_.GetCpuct()),
 		p_concentration_(search->params_.GetPolicySoftmaxTemp()),
@@ -148,24 +148,24 @@ public:
 private:
 
 	struct NewNode {
-		Node_revamp* node;
+		NodeGlow* node;
 		uint16_t junction;
 		int16_t batch_idx;  // -1 if not in batch
 	};
 
 	struct Junction {
-		Node_revamp *node;
+		NodeGlow *node;
 		uint16_t parent;
 		uint8_t children_count;
 	};
 
-	int AddNodeToComputation(Node_revamp* node, PositionHistory *history);
-	void retrieveNNResult(Node_revamp* node, int batchidx);
-  void recalcKnownWin(Node_revamp* node, int win_idx);
-	void recalcPropagatedQ(Node_revamp* node);
+	int AddNodeToComputation(NodeGlow* node, PositionHistory *history);
+	void retrieveNNResult(NodeGlow* node, int batchidx);
+  void recalcKnownWin(NodeGlow* node, int win_idx);
+	void recalcPropagatedQ(NodeGlow* node);
 	void pickNodesToExtend();
-	int appendHistoryFromTo(std::vector<Move> *movestack, PositionHistory *history, Node_revamp* from, Node_revamp* to);
-	float computeChildWeights(Node_revamp* node, bool evalution_weights);
+	int appendHistoryFromTo(std::vector<Move> *movestack, PositionHistory *history, NodeGlow* from, NodeGlow* to);
+	float computeChildWeights(NodeGlow* node, bool evalution_weights);
 	int propagate();
 	int extendTree(std::vector<Move> *movestack, PositionHistory *history);
 	void buildJunctionRTree();
@@ -173,7 +173,7 @@ private:
 
 
 
-	Search_revamp *search_;
+	SearchGlow *search_;
 
 	const float q_concentration_;
 	const float p_concentration_;
@@ -184,7 +184,7 @@ private:
 	const int played_history_length_;
   const int cache_history_length_plus_1_;
 
-	Node_revamp* root_node_;
+	NodeGlow* root_node_;
 
 
 	//std::unique_ptr<NetworkComputation> computation_;

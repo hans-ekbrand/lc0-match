@@ -41,8 +41,8 @@
 namespace lczero {
 
 
-class Node_revamp;
-class Edge_revamp {
+class NodeGlow;
+class EdgeGlow {
  public:
   // Returns move from the point of view of the player making it (if as_opponent
   // is false) or as opponent (if as_opponent is true).
@@ -53,8 +53,8 @@ class Edge_revamp {
   float GetP() const;
   void SetP(float val);
 
-  Node_revamp* GetChild() { return child_.get(); }
-  void CreateChild(Node_revamp* parent, uint16_t index);
+  NodeGlow* GetChild() { return child_.get(); }
+  void CreateChild(NodeGlow* parent, uint16_t index);
 
   // Debug information about the edge.
   std::string DebugString() const;
@@ -66,44 +66,44 @@ class Edge_revamp {
   Move move_;
 
   // Pointer to child of this edge. nullptr for no node.
-  std::unique_ptr<Node_revamp> child_ = nullptr;
+  std::unique_ptr<NodeGlow> child_ = nullptr;
 
   // Probability that this move will be made, from the policy head of the neural
   // network; compressed to a 16 bit format (5 bits exp, 11 bits significand).
   uint16_t p_ = 0;
 
-  friend class EdgeList_revamp;
-  friend class Node_revamp;
-  friend class NodeTree_revamp;
-	friend class Search_revamp;
-	friend class SearchWorker_revamp;
+  friend class EdgeListGlow;
+  friend class NodeGlow;
+  friend class NodeTreeGlow;
+	friend class SearchGlow;
+	friend class SearchWorkerGlow;
 };
 
 
 // Array of Edges.
-class EdgeList_revamp {
+class EdgeListGlow {
  public:
-  EdgeList_revamp() {}
-  EdgeList_revamp(MoveList moves);
-  Edge_revamp* get() const { return edges_.get(); }
-  Edge_revamp& operator[](size_t idx) const { return edges_[idx]; }
+  EdgeListGlow() {}
+  EdgeListGlow(MoveList moves);
+  EdgeGlow* get() const { return edges_.get(); }
+  EdgeGlow& operator[](size_t idx) const { return edges_[idx]; }
   operator bool() const { return static_cast<bool>(edges_); }
   uint16_t size() const { return size_; }
 
  private:
-  std::unique_ptr<Edge_revamp[]> edges_;
+  std::unique_ptr<EdgeGlow[]> edges_;
   uint16_t size_ = 0;
 };
 
 
-class Node_revamp {
+class NodeGlow {
  public:
   // Takes pointer to a parent node and own index in a parent.
- Node_revamp(Node_revamp* parent, uint16_t index) : parent_(parent), index_(index) {}
+ NodeGlow(NodeGlow* parent, uint16_t index) : parent_(parent), index_(index) {}
 
   // Allocates a new edge and a new node. The node has to be no edges before
   // that.
-  Node_revamp* CreateSingleChildNode(Move m);
+  NodeGlow* CreateSingleChildNode(Move m);
 
   // Creates edges from a movelist. There has to be no edges before that.
   void CreateEdges(const MoveList& moves);
@@ -111,7 +111,7 @@ class Node_revamp {
   void SortEdgesByPValue();
 
   // Gets parent node.
-  Node_revamp* GetParent() const { return parent_; }
+  NodeGlow* GetParent() const { return parent_; }
 
   // Returns node eval, i.e. average subtree V for non-terminal node and -1/0/1
   // for terminal nodes.
@@ -139,7 +139,7 @@ class Node_revamp {
   uint16_t GetNumChildren() const { return noofchildren_; }
   int16_t GetBestIdx() const { return best_idx_; }
   void SetBestIdx(int16_t idx) { best_idx_ = idx; }
-  Edge_revamp* GetEdges() { return edges_.get(); }
+  EdgeGlow* GetEdges() { return edges_.get(); }
   uint16_t GetIndex() const { return index_; }
 
   uint8_t GetNextUnexpandedEdge() const { return next_unexpanded_edge_; }
@@ -157,7 +157,7 @@ class Node_revamp {
   void ReleaseChildren();
 
   // Deletes all children except one.
-  void ReleaseChildrenExceptOne(Node_revamp* node);
+  void ReleaseChildrenExceptOne(NodeGlow* node);
 
   void IncrParentNumChildren();
 
@@ -184,11 +184,11 @@ private:
 
 	// TODO: shrink the padding on this somehow? It takes 16 bytes even though
 	// only 10 are real! Maybe even merge it into this class??
-	EdgeList_revamp edges_;
+	EdgeListGlow edges_;
 
 	// 8 byte fields.
 	// Pointer to a parent node. nullptr for the root.
-	Node_revamp* parent_ = nullptr;
+	NodeGlow* parent_ = nullptr;
 
 	// 4 byte fields.
 	// Average value (from value head of neural network) of all visited nodes in
@@ -219,13 +219,13 @@ private:
 	bool is_terminal_ = false;
 	uint8_t next_unexpanded_edge_ = 0;
 
-	friend class NodeTree_revamp;
-	friend class Edge_revamp;
+	friend class NodeTreeGlow;
+	friend class EdgeGlow;
 };
 
-class NodeTree_revamp : public NodeTreeCommon {
+class NodeTreeGlow : public NodeTreeCommon {
  public:
-  ~NodeTree_revamp() { DeallocateTree(); }
+  ~NodeTreeGlow() { DeallocateTree(); }
   // Adds a move to current_head_.
   void MakeMove(Move move);
   // Resets the current head to ensure it doesn't carry over details from a
@@ -239,15 +239,15 @@ class NodeTree_revamp : public NodeTreeCommon {
   // or if it's shorter than before.
   bool ResetToPosition(const std::string& starting_fen,
                        const std::vector<Move>& moves);
-  Node_revamp* GetCurrentHead() const { return current_head_; }
-  Node_revamp* GetGameBeginNode() const { return gamebegin_node_.get(); }
+  NodeGlow* GetCurrentHead() const { return current_head_; }
+  NodeGlow* GetGameBeginNode() const { return gamebegin_node_.get(); }
 
  private:
   void DeallocateTree();
   // A node which to start search from.
-  Node_revamp* current_head_ = nullptr;
+  NodeGlow* current_head_ = nullptr;
   // Root node of a game tree.
-  std::unique_ptr<Node_revamp> gamebegin_node_;
+  std::unique_ptr<NodeGlow> gamebegin_node_;
 };
 
 

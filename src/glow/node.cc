@@ -43,7 +43,7 @@ namespace lczero {
 
 
 /////////////////////////////////////////////////////////////////////////
-// Node_revamp garbage collector
+// NodeGlow garbage collector
 /////////////////////////////////////////////////////////////////////////
 
 namespace {
@@ -51,19 +51,19 @@ namespace {
 const int kGCIntervalMs = 100;
 
 // Every kGCIntervalMs milliseconds release nodes in a separate GC thread.
-class NodeGarbageCollector_revamp {
+class NodeGarbageCollectorGlow {
  public:
-  NodeGarbageCollector_revamp() : gc_thread_([this]() { Worker(); }) {}
+  NodeGarbageCollectorGlow() : gc_thread_([this]() { Worker(); }) {}
 
   // Takes ownership of a subtree, to dispose it in a separate thread when
   // it has time.
-  void AddToGcQueue(std::unique_ptr<Node_revamp> node) {
+  void AddToGcQueue(std::unique_ptr<NodeGlow> node) {
     if (!node) return;
     Mutex::Lock lock(gc_mutex_);
     subtrees_to_gc_.emplace_back(std::move(node));
   }
 
-  ~NodeGarbageCollector_revamp() {
+  ~NodeGarbageCollectorGlow() {
     // Flips stop flag and waits for a worker thread to stop.
     stop_ = true;
     gc_thread_.join();
@@ -72,8 +72,8 @@ class NodeGarbageCollector_revamp {
  private:
   void GarbageCollect() {
     while (!stop_) {
-      // Node_revamp will be released in destructor when mutex is not locked.
-      std::unique_ptr<Node_revamp> node_to_gc;
+      // NodeGlow will be released in destructor when mutex is not locked.
+      std::unique_ptr<NodeGlow> node_to_gc;
       {
         // Lock the mutex and move last subtree from subtrees_to_gc_ into
         // node_to_gc.
@@ -93,29 +93,29 @@ class NodeGarbageCollector_revamp {
   }
 
   mutable Mutex gc_mutex_;
-  std::vector<std::unique_ptr<Node_revamp>> subtrees_to_gc_ GUARDED_BY(gc_mutex_);
+  std::vector<std::unique_ptr<NodeGlow>> subtrees_to_gc_ GUARDED_BY(gc_mutex_);
 
   // When true, Worker() should stop and exit.
   volatile bool stop_ = false;
   std::thread gc_thread_;
 };  // namespace
 
-NodeGarbageCollector_revamp gNodeGc;
+NodeGarbageCollectorGlow gNodeGc;
 }  // namespace
 
 /////////////////////////////////////////////////////////////////////////
-// Edge_revamp
+// EdgeGlow
 /////////////////////////////////////////////////////////////////////////
 
-Move Edge_revamp::GetMove(bool as_opponent) const {
+Move EdgeGlow::GetMove(bool as_opponent) const {
   if (!as_opponent) return move_;
   Move m = move_;
   m.Mirror();
   return m;
 }
 
-void Edge_revamp::CreateChild(Node_revamp* parent, uint16_t index) {
-  child_ = std::make_unique<Node_revamp>(parent, index);
+void EdgeGlow::CreateChild(NodeGlow* parent, uint16_t index) {
+  child_ = std::make_unique<NodeGlow>(parent, index);
 //  parent->noofchildren_++;  // update noofchildren when node is ready (has received nn values)
 }
 
@@ -150,7 +150,7 @@ void Edge_revamp::CreateChild(Node_revamp* parent, uint16_t index) {
 // subtracting the two bits from the input and checking for a negative result
 // (the subtraction works despite crossing from exponent to significand). This
 // is combined with the round-to-nearest addition (1<<11) into one op.
-void Edge_revamp::SetP(float p) {
+void EdgeGlow::SetP(float p) {
   assert(0.0f <= p && p <= 1.0f);
   constexpr int32_t roundings = (1 << 11) - (3 << 28);
   int32_t tmp;
@@ -159,7 +159,7 @@ void Edge_revamp::SetP(float p) {
   p_ = (tmp < 0) ? 0 : static_cast<uint16_t>(tmp >> 12);
 }
 
-float Edge_revamp::GetP() const {
+float EdgeGlow::GetP() const {
   // Reshift into place and set the assumed-set exponent bits.
   uint32_t tmp = (static_cast<uint32_t>(p_) << 12) | (3 << 28);
   float ret;
@@ -167,42 +167,42 @@ float Edge_revamp::GetP() const {
   return ret;
 }
 
-std::string Edge_revamp::DebugString() const {
+std::string EdgeGlow::DebugString() const {
   std::ostringstream oss;
   oss << "Move: " << move_.as_string() << " p_: " << p_ << " GetP: " << GetP();
   return oss.str();
 }
 
 /////////////////////////////////////////////////////////////////////////
-// EdgeList_revamp
+// EdgeListGlow
 /////////////////////////////////////////////////////////////////////////
 
-EdgeList_revamp::EdgeList_revamp(MoveList moves)
-    : edges_(std::make_unique<Edge_revamp[]>(moves.size())), size_(moves.size()) {
+EdgeListGlow::EdgeListGlow(MoveList moves)
+    : edges_(std::make_unique<EdgeGlow[]>(moves.size())), size_(moves.size()) {
   auto* edge = edges_.get();
   for (auto move : moves) edge++->move_ = move;
 }
 
 /////////////////////////////////////////////////////////////////////////
-// Node_revamp
+// NodeGlow
 /////////////////////////////////////////////////////////////////////////
 
-Node_revamp* Node_revamp::CreateSingleChildNode(Move move) {
+NodeGlow* NodeGlow::CreateSingleChildNode(Move move) {
   assert(!edges_);
   // assert(!child_); // error: ‘child_’ was not declared in this scope
-  edges_ = EdgeList_revamp({move});
+  edges_ = EdgeListGlow({move});
   edges_[0].CreateChild(this, 0);
   return edges_[0].GetChild();
 }
 
-void Node_revamp::CreateEdges(const MoveList& moves) {
+void NodeGlow::CreateEdges(const MoveList& moves) {
   assert(!edges_);
   // assert(!child_); // error: ‘child_’ was not declared in this scope
-  edges_ = EdgeList_revamp(moves);
+  edges_ = EdgeListGlow(moves);
 }
 
 // assumes child_ to be nullptr
-void Node_revamp::SortEdgesByPValue() {
+void NodeGlow::SortEdgesByPValue() {
   int n = edges_.size();
   for (int i = 0; i < n - 1; i++) {
     float best = edges_[i].GetP();
@@ -224,7 +224,7 @@ void Node_revamp::SortEdgesByPValue() {
 }
 
 
-std::string Node_revamp::DebugString() const {
+std::string NodeGlow::DebugString() const {
   std::ostringstream oss;
   oss << " Term:" << is_terminal_ << " This:" << this << " Parent:" << parent_
       << " Index:" << index_ << " Q:" << q_
@@ -232,7 +232,7 @@ std::string Node_revamp::DebugString() const {
   return oss.str();
 }
 
-void Node_revamp::MakeTerminal(GameResult result) {
+void NodeGlow::MakeTerminal(GameResult result) {
   is_terminal_ = true;
   if (result == GameResult::DRAW) {
     SetOrigQ(0.0f);
@@ -244,13 +244,13 @@ void Node_revamp::MakeTerminal(GameResult result) {
   SetQInacc(0.0f);
 }
 
-void Node_revamp::ReleaseChildren() {
+void NodeGlow::ReleaseChildren() {
   for (int i = edges_.size() - 1; i >= 0; i--) {
     gNodeGc.AddToGcQueue(std::move(edges_[i].child_));
   }
 }
 
-void Node_revamp::ReleaseChildrenExceptOne(Node_revamp* node_to_save) {
+void NodeGlow::ReleaseChildrenExceptOne(NodeGlow* node_to_save) {
   for (int i = edges_.size() - 1; i >= 0; i--) {
     if (edges_[i].child_.get() != node_to_save) {
       gNodeGc.AddToGcQueue(std::move(edges_[i].child_));
@@ -258,7 +258,7 @@ void Node_revamp::ReleaseChildrenExceptOne(Node_revamp* node_to_save) {
   }
 }
 
-void Node_revamp::IncrParentNumChildren() {
+void NodeGlow::IncrParentNumChildren() {
   parent_->noofchildren_++;
 
   //~ noofchildren_ = 0;
@@ -272,7 +272,7 @@ void Node_revamp::IncrParentNumChildren() {
   //~ }
 }
 
-int Node_revamp::CountInternal(uint32_t min_n) {
+int NodeGlow::CountInternal(uint32_t min_n) {
   if (n_ <= min_n) return 0;
   int c = 1;
   for (int i = 0; i < noofchildren_; i++) {
@@ -281,7 +281,7 @@ int Node_revamp::CountInternal(uint32_t min_n) {
   return c;
 }
 
-double Node_revamp::QMean(uint32_t min_n) {
+double NodeGlow::QMean(uint32_t min_n) {
   if (n_ <= min_n) return 0.0;
   double qmean = orig_q_ - q_;
   for (int i = 0; i < noofchildren_; i++) {
@@ -290,7 +290,7 @@ double Node_revamp::QMean(uint32_t min_n) {
   return qmean;
 }
 
-double Node_revamp::QVariance(uint32_t min_n, double mean) {
+double NodeGlow::QVariance(uint32_t min_n, double mean) {
   if (n_ <= min_n) return 0.0;
   double qvar = (double)(orig_q_ - q_) - mean;
   qvar = qvar * qvar;
@@ -300,7 +300,7 @@ double Node_revamp::QVariance(uint32_t min_n, double mean) {
   return qvar;
 }
 
-double Node_revamp::QInaccMean(uint32_t min_n) {
+double NodeGlow::QInaccMean(uint32_t min_n) {
   if (n_ <= min_n) return 0.0;
   double mean = q_inacc_;
   for (int i = 0; i < noofchildren_; i++) {
@@ -309,7 +309,7 @@ double Node_revamp::QInaccMean(uint32_t min_n) {
   return mean;
 }
 
-double Node_revamp::PMean() {
+double NodeGlow::PMean() {
   double pmean = parent_ == nullptr ? 0.0 : (parent_->edges_[index_].GetP() - w_);
   for (int i = 0; i < noofchildren_; i++) {
     pmean += edges_[i].child_->PMean();
@@ -317,7 +317,7 @@ double Node_revamp::PMean() {
   return pmean;
 }
 
-double Node_revamp::PVariance(double mean) {
+double NodeGlow::PVariance(double mean) {
   double pvar = parent_ == nullptr ? 0.0 : ((double)(parent_->edges_[index_].GetP() - w_) - mean);
   pvar = pvar * pvar;
   for (int i = 0; i < noofchildren_; i++) {
@@ -326,7 +326,7 @@ double Node_revamp::PVariance(double mean) {
   return pvar;
 }
 
-int Node_revamp::LogPCount() {
+int NodeGlow::LogPCount() {
   int c = (parent_ == nullptr || parent_->edges_[index_].GetP() == 0.0 || w_ == 0.0) ? 0 : 1;
   for (int i = 0; i < noofchildren_; i++) {
     c += edges_[i].child_->LogPCount();
@@ -334,7 +334,7 @@ int Node_revamp::LogPCount() {
   return c;
 }
 
-double Node_revamp::LogPMean() {
+double NodeGlow::LogPMean() {
   double pmean = (parent_ == nullptr || parent_->edges_[index_].GetP() == 0.0 || w_ == 0.0) ? 0.0 : log(parent_->edges_[index_].GetP() / w_);
   for (int i = 0; i < noofchildren_; i++) {
     pmean += edges_[i].child_->LogPMean();
@@ -342,7 +342,7 @@ double Node_revamp::LogPMean() {
   return pmean;
 }
 
-double Node_revamp::LogPVariance(double mean) {
+double NodeGlow::LogPVariance(double mean) {
   double pvar = (parent_ == nullptr || parent_->edges_[index_].GetP() == 0.0 || w_ == 0.0) ? 0.0 : ((double)log(parent_->edges_[index_].GetP() / w_) - mean);
   pvar = pvar * pvar;
   for (int i = 0; i < noofchildren_; i++) {
@@ -354,13 +354,13 @@ double Node_revamp::LogPVariance(double mean) {
 
 
 /////////////////////////////////////////////////////////////////////////
-// NodeTree_revamp
+// NodeTreeGlow
 /////////////////////////////////////////////////////////////////////////
 
-void NodeTree_revamp::MakeMove(Move move) {
+void NodeTreeGlow::MakeMove(Move move) {
   if (HeadPosition().IsBlackToMove()) move.Mirror();
 
-  Node_revamp* new_head = nullptr;
+  NodeGlow* new_head = nullptr;
   for (int i = 0; i < current_head_->edges_.size(); i++) {
     auto& n = current_head_->edges_[i];
     if (n.move_ == move) {
@@ -374,13 +374,13 @@ void NodeTree_revamp::MakeMove(Move move) {
   history_.Append(move);
 }
 
-void NodeTree_revamp::TrimTreeAtHead() {
+void NodeTreeGlow::TrimTreeAtHead() {
   // Send dependent nodes for GC instead of destroying them immediately.
   current_head_->ReleaseChildren();
-  *current_head_ = Node_revamp(current_head_->GetParent(), current_head_->index_);
+  *current_head_ = NodeGlow(current_head_->GetParent(), current_head_->index_);
 }
 
-bool NodeTree_revamp::ResetToPosition(const std::string& starting_fen,
+bool NodeTreeGlow::ResetToPosition(const std::string& starting_fen,
                                const std::vector<Move>& moves) {
   ChessBoard starting_board;
   int no_capture_ply;
@@ -392,13 +392,13 @@ bool NodeTree_revamp::ResetToPosition(const std::string& starting_fen,
   }
 
   if (!gamebegin_node_) {
-    gamebegin_node_ = std::make_unique<Node_revamp>(nullptr, 0);
+    gamebegin_node_ = std::make_unique<NodeGlow>(nullptr, 0);
   }
 
   history_.Reset(starting_board, no_capture_ply,
                  full_moves * 2 - (starting_board.flipped() ? 1 : 2));
 
-  Node_revamp* old_head = current_head_;
+  NodeGlow* old_head = current_head_;
   current_head_ = gamebegin_node_.get();
   bool seen_old_head = (gamebegin_node_.get() == old_head);
   for (const auto& move : moves) {
@@ -418,7 +418,7 @@ bool NodeTree_revamp::ResetToPosition(const std::string& starting_fen,
   return seen_old_head;
 }
 
-void NodeTree_revamp::DeallocateTree() {
+void NodeTreeGlow::DeallocateTree() {
   // Same as gamebegin_node_.reset(), but actual deallocation will happen in
   // GC thread.
   gNodeGc.AddToGcQueue(std::move(gamebegin_node_));

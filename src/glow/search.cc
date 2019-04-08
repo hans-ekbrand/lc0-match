@@ -61,7 +61,7 @@ bool const LOG_RUNNING_INFO = false;
 // Search
 //////////////////////////////////////////////////////////////////////////////
 
-Search_revamp::Search_revamp(const NodeTree_revamp& tree, Network* network,
+SearchGlow::SearchGlow(const NodeTreeGlow& tree, Network* network,
                BestMoveInfo::Callback best_move_callback,
                ThinkingInfo::Callback info_callback, const SearchLimits& limits,
                const OptionsDict& options, NNCache* cache,
@@ -77,13 +77,13 @@ Search_revamp::Search_revamp(const NodeTree_revamp& tree, Network* network,
       ponder_(ponder)
     {}
 
-int64_t Search_revamp::GetTimeSinceStart() const {
+int64_t SearchGlow::GetTimeSinceStart() const {
   return std::chrono::duration_cast<std::chrono::milliseconds>(
              std::chrono::steady_clock::now() - start_time_)
       .count();
 }
 
-int64_t Search_revamp::GetTimeToDeadline() const {
+int64_t SearchGlow::GetTimeToDeadline() const {
   if (!limits_.search_deadline) return 0;
   return std::chrono::duration_cast<std::chrono::milliseconds>(
              *limits_.search_deadline - std::chrono::steady_clock::now())
@@ -91,13 +91,13 @@ int64_t Search_revamp::GetTimeToDeadline() const {
 }
 
 
-void Search_revamp::StartThreads(size_t how_many) {
+void SearchGlow::StartThreads(size_t how_many) {
 	threads_list_mutex_.lock();
 	for (int i = threads_.size(); i < (int)how_many; i++) {
 		n_thread_active_++;
 		threads_.emplace_back([this, i]()
 			{
-				SearchWorker_revamp worker(this);
+				SearchWorkerGlow worker(this);
 				worker.ThreadLoop(i);
 			}
 		);
@@ -105,12 +105,12 @@ void Search_revamp::StartThreads(size_t how_many) {
 	threads_list_mutex_.unlock();
 }
 
-void Search_revamp::RunBlocking(size_t threads) {
+void SearchGlow::RunBlocking(size_t threads) {
 	StartThreads(threads);
 	Wait();
 }
 
-void Search_revamp::Stop() {
+void SearchGlow::Stop() {
 	ponder_lock_.lock();
 	if (ponder_) {
 		if (IsSearchActive()) {
@@ -129,12 +129,12 @@ void Search_revamp::Stop() {
 	ponder_lock_.unlock();
 }
 
-void Search_revamp::Abort() {
+void SearchGlow::Abort() {
 	abort_ = true;
 	not_stop_searching_ = false;
 }
 
-bool Search_revamp::IsSearchActive() const {
+bool SearchGlow::IsSearchActive() const {
 	//threads_list_mutex_.lock();
 	bool active = n_thread_active_ > 0;
 	//threads_list_mutex_.unlock();
@@ -143,7 +143,7 @@ bool Search_revamp::IsSearchActive() const {
 
 namespace {
 
-  int indexOfHighestQEdge(Node_revamp* node, bool black_to_move, bool filter_uncertain_moves) {
+  int indexOfHighestQEdge(NodeGlow* node, bool black_to_move, bool filter_uncertain_moves) {
     float highestq = -2.0;
     int bestidx = -1;
     for (int i = 0; i < node->GetNumChildren(); i++) {
@@ -196,7 +196,7 @@ namespace {
   }
 }
 
-void Search_revamp::Wait() {
+void SearchGlow::Wait() {
 	threads_list_mutex_.lock();
 	while (!threads_.empty()) {
 		threads_.back().join();
@@ -206,12 +206,12 @@ void Search_revamp::Wait() {
 }
 
 
-Search_revamp::~Search_revamp() {
+SearchGlow::~SearchGlow() {
 	Abort();
 	Wait();
 }
 
-void Search_revamp::SendUciInfo() {
+void SearchGlow::SendUciInfo() {
 
   auto score_type = params_.GetScoreType();
 
@@ -262,7 +262,7 @@ void Search_revamp::SendUciInfo() {
     if (params_.GetMultiPv() > 1) uci_info.multipv = multipv;
     bool flip = played_history_.IsBlackToMove();
     uci_info.pv.push_back(root_node_->GetEdges()[bestidx].GetMove(flip));
-    Node_revamp* n = root_node_->GetEdges()[bestidx].GetChild();
+    NodeGlow* n = root_node_->GetEdges()[bestidx].GetChild();
     while (n && n->GetNumChildren() > 0) {
       flip = !flip;
       int bestidx = indexOfHighestQEdge(n, played_history_.IsBlackToMove(), true); // Filter out uncertain moves from uci-info.
@@ -276,7 +276,7 @@ void Search_revamp::SendUciInfo() {
   info_callback_(uci_infos);
 }
 
-void Search_revamp::checkLimitsAndMaybeTriggerStop() {
+void SearchGlow::checkLimitsAndMaybeTriggerStop() {
 	//root_node_->GetN() + (search_->n_thread_active_ - 1) * batch_size_ < visits/* && root_node_->GetNExtendable() > 0*/
 	if (limits_.playouts >= 0 && root_node_->GetN() - initial_visits_ >= limits_.playouts) {
 		not_stop_searching_ = false;
@@ -292,7 +292,7 @@ void Search_revamp::checkLimitsAndMaybeTriggerStop() {
 	}
 }
 
-std::vector<std::string> Search_revamp::GetVerboseStats(Node_revamp* node, bool is_black_to_move) {
+std::vector<std::string> SearchGlow::GetVerboseStats(NodeGlow* node, bool is_black_to_move) {
 
   std::vector<std::string> infos;
   for (int i = 0; i < node->GetNumChildren(); i++) {
@@ -340,7 +340,7 @@ std::vector<std::string> Search_revamp::GetVerboseStats(Node_revamp* node, bool 
   return infos;
 }
 
-NNCacheLock Search_revamp::GetCachedNNEval(Node_revamp* node) const {
+NNCacheLock SearchGlow::GetCachedNNEval(NodeGlow* node) const {
   if (!node) return {};
 
   std::vector<Move> moves;
@@ -356,9 +356,9 @@ NNCacheLock Search_revamp::GetCachedNNEval(Node_revamp* node) const {
   return nneval;
 }
 
-void Search_revamp::SendMovesStats() {
+void SearchGlow::SendMovesStats() {
   const bool is_black_to_move = played_history_.IsBlackToMove();
-  auto move_stats = Search_revamp::GetVerboseStats(root_node_, is_black_to_move);
+  auto move_stats = SearchGlow::GetVerboseStats(root_node_, is_black_to_move);
 
   if (params_.GetVerboseStats()) {
     std::vector<ThinkingInfo> infos;
@@ -375,7 +375,7 @@ void Search_revamp::SendMovesStats() {
   }
 }
 
-void Search_revamp::reportBestMove() {
+void SearchGlow::reportBestMove() {
 	int bestidx = indexOfHighestQEdge(root_node_, played_history_.IsBlackToMove(), true);
 	Move best_move = root_node_->GetEdges()[bestidx].GetMove(played_history_.IsBlackToMove());
 	int ponderidx = indexOfHighestQEdge(root_node_->GetEdges()[bestidx].GetChild(), played_history_.IsBlackToMove(), false); // harmless to report a bad pondermove.
@@ -390,7 +390,7 @@ void Search_revamp::reportBestMove() {
 	}
 }
 
-void Search_revamp::ExtendNode(PositionHistory* history, Node_revamp* node) {
+void SearchGlow::ExtendNode(PositionHistory* history, NodeGlow* node) {
 	// We don't need the mutex because other threads will see that N=0 and
 	// N-in-flight=1 and will not touch this node.
 	const auto& board = history->Last().GetBoard();
@@ -495,7 +495,7 @@ void Search_revamp::ExtendNode(PositionHistory* history, Node_revamp* node) {
 }
 
 
-  float SearchWorker_revamp::computeChildWeights(Node_revamp* node, bool evalution_weights) {
+  float SearchWorkerGlow::computeChildWeights(NodeGlow* node, bool evalution_weights) {
   int n = node->GetNumChildren();
   bool DEBUG = false;
   // If no child is extended, then just use P.
@@ -636,8 +636,8 @@ void Search_revamp::ExtendNode(PositionHistory* history, Node_revamp* node) {
 }
 
 
-void SearchWorker_revamp::pickNodesToExtend() {
-	Node_revamp* node;
+void SearchWorkerGlow::pickNodesToExtend() {
+	NodeGlow* node;
 	int best_idx;
 
 	int nodes_visited = 0;
@@ -732,7 +732,7 @@ void SearchWorker_revamp::pickNodesToExtend() {
   search_->count_search_node_visits_ += nodes_visited;
 }
 
-void SearchWorker_revamp::buildJunctionRTree() {
+void SearchWorkerGlow::buildJunctionRTree() {
 	for (int i = new_nodes_size_ - 1; i >= 0; i--) {
 		uint16_t junction = new_nodes_[i].junction;
 		while (junction != 0xFFFF) {
@@ -744,7 +744,7 @@ void SearchWorker_revamp::buildJunctionRTree() {
 
 //	for (int i = new_nodes_.size() - 1; i >= 0; i--) {
 	for (int i = new_nodes_size_ - 1; i >= 0; i--) {
-		Node_revamp* node = new_nodes_[i].node->GetParent();
+		NodeGlow* node = new_nodes_[i].node->GetParent();
 		while (node->GetBranchingInFlight() != 0) {
 			node->SetBranchingInFlight(0);
 			if (node == root_node_) break;
@@ -753,7 +753,7 @@ void SearchWorker_revamp::buildJunctionRTree() {
 	}
 }
 
-int SearchWorker_revamp::appendHistoryFromTo(std::vector<Move> *movestack, PositionHistory *history, Node_revamp* from, Node_revamp* to) {
+int SearchWorkerGlow::appendHistoryFromTo(std::vector<Move> *movestack, PositionHistory *history, NodeGlow* from, NodeGlow* to) {
   movestack->clear();
   while (to != from) {
     movestack->push_back(to->GetParent()->GetEdges()[to->GetIndex()].move_);
@@ -766,7 +766,7 @@ int SearchWorker_revamp::appendHistoryFromTo(std::vector<Move> *movestack, Posit
 }
 
 
-int SearchWorker_revamp::AddNodeToComputation(Node_revamp* node, PositionHistory *history) {
+int SearchWorkerGlow::AddNodeToComputation(NodeGlow* node, PositionHistory *history) {
   auto hash = history->HashLast(cache_history_length_plus_1_);
   auto planes = EncodePositionForNN(*history, 8, history_fill_);
   int nedge = node->GetNumEdges();
@@ -788,7 +788,7 @@ int SearchWorker_revamp::AddNodeToComputation(Node_revamp* node, PositionHistory
 }
 
 
-int SearchWorker_revamp::extendTree(std::vector<Move> *movestack, PositionHistory *history) {
+int SearchWorkerGlow::extendTree(std::vector<Move> *movestack, PositionHistory *history) {
 	int count = 0;
 
 	int full_tree_depth = search_->full_tree_depth_;
@@ -816,13 +816,13 @@ int SearchWorker_revamp::extendTree(std::vector<Move> *movestack, PositionHistor
 
 		for (; n > 0; n--, i++) {
 
-		Node_revamp* newchild = new_nodes_[i].node;
+		NodeGlow* newchild = new_nodes_[i].node;
 		//int idx = new_nodes_[i].idx;
 
 		count++;
 
 		int nappends = appendHistoryFromTo(movestack, history, root_node_, newchild);
-		//Node_revamp* newchild = node->GetEdges()[idx].GetChild();
+		//NodeGlow* newchild = node->GetEdges()[idx].GetChild();
 
 		//history->Append(node->GetEdges()[idx].move_);
 
@@ -865,7 +865,7 @@ int SearchWorker_revamp::extendTree(std::vector<Move> *movestack, PositionHistor
 }
 
 
-void SearchWorker_revamp::retrieveNNResult(Node_revamp* node, int batchidx) {
+void SearchWorkerGlow::retrieveNNResult(NodeGlow* node, int batchidx) {
   float q = -computation_->GetQVal(batchidx);
   if (q < -1.0 || q > 1.0) {
     std::cerr << "q = " << q << "\n";
@@ -911,7 +911,7 @@ void SearchWorker_revamp::retrieveNNResult(Node_revamp* node, int batchidx) {
 }
 
 
-void SearchWorker_revamp::recalcPropagatedQ(Node_revamp* node) {
+void SearchWorkerGlow::recalcPropagatedQ(NodeGlow* node) {
   int n = 1;
   for (int i = 0; i < node->GetNumChildren(); i++) {
     n += node->GetEdges()[i].GetChild()->GetN();
@@ -982,7 +982,7 @@ void SearchWorker_revamp::recalcPropagatedQ(Node_revamp* node) {
 }
 
 
-int SearchWorker_revamp::propagate() {
+int SearchWorkerGlow::propagate() {
 	int count = 0;
 
 	//auto start_comp_time = std::chrono::steady_clock::now();
@@ -1007,7 +1007,7 @@ int SearchWorker_revamp::propagate() {
 		new_nodes_list_lock_.unlock();
 
 		for (; n > 0; n--, j++) {
-			Node_revamp* node = new_nodes_[j].node->GetParent();
+			NodeGlow* node = new_nodes_[j].node->GetParent();
 			uint16_t juncidx = new_nodes_[j].junction;
 
 			//LOGFILE << "node: " << node << ", juncidx: " << juncidx;
@@ -1063,7 +1063,7 @@ int SearchWorker_revamp::propagate() {
 
 
 
-void SearchWorker_revamp::ThreadLoop(int thread_id) {
+void SearchWorkerGlow::ThreadLoop(int thread_id) {
 
 	PositionHistory history(search_->played_history_);
 	std::vector<Move> movestack;
@@ -1190,7 +1190,7 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 		//		if (junctions_[juncidx].children_count > 0) break;
 		//		juncidx = junctions_[juncidx].parent;
 		//	}
-		//	Node_revamp* node = non_computation_new_nodes_[i].node;
+		//	NodeGlow* node = non_computation_new_nodes_[i].node;
 		//	while (true) {
 		//		node = node->GetParent();
 		//		recalcPropagatedQ(node);
@@ -1384,7 +1384,7 @@ void SearchWorker_revamp::ThreadLoop(int thread_id) {
 }
 
 
-void SearchWorker_revamp::HelperThreadLoop(int helper_thread_id, std::mutex* lock) {
+void SearchWorkerGlow::HelperThreadLoop(int helper_thread_id, std::mutex* lock) {
 	PositionHistory history(search_->played_history_);
 	std::vector<Move> movestack;
 
