@@ -459,6 +459,14 @@ void SearchGlow::ExtendNode(PositionHistory* history, NodeGlow* node) {
 // Distribution
 //////////////////////////////////////////////////////////////////////////////
 
+	// Parameters we use
+	// FpuValue: policy_weight_exponent 0.59
+  	// Temperature: q_concentration 36.2
+        // MaxCollisionVisits: number of sub nodes before exploration encouragement kicks in. 900 is reasonable, but for long time control games perhaps better leave it at 1.
+  	// TemperatureVisitOffset: coefficient by which q_concentration is reduced per subnode. 0.0000082
+	// TemperatureWinpctCutoff: factor to boost cpuct * policy = explore moves with high policy but low q. reasonable value: 3-5 (when TemperatureVisitOffset is non-zero lower, say 0.5)
+	// Cpuct: factor to boost cpuct = explore moves regardless of their policy reasonable value: 0.003
+
   inline float q_to_prob(const float q, const float max_q, const float q_concentration, int n, int parent_n) {
   switch (Q_TO_PROB_MODE) {
   case 1: {
@@ -593,9 +601,9 @@ void SearchGlow::ExtendNode(PositionHistory* history, NodeGlow* node) {
 	// // Don't write this value back to the node, just use it locally.
 	std::vector<double> q_weight_based_on_decreased_q_conc(n);
 	sum_of_w_of_expanded_nodes = 0; // reset
-	for (int i = 0; i < n; i++) {
-	  // Linear decrease from 36.2 at 12.000 nodes to 20 at 1.000.000 nodes.
-	  q_weight_based_on_decreased_q_conc[i] = q_to_prob(node->GetEdges()[i].GetChild()->GetQ(), maxq, search_->params_.GetTemperature() - 0.0000164 * node->GetN(), node->GetEdges()[i].GetChild()->GetN(), node->GetN());
+	for (int i = 0; i < n; i++) {	
+	  // Linear decrease from 36.2 at 12.000 nodes to 20 at 1.000.000 nodes if TempEndgame=0.0000164, but that's too much, depth will be to low. Half of that, 0.0000082 works OK.
+	  q_weight_based_on_decreased_q_conc[i] = q_to_prob(node->GetEdges()[i].GetChild()->GetQ(), maxq, search_->params_.GetTemperature() - search_->params_.GetTemperatureVisitOffset() * node->GetN(), node->GetEdges()[i].GetChild()->GetN(), node->GetN());
 	  sum_of_w_of_expanded_nodes += q_weight_based_on_decreased_q_conc[i];
 	}
 	// factor for normalising w:s so their sum matches sum_of_P_of_expanded_nodes
