@@ -503,144 +503,81 @@ void SearchGlow::ExtendNode(PositionHistory* history, NodeGlow* node) {
 }
 
 
-  float SearchWorkerGlow::computeChildWeights(NodeGlow* node, bool evalution_weights) {
+  float SearchWorkerGlow::computeChildWeights(NodeGlow* node, bool evaluation_weights) {
   int n = node->GetNumChildren();
-  bool DEBUG = false;
-  // If no child is extended, then just use P.
-  if(n == 0 && (node->GetEdges())[0].GetChild() == nullptr){
-    if(DEBUG) LOGFILE << "No child extended, returning 0";
-    return 0.0;
-  } else {
-    if(DEBUG) LOGFILE << "At computeChildWeights, number of (expanded) children: " << n;
-    // At least one child is extended, weight the expanded children by Q.
-    // sum_of_w_of_expanded_nodes is the sum of the exponentiated Q:s (where Q is not OrigQ but a backpropagated Q)
-
-    float maxq = -2.0;
-    if (Q_TO_PROB_MODE == 2) {  // maxq not used for Q_TO_PROB_MODE = 1
-      for (int i = 0; i < n; i++) {
-        float q = node->GetEdges()[i].GetChild()->GetQ();
-        if (q > maxq) maxq = q;
-      }
-    }
-
-    double sum_of_P_of_expanded_nodes = 0.0;
-    double sum_of_w_of_expanded_nodes = 0.0;
-    for (int i = 0; i < n; i++) {
-      double w = q_to_prob(node->GetEdges()[i].GetChild()->GetQ(), maxq, search_->params_.GetTemperature(), node->GetEdges()[i].GetChild()->GetN(), node->GetN());
-      node->GetEdges()[i].GetChild()->SetW(w);
-      sum_of_w_of_expanded_nodes += w;
-      sum_of_P_of_expanded_nodes += node->GetEdges()[i].GetP();
-      // LOGFILE << "Raw P of node: " << i << " is " << node->GetEdges()[i].GetP();
-      // LOGFILE << "Raw Q of node: " << i << " is " << node->GetEdges()[i].GetChild()->GetOrigQ();	    
-    }
-    // factor for normalising w:s so their sum matches sum_of_P_of_expanded_nodes
-    double normalise_to_sum_of_p = sum_of_P_of_expanded_nodes / sum_of_w_of_expanded_nodes;
-
-    for (int i = 0; i < n; i++) {
-      node->GetEdges()[i].GetChild()->SetW(node->GetEdges()[i].GetChild()->GetW() * normalise_to_sum_of_p );
-    }
-
-    // We want to use P even if there is a Q available, since single Q values are always uncertain, but becomes more certain the more subnodes there are.
-
-    // In UCT the choice of node to descend/expand is made using the formula (highest score gets picked):
-    // Q + cpuct * sqrt(log(ParentN)/ChildN)
-    // For implementations that have access to P, the second part of the expression is multiplied with P
-    // Q + cpuct * sqrt(log(ParentN)/ChildN) * P
-    // In LC0, the implementation of this calculation is spread over different parts of the code (see definition of puct_mult, ComputeCpuct() and GetU() in search.cc, and node.h of lc0 (3, 2 and 19652 are defaults), but here is a summary:
-    // score = Q + P * cpuct * sqrt(log(ParentN)/ChildN)
-    // where cpuct = 3 + (2 * log((ParentN + 19652)/19652))
-
-    std::vector<double> weighted_p_and_q(n);
-    double sum_of_weighted_p_and_q = 0.0;
-
-    const float my_policy_weight_exponent_ = search_->params_.GetFpuValue(false);
-
-    // // Imitate MCTS with dynamic cpuct weight like AlphaZero
-    // // However, apply our own mixing of q and p as before
-    // // Unlike MCTS we have to normalize the cpuct weight, but should we normalize before or after multiplying with P?
-    // // In our previous algorithm, there was no need to normalize before multiplication, because the coefficient was guaranteed to be between 0 and 1 (n^0.5/n). The new coefficient is unbounded.
-    // // 1. calculate the relative weight of p (p_weight) for each child.
-    // // 2. Normalize the weights of p so that they sum to 1 and store them in relative_weight_of_p[i]
-    // // 3. Use relative_weight_of_p[i] to calculate weighted p for each child.
-    // // This means an extra loop since relative_weight_of_p[i] now varies per child.
-    // std::vector<double> unnormalised_p_weights(n); // storage before normalization
-    // double sum_of_unnormalized_p_weights = 0;
-    // for (int i = 0; i < n; i++){
-    //   unnormalised_p_weights[i] = 3 + 2 * log((node->GetN() + 19652)/19652) * sqrt(log(node->GetN())/(1+node->GetEdges()[i].GetChild()->GetN()));
-    //   if(DEBUG){
-    // 	LOGFILE << "Child: " << i << " has n_visits: " << node->GetEdges()[i].GetChild()->GetN() << " cpuct: " << unnormalised_p_weights[i];
-    //   }
-    //   sum_of_unnormalized_p_weights += unnormalised_p_weights[i];
-    // }
-    // for (int i = 0; i < n; i++){
-    //   relative_weight_of_p = unnormalised_p_weights[i] / sum_of_unnormalized_p_weights;      
-    //   if(relative_weight_of_p < 1){ // I think this will always be true.
-    // 	// Normalize so that the policy part sums to 1.
-    // 	relative_weight_of_q = 1 - relative_weight_of_p;
-    // 	weighted_p_and_q[i] = relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() + relative_weight_of_p * node->GetEdges()[i].GetP();
-    //   } else {
-    //     weighted_p_and_q[i] = node->GetEdges()[i].GetP();
-    //   }
-    //   LOGFILE << "Weighted p and q for i=" << i << " " << weighted_p_and_q[i];
-    //   sum_of_weighted_p_and_q += weighted_p_and_q[i];
-    // }
-
-    for (int i = 0; i < n; i++){
-      double relative_weight_of_p = 0;
-      double cpuct=0;
-      if(node->GetEdges()[i].GetChild()->GetN() > (uint32_t)search_->params_.GetMaxCollisionVisitsId()){
-      	cpuct = log((node->GetN() + search_->params_.GetCpuctBase())/search_->params_.GetCpuctBase()) * sqrt(log(node->GetN())/(1+node->GetEdges()[i].GetChild()->GetN()));
-      }
-      relative_weight_of_p = pow(node->GetEdges()[i].GetChild()->GetN(), my_policy_weight_exponent_) / (0.05 + node->GetEdges()[i].GetChild()->GetN()); // 0.05 is here to make Q have some influence after 1 visit.
-      if (relative_weight_of_p > 1){
-	relative_weight_of_p = 1;
-      }
-      double relative_weight_of_q = 1 - relative_weight_of_p;
-      if(node->GetEdges()[i].GetChild()->GetN() > (uint32_t)search_->params_.GetMaxCollisionVisitsId() && evalution_weights == false){
-	// // Recalc w using a q_conc which decreases when parent.n increases
-	// // Don't write this value back to the node, just use it locally.
-	std::vector<double> q_weight_based_on_decreased_q_conc(n);
-	sum_of_w_of_expanded_nodes = 0; // reset
-	for (int i = 0; i < n; i++) {	
-	  // Linear decrease from 36.2 at 12.000 nodes to 20 at 1.000.000 nodes if TempEndgame=0.0000164, but that's too much, depth will be to low. Half of that, 0.0000082 works OK.
-	  q_weight_based_on_decreased_q_conc[i] = q_to_prob(node->GetEdges()[i].GetChild()->GetQ(), maxq, search_->params_.GetTemperature() - search_->params_.GetTemperatureVisitOffset() * node->GetN(), node->GetEdges()[i].GetChild()->GetN(), node->GetN());
-	  sum_of_w_of_expanded_nodes += q_weight_based_on_decreased_q_conc[i];
-	}
-	// factor for normalising w:s so their sum matches sum_of_P_of_expanded_nodes
-	normalise_to_sum_of_p = sum_of_P_of_expanded_nodes / sum_of_w_of_expanded_nodes;
-	for (int i = 0; i < n; i++) {
-	  q_weight_based_on_decreased_q_conc[i] = q_weight_based_on_decreased_q_conc[i] * normalise_to_sum_of_p; // normalise
-	  weighted_p_and_q[i] = relative_weight_of_q * q_weight_based_on_decreased_q_conc[i] + relative_weight_of_p * node->GetEdges()[i].GetP() + search_->params_.GetTemperatureWinpctCutoff() * cpuct * node->GetEdges()[i].GetP() + search_->params_.GetCpuct() * cpuct; // Weight for exploration. This one has four components 1) q, 2) p as in the evaluation weight formula, and two more: one cpuct * policy and one raw cpuct (=give all moves visits, regardless of p).
-	  // weighted_p_and_q[i] = relative_weight_of_q * q_weight_based_on_decreased_q_conc[i] + relative_weight_of_p * node->GetEdges()[i].GetP(); // Try only decreasing q_conc, no cpuct for now.
-	}
-      } else {
-	weighted_p_and_q[i] = relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() + relative_weight_of_p * node->GetEdges()[i].GetP();  // Weight for evaluation
-      }
-      
-      if(DEBUG) { LOGFILE << "Weighted p and q for i=" << i << " " << weighted_p_and_q[i]; }
-      sum_of_weighted_p_and_q += weighted_p_and_q[i];
-    }
-    
-    // make these sum to the sum of P of all the expanded children
-    double final_sum_of_weights_for_the_exanded_children = 0.0; // save the final sum here, we will return it.
-    for (int i = 0; i < n; i++){
-      node->GetEdges()[i].GetChild()->SetW(weighted_p_and_q[i] / sum_of_weighted_p_and_q * sum_of_P_of_expanded_nodes);
-      final_sum_of_weights_for_the_exanded_children += node->GetEdges()[i].GetChild()->GetW();
-      // LOGFILE << "visits: " << node->GetEdges()[i].GetChild()->GetN()
-      // 	    << " P: " << node->GetEdges()[i].GetP()
-      // 	    << " original Q: " << node->GetEdges()[i].GetChild()->GetOrigQ() 
-      // 	    << " Q after search: " << node->GetEdges()[i].GetChild()->GetQ()
-      // 	    << " q as prop: " << node->GetEdges()[i].GetChild()->GetW()
-      // 	    << " sum of p for the expanded nodes: " << sum_of_P_of_expanded_nodes
-      // 	    << " weighted sum of P and q_as_prob: " << weighted_p_and_q[i]
-      // 	    << " (weighted sum of P and q_as_prob) divided the product of sum_of_weighted_p_and_q and sum_of_P_of_expanded_nodes: " << node->GetEdges()[i].GetChild()->GetW();
-    }
-    if(final_sum_of_weights_for_the_exanded_children > 1.0007){
-      LOGFILE << "Error: sum of weights too high." << final_sum_of_weights_for_the_exanded_children;
-      // final_sum_of_weights_for_the_exanded_children = 1;
-    }
-    return final_sum_of_weights_for_the_exanded_children;  // this should be same as sum_of_P_of_expanded_nodes
+  float maxq = -2.0;
+  for (int i = 0; i < n; i++) {
+    float q = node->GetEdges()[i].GetChild()->GetQ();
+    if (q > maxq) maxq = q;
   }
+
+  float sum_of_P_of_expanded_nodes = 0.0;
+  float sum_of_w_of_expanded_nodes = 0.0;
+  float sum_of_weighted_p_and_q = 0.0;
+  for (int i = 0; i < n; i++) {
+    float w = q_to_prob(node->GetEdges()[i].GetChild()->GetQ(), maxq, search_->params_.GetTemperature(), node->GetEdges()[i].GetChild()->GetN(), node->GetN());
+    node->GetEdges()[i].GetChild()->SetW(w);
+    sum_of_w_of_expanded_nodes += w;
+    sum_of_P_of_expanded_nodes += node->GetEdges()[i].GetP();
+  }
+  float normalise_to_sum_of_p = sum_of_P_of_expanded_nodes / sum_of_w_of_expanded_nodes; // Avoid division in the loop, multiplication should be faster.
+  std::vector<float> weighted_p_and_q(n);
+  float relative_weight_of_p = 0;
+  float relative_weight_of_q = 0;
+  for (int i = 0; i < n; i++) {
+    node->GetEdges()[i].GetChild()->SetW(node->GetEdges()[i].GetChild()->GetW() * normalise_to_sum_of_p); // Normalise sum of Q to sum of P
+    relative_weight_of_p = pow(node->GetEdges()[i].GetChild()->GetN(), search_->params_.GetFpuValue(false)) / (0.05 + node->GetEdges()[i].GetChild()->GetN()); // 0.05 is here to make Q have some influence after 1 visit.
+    float relative_weight_of_q = 1 - relative_weight_of_p;
+    weighted_p_and_q[i] = relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() + relative_weight_of_p * node->GetEdges()[i].GetP();  // Weight for evaluation
+    sum_of_weighted_p_and_q += weighted_p_and_q[i];
+  }
+
+  // Normalise the weighted sum Q + P to sum of P
+  float normalise_weighted_sum = sum_of_P_of_expanded_nodes / sum_of_weighted_p_and_q;
+  for (int i = 0; i < n; i++) {
+    node->GetEdges()[i].GetChild()->SetW(weighted_p_and_q[i] * normalise_weighted_sum);
+  }
+
+  // If evalution_weights is requested, then we are done now.
+  // Also return if Parent N is less than MaxCollisionVisits
+  if(evaluation_weights || (node->GetN() < (uint32_t)search_->params_.GetMaxCollisionVisitsId())){
+    return(sum_of_P_of_expanded_nodes);
+  }
+    
+  // For now, just copy and paste the above and redo it using different formulas
+  // There are 3 independent mechanisms to encourage exploration
+  // 1. Decrease q_concentration
+  sum_of_w_of_expanded_nodes = 0.0;
+  for (int i = 0; i < n; i++) {
+    // New Q based on decreasing q_conc: TemperatureVisitOffset --temp-visit-offset
+    // Boost policy: TemperatureWinpctCutoff --temp-value-cutoff
+    // Boost all moves with few visits: CPuct --cpuct
+    float w = q_to_prob(node->GetEdges()[i].GetChild()->GetQ(), maxq, search_->params_.GetTemperature() - search_->params_.GetTemperatureVisitOffset() * node->GetN(), node->GetEdges()[i].GetChild()->GetN(), node->GetN());
+    node->GetEdges()[i].GetChild()->SetW(w);
+    sum_of_w_of_expanded_nodes += w;
+  }
+  normalise_to_sum_of_p = sum_of_P_of_expanded_nodes / sum_of_w_of_expanded_nodes; // Avoid division in the loop, multiplication should be faster.
+  for (int i = 0; i < n; i++) {
+    // Unlike MCTS we do not want to boost moves that already got relatively many visits.
+    // So, we don't need the part log(parent.n + CpuctBase)/CpuctBase
+    // Instead we only use the second part sqrt(log(parent.n))/(1+child.n)
+    // However, a pure log10() seems enough, no need to embed that in a sqrt()
+    float cpuct=sqrt(log10(node->GetN())/(1+node->GetEdges()[i].GetChild()->GetN())); // Each time parent.n is tenfolded, cpuct is doubled
+    float exploration_term = search_->params_.GetTemperatureWinpctCutoff() * cpuct * node->GetEdges()[i].GetP() + search_->params_.GetCpuct() * cpuct;
+    // float capped_cpuct = exploration_term > search_->params_.GetMinimumKLDGainPerNode() ? search_->params_.GetMinimumKLDGainPerNode() : exploration_term;
+    // ./lc0 -w /home/hans/32603 --cpuct=0.003 --temp-visit-offset=0.0000082 --temp-value-cutoff=1 --fpu-value=0.59 --temperature=36.2 --verbose-move-stats --logfile=\<stderr\> --policy-softmax-temp=1.0 --max-collision-visits=1 
+    // TODO reuse this
+    relative_weight_of_p = pow(node->GetEdges()[i].GetChild()->GetN(), search_->params_.GetFpuValue(false)) / (0.05 + node->GetEdges()[i].GetChild()->GetN()); // 0.05 is here to make Q have some influence after 1 visit.
+    // relative_weight_of_p = capped_cpuct > relative_weight_of_p ? capped_cpuct : relative_weight_of_p; // If capped cpuct is greater than relative_weight_of_p, then use it instead.
+    relative_weight_of_q = 1 - relative_weight_of_p;
+    weighted_p_and_q[i] = relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() * normalise_to_sum_of_p + relative_weight_of_p * node->GetEdges()[i].GetP() + exploration_term; // Weight for exploration
+    sum_of_weighted_p_and_q += weighted_p_and_q[i];
+  }
+  float final_normalisation = sum_of_P_of_expanded_nodes / sum_of_weighted_p_and_q;
+  for (int i = 0; i < n; i++){
+    node->GetEdges()[i].GetChild()->SetW(weighted_p_and_q[i] * final_normalisation);
+  }
+  return(sum_of_P_of_expanded_nodes);
 }
 
 
