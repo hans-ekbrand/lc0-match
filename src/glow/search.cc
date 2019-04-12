@@ -539,19 +539,19 @@ void SearchGlow::ExtendNode(PositionHistory* history, NodeGlow* node) {
   }
 
   // If evalution_weights is requested, then we are done now.
-  // Also return if Parent N is less than MaxCollisionVisits
-  if(evaluation_weights || (node->GetN() < (uint32_t)search_->params_.GetMaxCollisionVisitsId())){
+  if(evaluation_weights){
     return(sum_of_P_of_expanded_nodes);
   }
     
   // For now, just copy and paste the above and redo it using different formulas
   // There are 3 independent mechanisms to encourage exploration
-  // 1. Decrease q_concentration
+  // New Q based on decreasing q_conc: TemperatureVisitOffset --temp-visit-offset
+  // Boost policy: TemperatureWinpctCutoff --temp-value-cutoff
+  // Boost all moves with few visits: CPuct --cpuct
+  // ./lc0 -w /home/hans/32603 --cpuct=0.003 --temp-visit-offset=0.0000082 --temp-value-cutoff=3 --fpu-value=0.59 --temperature=36.2 --verbose-move-stats --logfile=\<stderr\> --policy-softmax-temp=1.0 --max-collision-visits=1 
+  
   sum_of_w_of_expanded_nodes = 0.0;
   for (int i = 0; i < n; i++) {
-    // New Q based on decreasing q_conc: TemperatureVisitOffset --temp-visit-offset
-    // Boost policy: TemperatureWinpctCutoff --temp-value-cutoff
-    // Boost all moves with few visits: CPuct --cpuct
     float w = q_to_prob(node->GetEdges()[i].GetChild()->GetQ(), maxq, search_->params_.GetTemperature() - search_->params_.GetTemperatureVisitOffset() * node->GetN(), node->GetEdges()[i].GetChild()->GetN(), node->GetN());
     node->GetEdges()[i].GetChild()->SetW(w);
     sum_of_w_of_expanded_nodes += w;
@@ -560,8 +560,6 @@ void SearchGlow::ExtendNode(PositionHistory* history, NodeGlow* node) {
   for (int i = 0; i < n; i++) {
     float cpuct = log((node->GetN() + search_->params_.GetCpuctBase())/search_->params_.GetCpuctBase()) * sqrt(log(node->GetN())/(1+node->GetEdges()[i].GetChild()->GetN()));
     float exploration_term = search_->params_.GetTemperatureWinpctCutoff() * cpuct * node->GetEdges()[i].GetP() + search_->params_.GetCpuct() * cpuct;
-    // float capped_cpuct = exploration_term > search_->params_.GetMinimumKLDGainPerNode() ? search_->params_.GetMinimumKLDGainPerNode() : exploration_term;
-    // ./lc0 -w /home/hans/32603 --cpuct=0.003 --temp-visit-offset=0.0000082 --temp-value-cutoff=1 --fpu-value=0.59 --temperature=36.2 --verbose-move-stats --logfile=\<stderr\> --policy-softmax-temp=1.0 --max-collision-visits=1 
     // TODO reuse this
     relative_weight_of_p = pow(node->GetEdges()[i].GetChild()->GetN(), search_->params_.GetFpuValue(false)) / (0.05 + node->GetEdges()[i].GetChild()->GetN()); // 0.05 is here to make Q have some influence after 1 visit.
     // relative_weight_of_p = capped_cpuct > relative_weight_of_p ? capped_cpuct : relative_weight_of_p; // If capped cpuct is greater than relative_weight_of_p, then use it instead.
@@ -861,24 +859,6 @@ void SearchWorkerGlow::recalcPropagatedQ(NodeGlow* node) {
 
   float total_children_weight = computeChildWeights(node, true);
 
-//  if (total_children_weight < 0.0 || total_children_weight - 1.0 > 1.00012) {
-//    std::cerr << "total_children_weight: " << total_children_weight << "\n";
-//    abort();
-//  }
-//  float totw = 0.0;
-//  for (int i = 0; i < node->GetNumChildren(); i++) {
-//    float w = node->GetEdges()[i].GetChild()->GetW();
-//    if (w < 0.0) {
-//      std::cerr << "w: " << w << "\n";
-//      abort();
-//    }
-//    totw += w;
-//  }
-//  if (abs(total_children_weight - totw) > 1.00012) {
-//    std::cerr << "total_children_weight: " << total_children_weight << ", totw: " << total_children_weight << "\n";
-//    abort();
-//  }
-
   // Average Q START
   float q = (1.0 - total_children_weight) * node->GetOrigQ();
   for (int i = 0; i < node->GetNumChildren(); i++) {
@@ -887,39 +867,31 @@ void SearchWorkerGlow::recalcPropagatedQ(NodeGlow* node) {
   node->SetQ(q);
   // Average Q STOP
 
-  total_children_weight = computeChildWeights(node, false);
-
+  // When the node get more than MaxCollisionVisits subnodes, then recalc w to encourage exploration
+  if(node->GetN() > (uint32_t)search_->params_.GetMaxCollisionVisitsId()){
+      total_children_weight = computeChildWeights(node, false);
+  }
   
-	int first_non_created_child_idx = node->GetNumChildren();
-	while (first_non_created_child_idx < node->GetNumEdges() && node->GetEdges()[first_non_created_child_idx].GetChild() != nullptr) {
-		first_non_created_child_idx++;
-	}
+  int first_non_created_child_idx = node->GetNumChildren();
+  while (first_non_created_child_idx < node->GetNumEdges() && node->GetEdges()[first_non_created_child_idx].GetChild() != nullptr) {
+    first_non_created_child_idx++;
+  }
 
-//  if (MULTIPLE_NEW_SIBLINGS)
-//    n = node->GetNumEdges() - first_non_created_child_idx;
-//  else
-//    n = node->GetNumEdges() > first_non_created_child_idx ? 1 : 0;
-
-//  for (int i = 0; i < node->GetNumChildren(); i++) {
-//    n += node->GetEdges()[i].GetChild()->GetNExtendable();
-//  }
-//  node->SetNExtendable(n);
-
-	int16_t max_idx = -1;
-	float max_w = 0.0;
-	int nidx = node->GetNextUnexpandedEdge();
-	if (nidx < node->GetNumEdges() && nidx - node->GetNumChildren() < MAX_NEW_SIBLINGS) {
-		max_w = node->GetEdges()[nidx].GetP();
-	}
-	for (int i = 0; i < node->GetNumChildren(); i++) {
-		float br_max_w = node->GetEdges()[i].GetChild()->GetW() * node->GetEdges()[i].GetChild()->GetMaxW();
-		if (br_max_w > max_w) {
-			max_w = br_max_w;
-			max_idx = i;
-		}
-	}
-	node->SetMaxW(max_w);
-	node->SetBestIdx(max_idx);
+  int16_t max_idx = -1;
+  float max_w = 0.0;
+  int nidx = node->GetNextUnexpandedEdge();
+  if (nidx < node->GetNumEdges() && nidx - node->GetNumChildren() < MAX_NEW_SIBLINGS) {
+    max_w = node->GetEdges()[nidx].GetP();
+  }
+  for (int i = 0; i < node->GetNumChildren(); i++) {
+    float br_max_w = node->GetEdges()[i].GetChild()->GetW() * node->GetEdges()[i].GetChild()->GetMaxW();
+    if (br_max_w > max_w) {
+      max_w = br_max_w;
+      max_idx = i;
+    }
+  }
+  node->SetMaxW(max_w);
+  node->SetBestIdx(max_idx);
 }
 
 
