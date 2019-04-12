@@ -558,11 +558,7 @@ void SearchGlow::ExtendNode(PositionHistory* history, NodeGlow* node) {
   }
   normalise_to_sum_of_p = sum_of_P_of_expanded_nodes / sum_of_w_of_expanded_nodes; // Avoid division in the loop, multiplication should be faster.
   for (int i = 0; i < n; i++) {
-    // Unlike MCTS we do not want to boost moves that already got relatively many visits.
-    // So, we don't need the part log(parent.n + CpuctBase)/CpuctBase
-    // Instead we only use the second part sqrt(log(parent.n))/(1+child.n)
-    // However, a pure log10() seems enough, no need to embed that in a sqrt()
-    float cpuct=sqrt(log10(node->GetN())/(1+node->GetEdges()[i].GetChild()->GetN())); // Each time parent.n is tenfolded, cpuct is doubled
+    float cpuct = log((node->GetN() + search_->params_.GetCpuctBase())/search_->params_.GetCpuctBase()) * sqrt(log(node->GetN())/(1+node->GetEdges()[i].GetChild()->GetN()));
     float exploration_term = search_->params_.GetTemperatureWinpctCutoff() * cpuct * node->GetEdges()[i].GetP() + search_->params_.GetCpuct() * cpuct;
     // float capped_cpuct = exploration_term > search_->params_.GetMinimumKLDGainPerNode() ? search_->params_.GetMinimumKLDGainPerNode() : exploration_term;
     // ./lc0 -w /home/hans/32603 --cpuct=0.003 --temp-visit-offset=0.0000082 --temp-value-cutoff=1 --fpu-value=0.59 --temperature=36.2 --verbose-move-stats --logfile=\<stderr\> --policy-softmax-temp=1.0 --max-collision-visits=1 
