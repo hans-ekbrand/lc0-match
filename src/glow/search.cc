@@ -565,12 +565,8 @@ void SearchGlow::ExtendNode(PositionHistory* history, NodeGlow* node) {
   normalise_to_sum_of_p = sum_of_P_of_expanded_nodes / sum_of_w_of_expanded_nodes; // Avoid division in the loop, multiplication should be faster.
   for (int i = 0; i < n; i++) {
     float cpuct = log((node->GetN() + search_->params_.GetCpuctBase())/search_->params_.GetCpuctBase()) * sqrt(log(node->GetN())/(1+node->GetEdges()[i].GetChild()->GetN()));
-    float exploration_term = search_->params_.GetTemperatureWinpctCutoff() * cpuct * node->GetEdges()[i].GetP() + search_->params_.GetCpuct() * cpuct;
-    // TODO reuse this
-    relative_weight_of_p = pow(node->GetEdges()[i].GetChild()->GetN(), search_->params_.GetFpuValue(false)) / (0.05 + node->GetEdges()[i].GetChild()->GetN()); // 0.05 is here to make Q have some influence after 1 visit.
-    // relative_weight_of_p = capped_cpuct > relative_weight_of_p ? capped_cpuct : relative_weight_of_p; // If capped cpuct is greater than relative_weight_of_p, then use it instead.
-    relative_weight_of_q = 1 - relative_weight_of_p;
-    weighted_p_and_q[i] = relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() * normalise_to_sum_of_p + relative_weight_of_p * node->GetEdges()[i].GetP() + exploration_term; // Weight for exploration
+    float exploration_term = search_->params_.GetTemperatureWinpctCutoff() * cpuct * node->GetEdges()[i].GetP();
+    weighted_p_and_q[i] = node->GetEdges()[i].GetChild()->GetW() + exploration_term; // Weight for exploration
     sum_of_weighted_p_and_q += weighted_p_and_q[i];
   }
   float final_normalisation = sum_of_P_of_expanded_nodes / sum_of_weighted_p_and_q;
