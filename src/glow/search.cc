@@ -52,7 +52,9 @@ const int kUciInfoMinimumFrequencyMs = 5000;
 int const N_HELPER_THREADS_PRE = 5;
 int const N_HELPER_THREADS_POST = 5;
 
-bool const LOG_RUNNING_INFO = false;  
+bool const LOG_RUNNING_INFO = false;
+
+float const policy_exponent_minimum = 20; // linear decrease with number of subnodes until this value is reached.
 
 }  // namespace
 
@@ -551,8 +553,12 @@ void SearchGlow::ExtendNode(PositionHistory* history, NodeGlow* node) {
   // ./lc0 -w /home/hans/32603 --cpuct=0.003 --temp-visit-offset=0.0000082 --temp-value-cutoff=3 --fpu-value=0.59 --temperature=36.2 --verbose-move-stats --logfile=\<stderr\> --policy-softmax-temp=1.0 --max-collision-visits=1 
   
   sum_of_w_of_expanded_nodes = 0.0;
+  float q_conc = search_->params_.GetTemperature() - search_->params_.GetTemperatureVisitOffset() * node->GetN();
+  if(q_conc < policy_exponent_minimum){
+    q_conc = policy_exponent_minimum;
+  }
   for (int i = 0; i < n; i++) {
-    float w = q_to_prob(node->GetEdges()[i].GetChild()->GetQ(), maxq, search_->params_.GetTemperature() - search_->params_.GetTemperatureVisitOffset() * node->GetN(), node->GetEdges()[i].GetChild()->GetN(), node->GetN());
+    float w = q_to_prob(node->GetEdges()[i].GetChild()->GetQ(), maxq, q_conc, node->GetEdges()[i].GetChild()->GetN(), node->GetN());
     node->GetEdges()[i].GetChild()->SetW(w);
     sum_of_w_of_expanded_nodes += w;
   }
