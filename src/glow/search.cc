@@ -530,7 +530,7 @@ void SearchGlow::ExtendNode(PositionHistory* history, NodeGlow* node) {
     node->GetEdges()[i].GetChild()->SetW(node->GetEdges()[i].GetChild()->GetW() * normalise_to_sum_of_p); // Normalise sum of Q to sum of P
     relative_weight_of_p = pow(node->GetEdges()[i].GetChild()->GetN(), search_->params_.GetFpuValue(false)) / (0.05 + node->GetEdges()[i].GetChild()->GetN()); // 0.05 is here to make Q have some influence after 1 visit.
     float relative_weight_of_q = 1 - relative_weight_of_p;
-    weighted_p_and_q[i] = relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() + relative_weight_of_p * node->GetEdges()[i].GetP();  // Weight for evaluation
+    weighted_p_and_q[i] = node->GetEdges()[i].GetChild()->GetW(); // Weight for evaluation
     sum_of_weighted_p_and_q += weighted_p_and_q[i];
   }
 
@@ -552,20 +552,20 @@ void SearchGlow::ExtendNode(PositionHistory* history, NodeGlow* node) {
   // Boost all moves with few visits: CPuct --cpuct
   // ./lc0 -w /home/hans/32603 --cpuct=0.003 --temp-visit-offset=0.0000082 --temp-value-cutoff=3 --fpu-value=0.59 --temperature=36.2 --verbose-move-stats --logfile=\<stderr\> --policy-softmax-temp=1.0 --max-collision-visits=1 
   
-  sum_of_w_of_expanded_nodes = 0.0;
-  float q_conc = search_->params_.GetTemperature() - search_->params_.GetTemperatureVisitOffset() * node->GetN();
-  if(q_conc < policy_exponent_minimum){
-    q_conc = policy_exponent_minimum;
-  }
-  for (int i = 0; i < n; i++) {
-    float w = q_to_prob(node->GetEdges()[i].GetChild()->GetQ(), maxq, q_conc, node->GetEdges()[i].GetChild()->GetN(), node->GetN());
-    node->GetEdges()[i].GetChild()->SetW(w);
-    sum_of_w_of_expanded_nodes += w;
-  }
-  normalise_to_sum_of_p = sum_of_P_of_expanded_nodes / sum_of_w_of_expanded_nodes; // Avoid division in the loop, multiplication should be faster.
+  // sum_of_w_of_expanded_nodes = 0.0;
+  // float q_conc = search_->params_.GetTemperature() - search_->params_.GetTemperatureVisitOffset() * node->GetN();
+  // if(q_conc < policy_exponent_minimum){
+  //   q_conc = policy_exponent_minimum;
+  // }
+  // for (int i = 0; i < n; i++) {
+  //   float w = q_to_prob(node->GetEdges()[i].GetChild()->GetQ(), maxq, q_conc, node->GetEdges()[i].GetChild()->GetN(), node->GetN());
+  //   node->GetEdges()[i].GetChild()->SetW(w);
+  //   sum_of_w_of_expanded_nodes += w;
+  // }
+  // normalise_to_sum_of_p = sum_of_P_of_expanded_nodes / sum_of_w_of_expanded_nodes; // Avoid division in the loop, multiplication should be faster.
   for (int i = 0; i < n; i++) {
     float cpuct = log((node->GetN() + search_->params_.GetCpuctBase())/search_->params_.GetCpuctBase()) * sqrt(log(node->GetN())/(1+node->GetEdges()[i].GetChild()->GetN()));
-    float exploration_term = search_->params_.GetTemperatureWinpctCutoff() * cpuct * node->GetEdges()[i].GetP();
+    float exploration_term = search_->params_.GetTemperatureWinpctCutoff() * cpuct * node->GetEdges()[i].GetP() + search_->params_.GetCpuct() * cpuct;
     weighted_p_and_q[i] = node->GetEdges()[i].GetChild()->GetW() + exploration_term; // Weight for exploration
     sum_of_weighted_p_and_q += weighted_p_and_q[i];
   }
