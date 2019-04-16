@@ -49,10 +49,12 @@ int const MAX_NEW_SIBLINGS = 10000;
   // The maximum number of new siblings. If 1, then it's like old MULTIPLE_NEW_SIBLINGS = false, if >= maximum_number_of_legal_moves it's like MULTIPLE_NEW_SIBLINGS = true
 const int kUciInfoMinimumFrequencyMs = 5000;
 
-int const N_HELPER_THREADS_PRE = 5;
-int const N_HELPER_THREADS_POST = 5;
+int const N_HELPER_THREADS_PRE = 0;
+int const N_HELPER_THREADS_POST = 0;
 
-bool const LOG_RUNNING_INFO = false;  
+bool const LOG_RUNNING_INFO = true;  
+
+bool const OLD_PICK_N_CREATE_MODE = false;
 
 }  // namespace
 
@@ -810,6 +812,167 @@ int SearchWorkerGlow::extendTree(std::vector<Move> *movestack, PositionHistory *
 }
 
 
+void SearchWorkerGlow::picknextend(PositionHistory *history) {
+
+//	std::vector<int> path;
+//	unsigned int last_depth = 0;
+	int nodes_visited = 0;
+//	bool same_path = false;
+
+	// turn on global tree lock
+	while (new_nodes_size_ < new_nodes_amount_target_ && new_nodes_size_ < new_nodes_amount_limit_) {  // repeat this until minibatch_size amount of non terminal, non cache hit nodes have been found (or reached a predefined limit larger than minibatch size)
+		NodeGlow *node = root_node_;
+		int best_idx = node->GetBestIdx();
+		if (best_idx == -1 && (node->GetNextUnexpandedEdge() == node->GetNumEdges() || node->GetNextUnexpandedEdge() - node->GetNumChildren() == MAX_NEW_SIBLINGS)) break;  // no more expandable node
+		// starting from root node follow maxidx until next move would make the sub tree to small
+		// propagate no availability upwards to root
+		// turn off global tree lock
+		//for (;;) {  // repeat until localbatch_size amount of nodes have been found
+			// go down to max unexpanded node
+			unsigned int depth = 0;
+			while (true) {
+				if (best_idx == -1) break;  // best unexpanded node is child of this node
+// 				if (same_path) {
+// 					if (depth == last_depth) {  // reached end of last path without deviating
+// 						same_path = false;
+// 						if (path.size() == depth) {
+// 							path.push_back(best_idx);
+// 						} else {
+// 							path[depth] = best_idx;
+// 						}
+// 						history->Pop();  // pop move of last new node
+// 						history->Append(node->GetEdges()[best_idx].move_);
+// 						nodes_visited++;
+// 					} else {
+// 						if (best_idx != path[depth]) {  // deviates from last path
+// 							same_path = false;
+// 							path[depth] = best_idx;
+// 							history->Trim(played_history_length_ + depth);
+// 							history->Append(node->GetEdges()[best_idx].move_);
+// 							nodes_visited++;
+// 						}
+// 					}
+// 				} else {  // not same path
+// 					if (path.size() == depth) {
+// 						path.push_back(best_idx);
+// 					} else {
+// 						path[depth] = best_idx;
+// 					}
+					history->Append(node->GetEdges()[best_idx].move_);
+					nodes_visited++;
+// 				}
+				node = node->GetEdges()[best_idx].GetChild();
+				best_idx = node->GetBestIdx();
+				depth++;
+			};
+
+			nodes_visited++;
+			
+// 			if (same_path) {
+// 				history->Trim(played_history_length_ + depth);
+// 			}
+			
+// 			same_path = true;
+// 			last_depth = depth;
+			
+			int nidx = node->GetNextUnexpandedEdge();
+			history->Append(node->GetEdges()[nidx].move_);
+			NodeGlow* newnode = node->GetEdges()[nidx].CreateChild(node, nidx);
+			int nnidx = new_nodes_size_++;
+			new_nodes_[nnidx] = {newnode, 0xFFFF, -1};
+			node->SetNextUnexpandedEdge(nidx + 1);
+			
+			search_->ExtendNode(history, newnode);
+			if (newnode->IsTerminal()) {
+				new_nodes_amount_target_++;
+			} else {
+				int idx = AddNodeToComputation(newnode, history);
+				new_nodes_[nnidx].batch_idx = idx;
+			}
+			history->Trim(played_history_length_);
+
+			int junction_mode = 0;
+			uint16_t ccidx = nnidx | 0x8000;
+
+			while (true) {
+				int16_t max_idx = -1;
+				float max_w = 0.0;
+				int nidx = node->GetNextUnexpandedEdge();
+				if (nidx < node->GetNumEdges() && nidx - node->GetNumChildren() < MAX_NEW_SIBLINGS) {
+					max_w = node->GetEdges()[nidx].GetP();
+				}
+				for (int i = 0; i < node->GetNumChildren(); i++) {
+					float br_max_w = node->GetEdges()[i].GetChild()->GetW() * node->GetEdges()[i].GetChild()->GetMaxW();
+					if (br_max_w > max_w) {
+						max_w = br_max_w;
+						max_idx = i;
+					}
+				}
+				node->SetMaxW(max_w);
+				node->SetBestIdx(max_idx);
+
+				if (junction_mode == 0) {
+					uint16_t n = node->GetBranchingInFlight();
+					if (n == 0) {  // an unvisited node
+						node->SetBranchingInFlight(ccidx);
+					} else if (n & 0xC000) {  // part of a path between junctions
+						uint16_t new_junc_idx = junctions_.size();
+						node->SetBranchingInFlight(new_junc_idx + 1);
+						uint16_t parent;
+						if (n & 0x8000) {
+							parent = new_nodes_[n & 0x3FFF].junction;
+							new_nodes_[n & 0x3FFF].junction = new_junc_idx;
+						} else {
+							parent = junctions_[n & 0x3FFF].parent;
+							junctions_[n & 0x3FFF].parent = new_junc_idx;
+						}
+						junctions_.push_back({node, parent, 0});
+
+						if (ccidx & 0x8000) {
+							new_nodes_[ccidx & 0x3FFF].junction = new_junc_idx;
+						} else {
+							junctions_[ccidx & 0x3FFF].parent = new_junc_idx;
+						}
+						ccidx = new_junc_idx | 0x4000;
+						junction_mode = 1;
+					} else {  // a junction node
+						if (ccidx & 0x8000) {
+							new_nodes_[ccidx & 0x3FFF].junction = n - 1;
+						} else {
+							junctions_[ccidx & 0x3FFF].parent = n - 1;
+						}
+						junction_mode = 2;
+					}
+				} else if (junction_mode == 1) {
+					uint16_t n = node->GetBranchingInFlight();
+					if (n & 0xC000) {  // part of path between junctions
+						node->SetBranchingInFlight(ccidx);
+					} else {  // a junction node
+						junction_mode = 2;
+					}
+				}
+
+				if (node == root_node_) break;
+				node = node->GetParent();
+			}
+			
+			// when deviating from previous path, trim history according to this and start pushing each new move
+			// create node, increment inner loop node count
+			// compute legal moves
+			// if node is terminal or cache hit, set its q (and p:s) and turn on full propagation mode
+			// otherwise, add node to computation list and turn on limited max only propagation and forking tree mode. Increment computation node count.
+			// propagate to local tree root according to mode
+		//}
+		// turn on global tree lock
+		// propagate to root
+	}
+
+// 	history->Trim(played_history_length_);
+
+	search_->count_search_node_visits_ += nodes_visited;
+
+}
+
 void SearchWorkerGlow::retrieveNNResult(NodeGlow* node, int batchidx) {
   float q = -computation_->GetQVal(batchidx);
   if (q < -1.0 || q > 1.0) {
@@ -1075,13 +1238,18 @@ void SearchWorkerGlow::ThreadLoop(int thread_id) {
 
     new_nodes_amount_target_ = batch_size_;
 
+		auto start_comp_time = std::chrono::steady_clock::now();
+		auto stop_comp_time = std::chrono::steady_clock::now();
+
+		if (OLD_PICK_N_CREATE_MODE) {
+		
 		helper_threads_mode_ = 1;
 		//LOGFILE << "Allowing helper threads to help";
 		for (int j = 0; j < N_HELPER_THREADS_PRE; j++) {
 			helper_thread_locks[j]->unlock();
 		}
 
-		auto start_comp_time = std::chrono::steady_clock::now();
+		start_comp_time = std::chrono::steady_clock::now();
 		//auto start_comp_time2 = start_comp_time;
 
 		//LOGFILE << "Working myself.";
@@ -1105,7 +1273,7 @@ void SearchWorkerGlow::ThreadLoop(int thread_id) {
 			continue;
 		}
 
-		auto stop_comp_time = std::chrono::steady_clock::now();
+		stop_comp_time = std::chrono::steady_clock::now();
 		search_->duration_search_ += (stop_comp_time - start_comp_time).count();
 
     start_comp_time = stop_comp_time;
@@ -1147,6 +1315,32 @@ void SearchWorkerGlow::ThreadLoop(int thread_id) {
 		stop_comp_time = std::chrono::steady_clock::now();
 		search_->duration_create_ += (stop_comp_time - start_comp_time).count();
 
+		} else {  // new pick n create mode
+
+			start_comp_time = std::chrono::steady_clock::now();
+		picknextend(&history);
+		if (new_nodes_size_ == 0) {
+			if (search_->half_done_count_ == 0) {  // no other thread is waiting for nn computation and new nodes to finish so the search tree is exhausted
+				search_->not_stop_searching_ = false;
+				break;
+			}
+			search_->busy_mutex_.unlock();
+			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+			search_->busy_mutex_.lock();
+			continue;
+		}
+
+		stop_comp_time = std::chrono::steady_clock::now();
+		search_->duration_search_ += (stop_comp_time - start_comp_time).count();
+
+    start_comp_time = stop_comp_time;
+
+		buildJunctionRTree();
+
+		stop_comp_time = std::chrono::steady_clock::now();
+		search_->duration_junctions_ += (stop_comp_time - start_comp_time).count();
+
+		}
 		//~ if (minibatch_.size() < propagate_list_.size()) {
 			//~ std::cerr << "minibatch_.size() < propagate_list_.size(): " << minibatch_.size() << " < " << propagate_list_.size() << "\n";
 			//~ abort();
@@ -1245,7 +1439,7 @@ void SearchWorkerGlow::ThreadLoop(int thread_id) {
 		int64_t time = search_->GetTimeSinceStart();
 		if (time - search_->last_uci_time_ > kUciInfoMinimumFrequencyMs) {
 			search_->last_uci_time_ = time;
-			search_->SendUciInfo();
+//			search_->SendUciInfo();
 		}
 
 		if (search_->not_stop_searching_) {

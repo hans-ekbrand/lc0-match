@@ -114,9 +114,10 @@ Move EdgeGlow::GetMove(bool as_opponent) const {
   return m;
 }
 
-void EdgeGlow::CreateChild(NodeGlow* parent, uint16_t index) {
+NodeGlow* EdgeGlow::CreateChild(NodeGlow* parent, uint16_t index) {
   child_ = std::make_unique<NodeGlow>(parent, index);
 //  parent->noofchildren_++;  // update noofchildren when node is ready (has received nn values)
+	return child_.get();
 }
 
 

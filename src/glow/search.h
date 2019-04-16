@@ -170,6 +170,8 @@ private:
 	int extendTree(std::vector<Move> *movestack, PositionHistory *history);
 	void buildJunctionRTree();
 
+	void picknextend(PositionHistory *history);
+
 
 
 

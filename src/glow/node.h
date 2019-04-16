@@ -54,7 +54,7 @@ class EdgeGlow {
   void SetP(float val);
 
   NodeGlow* GetChild() { return child_.get(); }
-  void CreateChild(NodeGlow* parent, uint16_t index);
+  NodeGlow* CreateChild(NodeGlow* parent, uint16_t index);
 
   // Debug information about the edge.
   std::string DebugString() const;
