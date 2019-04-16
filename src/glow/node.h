@@ -53,9 +53,6 @@ class EdgeGlow {
   float GetP() const;
   void SetP(float val);
 
-  NodeGlow* GetChild() { return child_.get(); }
-  NodeGlow* CreateChild(NodeGlow* parent, uint16_t index);
-
   // Debug information about the edge.
   std::string DebugString() const;
 
@@ -65,8 +62,6 @@ class EdgeGlow {
   // Root node contains move a1a1.
   Move move_;
 
-  // Pointer to child of this edge. nullptr for no node.
-  std::unique_ptr<NodeGlow> child_ = nullptr;
 
   // Probability that this move will be made, from the policy head of the neural
   // network; compressed to a 16 bit format (5 bits exp, 11 bits significand).
@@ -110,6 +105,13 @@ class NodeGlow {
   
   void SortEdgesByPValue();
 
+	void AddChild(std::unique_ptr<NodeGlow> node);
+
+	NodeGlow* GetFirstChild() { return child_.get(); }
+	NodeGlow* GetNextSibling() { return sibling_.get(); }
+
+
+	
   // Gets parent node.
   NodeGlow* GetParent() const { return parent_; }
 
@@ -117,18 +119,12 @@ class NodeGlow {
   // for terminal nodes.
   float GetQ() const { return q_; }
   void SetQ(float q) { q_ = q; }
-  float GetQInacc() const { return q_inacc_; }
-  void SetQInacc(float q_inacc) { q_inacc_ = q_inacc; }
   float GetOrigQ() const { return orig_q_; }
   void SetOrigQ(float q) { orig_q_ = q; q_ = q; }
   float GetW() const { return w_; }
   void SetW(float w) { w_ = w; }
   float GetMaxW() const { return max_w_; }
   void SetMaxW(float w) { max_w_ = w; }
-  float GetMaxWIncr() const { return max_w_incr_; }
-  void SetMaxWIncr(float w) { max_w_incr_ = w; }
-  float GetMaxWDecr() const { return max_w_decr_; }
-  void SetMaxWDecr(float w) { max_w_decr_ = w; }
   uint16_t GetBranchingInFlight() const { return branching_in_flight_; }
   void SetBranchingInFlight(uint16_t b) { branching_in_flight_ = b; }
 
@@ -137,8 +133,8 @@ class NodeGlow {
 
   uint16_t GetNumEdges() const { return edges_.size(); }
   uint16_t GetNumChildren() const { return noofchildren_; }
-  int16_t GetBestIdx() const { return best_idx_; }
-  void SetBestIdx(int16_t idx) { best_idx_ = idx; }
+  NodeGlow *GetBestChild() const { return best_child_; }
+  void SetBestChild(NodeGlow *child) { best_child_ = child; }
   EdgeGlow* GetEdges() { return edges_.get(); }
   uint16_t GetIndex() const { return index_; }
 
@@ -159,23 +155,11 @@ class NodeGlow {
   // Deletes all children except one.
   void ReleaseChildrenExceptOne(NodeGlow* node);
 
-  void IncrParentNumChildren();
-
 //  int ComputeHeight();
 //  bool Check();
 
   // Debug information about the node.
   std::string DebugString() const;
-
-  int CountInternal(uint32_t min_n);
-  double QMean(uint32_t min_n);
-  double QVariance(uint32_t min_n, double mean);
-  double QInaccMean(uint32_t min_n);
-  double PMean();
-  double PVariance(double mean);
-  int LogPCount();
-  double LogPMean();
-  double LogPVariance(double mean);
 
 private:
 	// To minimize the number of padding bytes and to avoid having unnecessary
@@ -189,6 +173,11 @@ private:
 	// 8 byte fields.
 	// Pointer to a parent node. nullptr for the root.
 	NodeGlow* parent_ = nullptr;
+	NodeGlow *best_child_ = nullptr;  // child where unexpanded edge with highest global weight is
+
+  // Pointer to child of this edge. nullptr for no node.
+  std::unique_ptr<NodeGlow> child_ = nullptr;
+  std::unique_ptr<NodeGlow> sibling_ = nullptr;
 
 	// 4 byte fields.
 	// Average value (from value head of neural network) of all visited nodes in
@@ -196,11 +185,8 @@ private:
 	// of the player who "just" moved to reach this position, rather than from the
 	// perspective of the player-to-move for the position.
 	float q_ = 0.0f;
-  float q_inacc_ = 0.0f;
 	float orig_q_ = 0.0f;
 	float w_ = 0.0f;
-	float max_w_incr_ = 0.0f;
-	float max_w_decr_ = 0.0f;
 	float max_w_ = 0.0f;
 
 	uint32_t n_ = 1;
@@ -211,7 +197,6 @@ private:
 	uint16_t index_;
 
 	uint16_t noofchildren_ = 0;
-	int16_t best_idx_ = -1;  // index to child where unexpanded edge with highest global weight is
 	uint16_t branching_in_flight_ = 0;
 
 	// 1 byte fields.

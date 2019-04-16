@@ -92,14 +92,12 @@ private:
 
 	NodeGlow* root_node_;
 
-        const int64_t initial_visits_;
+	const int64_t initial_visits_;
 
 	bool ponder_ = false;
 	std::mutex ponder_lock_;
 
 	std::mutex busy_mutex_;
-	int iteration_count_a_ = 0;
-	int iteration_count_b_ = 0;
 	int half_done_count_ = 0;
 
 	int full_tree_depth_ = 0;
@@ -148,7 +146,8 @@ public:
 private:
 
 	struct NewNode {
-		NodeGlow* node;
+		std::unique_ptr<NodeGlow> new_node;
+		NodeGlow *parent;
 		uint16_t junction;
 		int16_t batch_idx;  // -1 if not in batch
 	};
@@ -161,7 +160,6 @@ private:
 
 	int AddNodeToComputation(NodeGlow* node, PositionHistory *history);
 	void retrieveNNResult(NodeGlow* node, int batchidx);
-  void recalcKnownWin(NodeGlow* node, int win_idx);
 	void recalcPropagatedQ(NodeGlow* node);
 	void pickNodesToExtend();
 	int appendHistoryFromTo(std::vector<Move> *movestack, PositionHistory *history, NodeGlow* from, NodeGlow* to);

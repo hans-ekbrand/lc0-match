@@ -114,12 +114,6 @@ Move EdgeGlow::GetMove(bool as_opponent) const {
   return m;
 }
 
-NodeGlow* EdgeGlow::CreateChild(NodeGlow* parent, uint16_t index) {
-  child_ = std::make_unique<NodeGlow>(parent, index);
-//  parent->noofchildren_++;  // update noofchildren when node is ready (has received nn values)
-	return child_.get();
-}
-
 
 // Policy priors (P) are stored in a compressed 16-bit format.
 //
@@ -190,15 +184,15 @@ EdgeListGlow::EdgeListGlow(MoveList moves)
 
 NodeGlow* NodeGlow::CreateSingleChildNode(Move move) {
   assert(!edges_);
-  // assert(!child_); // error: ‘child_’ was not declared in this scope
+  assert(!child_); // error: ‘child_’ was not declared in this scope
   edges_ = EdgeListGlow({move});
-  edges_[0].CreateChild(this, 0);
-  return edges_[0].GetChild();
+	AddChild(std::make_unique<NodeGlow>(this, 0));
+	return GetFirstChild();
 }
 
 void NodeGlow::CreateEdges(const MoveList& moves) {
   assert(!edges_);
-  // assert(!child_); // error: ‘child_’ was not declared in this scope
+  assert(!child_); // error: ‘child_’ was not declared in this scope
   edges_ = EdgeListGlow(moves);
 }
 
@@ -224,6 +218,15 @@ void NodeGlow::SortEdgesByPValue() {
   }
 }
 
+void NodeGlow::AddChild(std::unique_ptr<NodeGlow> node) {
+	std::unique_ptr<NodeGlow> oldchild = std::move(child_);  // or maybe put it last in list
+  child_ = std::move(node);
+//  parent->noofchildren_++;  // update noofchildren when node is ready (has received nn values)
+	child_->sibling_ = std::move(oldchild);
+	noofchildren_++;
+}
+
+
 
 std::string NodeGlow::DebugString() const {
   std::ostringstream oss;
@@ -242,115 +245,32 @@ void NodeGlow::MakeTerminal(GameResult result) {
   } else if (result == GameResult::BLACK_WON) {
     SetOrigQ(-1.0f);
   }
-  SetQInacc(0.0f);
 }
 
 void NodeGlow::ReleaseChildren() {
-  for (int i = edges_.size() - 1; i >= 0; i--) {
-    gNodeGc.AddToGcQueue(std::move(edges_[i].child_));
-  }
+  gNodeGc.AddToGcQueue(std::move(child_));
 }
 
 void NodeGlow::ReleaseChildrenExceptOne(NodeGlow* node_to_save) {
-  for (int i = edges_.size() - 1; i >= 0; i--) {
-    if (edges_[i].child_.get() != node_to_save) {
-      gNodeGc.AddToGcQueue(std::move(edges_[i].child_));
-    }
-  }
+	NodeGlow* cur = child_.get();
+	NodeGlow* prev = nullptr;
+	while (cur != nullptr && cur != node_to_save) {
+		prev = cur;
+		cur = cur->sibling_.get();
+	}
+	if (cur == nullptr) {
+		gNodeGc.AddToGcQueue(std::move(child_));
+	} else {
+		gNodeGc.AddToGcQueue(std::move(cur->sibling_));
+		if (prev != nullptr) {
+			std::unique_ptr<NodeGlow> the_node = std::move(prev->sibling_);
+			gNodeGc.AddToGcQueue(std::move(child_));
+			child_ = std::move(the_node);
+		}
+	}
 }
 
-void NodeGlow::IncrParentNumChildren() {
-  parent_->noofchildren_++;
 
-  //~ noofchildren_ = 0;
-
-  //~ if (index_ == parent_->noofchildren_) {
-    //~ parent_->noofchildren_++;
-    //~ for (int i = index_ + 1; i < parent_->edges_.size() && parent_->edges_[i].GetChild() != nullptr && parent_->edges_[i].GetChild()->GetNumChildren() != 10000; i++) {
-//~ //    for (int i = index_ + 1; i < parent_->next_unexpanded_edge_ && parent_->edges_[i].GetChild()->GetNumChildren() != 10000; i++) {
-      //~ parent_->noofchildren_++;
-    //~ }
-  //~ }
-}
-
-int NodeGlow::CountInternal(uint32_t min_n) {
-  if (n_ <= min_n) return 0;
-  int c = 1;
-  for (int i = 0; i < noofchildren_; i++) {
-    c += edges_[i].child_->CountInternal(min_n);
-  }
-  return c;
-}
-
-double NodeGlow::QMean(uint32_t min_n) {
-  if (n_ <= min_n) return 0.0;
-  double qmean = orig_q_ - q_;
-  for (int i = 0; i < noofchildren_; i++) {
-    qmean += edges_[i].child_->QMean(min_n);
-  }
-  return qmean;
-}
-
-double NodeGlow::QVariance(uint32_t min_n, double mean) {
-  if (n_ <= min_n) return 0.0;
-  double qvar = (double)(orig_q_ - q_) - mean;
-  qvar = qvar * qvar;
-  for (int i = 0; i < noofchildren_; i++) {
-    qvar += edges_[i].child_->QVariance(min_n, mean);
-  }
-  return qvar;
-}
-
-double NodeGlow::QInaccMean(uint32_t min_n) {
-  if (n_ <= min_n) return 0.0;
-  double mean = q_inacc_;
-  for (int i = 0; i < noofchildren_; i++) {
-    mean += edges_[i].child_->QInaccMean(min_n);
-  }
-  return mean;
-}
-
-double NodeGlow::PMean() {
-  double pmean = parent_ == nullptr ? 0.0 : (parent_->edges_[index_].GetP() - w_);
-  for (int i = 0; i < noofchildren_; i++) {
-    pmean += edges_[i].child_->PMean();
-  }
-  return pmean;
-}
-
-double NodeGlow::PVariance(double mean) {
-  double pvar = parent_ == nullptr ? 0.0 : ((double)(parent_->edges_[index_].GetP() - w_) - mean);
-  pvar = pvar * pvar;
-  for (int i = 0; i < noofchildren_; i++) {
-    pvar += edges_[i].child_->PVariance(mean);
-  }
-  return pvar;
-}
-
-int NodeGlow::LogPCount() {
-  int c = (parent_ == nullptr || parent_->edges_[index_].GetP() == 0.0 || w_ == 0.0) ? 0 : 1;
-  for (int i = 0; i < noofchildren_; i++) {
-    c += edges_[i].child_->LogPCount();
-  }
-  return c;
-}
-
-double NodeGlow::LogPMean() {
-  double pmean = (parent_ == nullptr || parent_->edges_[index_].GetP() == 0.0 || w_ == 0.0) ? 0.0 : log(parent_->edges_[index_].GetP() / w_);
-  for (int i = 0; i < noofchildren_; i++) {
-    pmean += edges_[i].child_->LogPMean();
-  }
-  return pmean;
-}
-
-double NodeGlow::LogPVariance(double mean) {
-  double pvar = (parent_ == nullptr || parent_->edges_[index_].GetP() == 0.0 || w_ == 0.0) ? 0.0 : ((double)log(parent_->edges_[index_].GetP() / w_) - mean);
-  pvar = pvar * pvar;
-  for (int i = 0; i < noofchildren_; i++) {
-    pvar += edges_[i].child_->LogPVariance(mean);
-  }
-  return pvar;
-}
 
 
 
@@ -361,15 +281,11 @@ double NodeGlow::LogPVariance(double mean) {
 void NodeTreeGlow::MakeMove(Move move) {
   if (HeadPosition().IsBlackToMove()) move.Mirror();
 
-  NodeGlow* new_head = nullptr;
-  for (int i = 0; i < current_head_->edges_.size(); i++) {
-    auto& n = current_head_->edges_[i];
-    if (n.move_ == move) {
-      new_head = n.GetChild();
-      break;
-    }
-  }
-  current_head_->ReleaseChildrenExceptOne(new_head);
+  NodeGlow* new_head = current_head_->child_.get();
+	while (new_head != nullptr && current_head_->edges_[new_head->index_].move_ != move) {
+		new_head = new_head->sibling_.get();
+	}
+	current_head_->ReleaseChildrenExceptOne(new_head);
   current_head_ =
       new_head ? new_head : current_head_->CreateSingleChildNode(move);
   history_.Append(move);

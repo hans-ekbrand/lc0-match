@@ -145,11 +145,11 @@ bool SearchGlow::IsSearchActive() const {
 
 namespace {
 
-  int indexOfHighestQEdge(NodeGlow* node, bool black_to_move, bool filter_uncertain_moves) {
+  NodeGlow *indexOfHighestQEdge(NodeGlow* node, bool black_to_move, bool filter_uncertain_moves) {
     float highestq = -2.0;
-    int bestidx = -1;
-    for (int i = 0; i < node->GetNumChildren(); i++) {
-      float q = node->GetEdges()[i].GetChild()->GetQ();
+    NodeGlow *bestidx = nullptr;
+		for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
+      float q = i->GetQ();
       if(q < -1 || q > 1){
 	LOGFILE << "Warning abs(Q) is above 1, q=" << q;
       }
@@ -164,29 +164,29 @@ namespace {
     unsigned int threshold = ceil(3 * log(node->GetN()));
     if (! filter_uncertain_moves ||
     	node->GetN() < 1000 ||
-    	node->GetEdges()[bestidx].GetChild()->GetN() >= threshold ||
-        node->GetEdges()[bestidx].GetChild()->IsTerminal())
+    	bestidx->GetN() >= threshold ||
+        bestidx->IsTerminal())
     	 {
     	   return bestidx;
     }
 
     // Search until an acceptable move is found. Should be a rare event to even end up here, so no point in optimising the code below.
-    std::vector<int> bad_moves(1);
+    std::vector<NodeGlow *> bad_moves(1);
     bad_moves[0] = bestidx;
     while(true){
-      LOGFILE << "VETO against the uncertain move " << node->GetEdges()[bestidx].GetMove(black_to_move).as_string() << " with only " << node->GetEdges()[bestidx].GetChild()->GetN() << " visits. Not acceptable.";
+      LOGFILE << "VETO against the uncertain move " << node->GetEdges()[bestidx->GetIndex()].GetMove(black_to_move).as_string() << " with only " << bestidx->GetN() << " visits. Not acceptable.";
       highestq = -2.0;
-      for (int i = 0; i < node->GetNumChildren(); i++) {
+			for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
     	if ( std::find(bad_moves.begin(), bad_moves.end(), i) == bad_moves.end() ){ // no match
-    	  float q = node->GetEdges()[i].GetChild()->GetQ();
+    	  float q = i->GetQ();
     	  if (q > highestq) {
     	    highestq = q;
     	    bestidx = i;
     	  }
     	}
       }
-      if (node->GetEdges()[bestidx].GetChild()->GetN() >= threshold ||
-    	  node->GetEdges()[bestidx].GetChild()->IsTerminal()) {
+      if (bestidx->GetN() >= threshold ||
+    	  bestidx->IsTerminal()) {
     	return bestidx;
       } else {
     	// add bestidx to the list of unacceptable moves
@@ -234,17 +234,25 @@ void SearchGlow::SendUciInfo() {
   int multipv = 0;
 
   float prevq = 2.0;
-  int previdx = -1;
-  for (int i = 0; i < root_node_->GetNumChildren(); i++) {  
+  NodeGlow *previdx = nullptr;
+	for (;;) {
     float bestq = -2.0;
-    int bestidx = -1;
-    for (int j = 0; j < root_node_->GetNumChildren(); j++) {
-      float q = root_node_->GetEdges()[j].GetChild()->GetQ();
-      if (q > bestq && (q < prevq || (q == prevq && j > previdx))) {
+    NodeGlow *bestidx = nullptr;
+		for (NodeGlow *j = root_node_->GetFirstChild(); j != nullptr; j = j->GetNextSibling()) {
+      float q = j->GetQ();
+			if (q < prevq && q > bestq) {
         bestq = q;
         bestidx = j;
-      }
+			} else if (q == prevq && q > bestq) {
+				if (j == previdx) {
+					previdx = nullptr;
+				} else if (previdx == nullptr) {
+					bestq = q;
+					bestidx = j;
+				}
+			}
     }
+    if (bestidx == nullptr) break;
     prevq = bestq;
     previdx = bestidx;
 
@@ -263,13 +271,13 @@ void SearchGlow::SendUciInfo() {
 
     if (params_.GetMultiPv() > 1) uci_info.multipv = multipv;
     bool flip = played_history_.IsBlackToMove();
-    uci_info.pv.push_back(root_node_->GetEdges()[bestidx].GetMove(flip));
-    NodeGlow* n = root_node_->GetEdges()[bestidx].GetChild();
-    while (n && n->GetNumChildren() > 0) {
+    uci_info.pv.push_back(root_node_->GetEdges()[bestidx->GetIndex()].GetMove(flip));
+    NodeGlow* n = bestidx;
+    while (n && n->GetFirstChild() != nullptr) {
       flip = !flip;
-      int bestidx = indexOfHighestQEdge(n, played_history_.IsBlackToMove(), true); // Filter out uncertain moves from uci-info.
-      uci_info.pv.push_back(n->GetEdges()[bestidx].GetMove(flip));
-      n = n->GetEdges()[bestidx].GetChild();
+      NodeGlow *bestidx = indexOfHighestQEdge(n, played_history_.IsBlackToMove(), true); // Filter out uncertain moves from uci-info.
+      uci_info.pv.push_back(n->GetEdges()[bestidx->GetIndex()].GetMove(flip));
+      n = bestidx;
     }
   }
 
@@ -297,36 +305,36 @@ void SearchGlow::checkLimitsAndMaybeTriggerStop() {
 std::vector<std::string> SearchGlow::GetVerboseStats(NodeGlow* node, bool is_black_to_move) {
 
   std::vector<std::string> infos;
-  for (int i = 0; i < node->GetNumChildren(); i++) {
+	for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
     std::ostringstream oss;
     oss << std::fixed;
 
     oss << std::left << std::setw(5)
-        << node->GetEdges()[i].GetMove(is_black_to_move).as_string();
+        << node->GetEdges()[i->GetIndex()].GetMove(is_black_to_move).as_string();
 
-    oss << " (" << std::setw(4) << node->GetEdges()[i].GetMove(is_black_to_move).as_nn_index() << ")";
+    oss << " (" << std::setw(4) << node->GetEdges()[i->GetIndex()].GetMove(is_black_to_move).as_nn_index() << ")";
 
-    oss << " N: " << std::right << std::setw(7) << node->GetEdges()[i].GetChild()->GetN() << " (+"
-        << std::setw(2) << node->GetEdges()[i].GetChild()->GetN() << ") ";
+    oss << " N: " << std::right << std::setw(7) << i->GetN() << " (+"
+        << std::setw(2) << i->GetN() << ") ";
 
-    oss << "(P: " << std::setw(5) << std::setprecision(2) << node->GetEdges()[i].GetP() * 100
+    oss << "(P: " << std::setw(5) << std::setprecision(2) << node->GetEdges()[i->GetIndex()].GetP() * 100
         << "%) ";
 
-    oss << "(Q: " << std::setw(8) << std::setprecision(5) << node->GetEdges()[i].GetChild()->GetQ()
+    oss << "(Q: " << std::setw(8) << std::setprecision(5) << i->GetQ()
         << ") ";
 
-    oss << "(U: " << std::setw(6) << std::setprecision(5) << node->GetEdges()[i].GetChild()->GetQ()
+    oss << "(U: " << std::setw(6) << std::setprecision(5) << i->GetQ()
         << ") ";
 
     oss << "(Q+U: " << std::setw(8) << std::setprecision(5)
-        << node->GetEdges()[i].GetChild()->GetQ() + node->GetEdges()[i].GetChild()->GetQ() << ") ";
+        << i->GetQ() + i->GetQ() << ") ";
 
     oss << "(V: ";
     optional<float> v;
-    if (node->GetEdges()[i].GetChild()->IsTerminal()) {
-      v = node->GetEdges()[i].GetChild()->GetQ();
+    if (i->IsTerminal()) {
+      v = i->GetQ();
     } else {
-      NNCacheLock nneval = GetCachedNNEval(node->GetEdges()[i].GetChild());
+      NNCacheLock nneval = GetCachedNNEval(i);
       if (nneval) v = -nneval->q;
     }
     if (v) {
@@ -336,9 +344,10 @@ std::vector<std::string> SearchGlow::GetVerboseStats(NodeGlow* node, bool is_bla
     }
     oss << ") ";
 
-    if (node->GetEdges()[i].GetChild()->IsTerminal()) oss << "(T) ";
+    if (i->IsTerminal()) oss << "(T) ";
     infos.emplace_back(oss.str());
   }
+  std::reverse(infos.begin(), infos.end());
   return infos;
 }
 
@@ -378,14 +387,14 @@ void SearchGlow::SendMovesStats() {
 }
 
 void SearchGlow::reportBestMove() {
-	int bestidx = indexOfHighestQEdge(root_node_, played_history_.IsBlackToMove(), true);
-	Move best_move = root_node_->GetEdges()[bestidx].GetMove(played_history_.IsBlackToMove());
-	int ponderidx = indexOfHighestQEdge(root_node_->GetEdges()[bestidx].GetChild(), played_history_.IsBlackToMove(), false); // harmless to report a bad pondermove.
+	NodeGlow *bestidx = indexOfHighestQEdge(root_node_, played_history_.IsBlackToMove(), true);
+	Move best_move = root_node_->GetEdges()[bestidx->GetIndex()].GetMove(played_history_.IsBlackToMove());
+	NodeGlow *ponderidx = indexOfHighestQEdge(bestidx, played_history_.IsBlackToMove(), false); // harmless to report a bad pondermove.
 	// If the move we make is terminal, then there is nothing to ponder about.
 	// Also, if the bestmove doesn't have any children, then don't report a ponder move.
-	if(!root_node_->GetEdges()[bestidx].GetChild()->IsTerminal() &&
-	   ponderidx != -1){
-		Move ponder_move = root_node_->GetEdges()[bestidx].GetChild()->GetEdges()[ponderidx].GetMove(!played_history_.IsBlackToMove());
+	if(!bestidx->IsTerminal() &&
+	   ponderidx != nullptr){
+		Move ponder_move = bestidx->GetEdges()[ponderidx->GetIndex()].GetMove(!played_history_.IsBlackToMove());
 		best_move_callback_({best_move, ponder_move});
 	} else {
 		best_move_callback_(best_move);
@@ -469,7 +478,7 @@ void SearchGlow::ExtendNode(PositionHistory* history, NodeGlow* node) {
 	// TemperatureWinpctCutoff: factor to boost cpuct * policy = explore moves with high policy but low q. reasonable value: 3-5 (when TemperatureVisitOffset is non-zero lower, say 0.5)
 	// Cpuct: factor to boost cpuct = explore moves regardless of their policy reasonable value: 0.003
 
-  inline float q_to_prob(const float q, const float max_q, const float q_concentration, int n, int parent_n) {
+inline float q_to_prob(const float q, const float max_q, const float q_concentration, int n, int parent_n) {
   switch (Q_TO_PROB_MODE) {
   case 1: {
     // double my_q_concentration_ = 35.2;
@@ -505,39 +514,42 @@ void SearchGlow::ExtendNode(PositionHistory* history, NodeGlow* node) {
 }
 
 
-  float SearchWorkerGlow::computeChildWeights(NodeGlow* node, bool evaluation_weights) {
-  int n = node->GetNumChildren();
+float SearchWorkerGlow::computeChildWeights(NodeGlow* node, bool evaluation_weights) {
+  int n = 0;
   float maxq = -2.0;
-  for (int i = 0; i < n; i++) {
-    float q = node->GetEdges()[i].GetChild()->GetQ();
+	for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
+    float q = i->GetQ();
     if (q > maxq) maxq = q;
+		n++;
   }
 
   float sum_of_P_of_expanded_nodes = 0.0;
   float sum_of_w_of_expanded_nodes = 0.0;
   float sum_of_weighted_p_and_q = 0.0;
-  for (int i = 0; i < n; i++) {
-    float w = q_to_prob(node->GetEdges()[i].GetChild()->GetQ(), maxq, search_->params_.GetTemperature(), node->GetEdges()[i].GetChild()->GetN(), node->GetN());
-    node->GetEdges()[i].GetChild()->SetW(w);
+	for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
+    float w = q_to_prob(i->GetQ(), maxq, search_->params_.GetTemperature(), i->GetN(), node->GetN());
+    i->SetW(w);
     sum_of_w_of_expanded_nodes += w;
-    sum_of_P_of_expanded_nodes += node->GetEdges()[i].GetP();
+    sum_of_P_of_expanded_nodes += node->GetEdges()[i->GetIndex()].GetP();
   }
   float normalise_to_sum_of_p = sum_of_P_of_expanded_nodes / sum_of_w_of_expanded_nodes; // Avoid division in the loop, multiplication should be faster.
   std::vector<float> weighted_p_and_q(n);
   float relative_weight_of_p = 0;
   float relative_weight_of_q = 0;
-  for (int i = 0; i < n; i++) {
-    node->GetEdges()[i].GetChild()->SetW(node->GetEdges()[i].GetChild()->GetW() * normalise_to_sum_of_p); // Normalise sum of Q to sum of P
-    relative_weight_of_p = pow(node->GetEdges()[i].GetChild()->GetN(), search_->params_.GetFpuValue(false)) / (0.05 + node->GetEdges()[i].GetChild()->GetN()); // 0.05 is here to make Q have some influence after 1 visit.
+	int ii = 0;
+	for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling(), ii++) {
+    i->SetW(i->GetW() * normalise_to_sum_of_p); // Normalise sum of Q to sum of P
+    relative_weight_of_p = pow(i->GetN(), search_->params_.GetFpuValue(false)) / (0.05 + i->GetN()); // 0.05 is here to make Q have some influence after 1 visit.
     float relative_weight_of_q = 1 - relative_weight_of_p;
-    weighted_p_and_q[i] = relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() + relative_weight_of_p * node->GetEdges()[i].GetP();  // Weight for evaluation
-    sum_of_weighted_p_and_q += weighted_p_and_q[i];
+    weighted_p_and_q[ii] = relative_weight_of_q * i->GetW() + relative_weight_of_p * node->GetEdges()[i->GetIndex()].GetP();  // Weight for evaluation
+    sum_of_weighted_p_and_q += weighted_p_and_q[ii];
   }
 
   // Normalise the weighted sum Q + P to sum of P
   float normalise_weighted_sum = sum_of_P_of_expanded_nodes / sum_of_weighted_p_and_q;
-  for (int i = 0; i < n; i++) {
-    node->GetEdges()[i].GetChild()->SetW(weighted_p_and_q[i] * normalise_weighted_sum);
+	ii = 0;
+	for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling(), ii++) {
+    i->SetW(weighted_p_and_q[ii] * normalise_weighted_sum);
   }
 
   // If evalution_weights is requested, then we are done now.
@@ -550,34 +562,36 @@ void SearchGlow::ExtendNode(PositionHistory* history, NodeGlow* node) {
   // There are 3 independent mechanisms to encourage exploration
   // 1. Decrease q_concentration
   sum_of_w_of_expanded_nodes = 0.0;
-  for (int i = 0; i < n; i++) {
+	for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
     // New Q based on decreasing q_conc: TemperatureVisitOffset --temp-visit-offset
     // Boost policy: TemperatureWinpctCutoff --temp-value-cutoff
     // Boost all moves with few visits: CPuct --cpuct
-    float w = q_to_prob(node->GetEdges()[i].GetChild()->GetQ(), maxq, search_->params_.GetTemperature() - search_->params_.GetTemperatureVisitOffset() * node->GetN(), node->GetEdges()[i].GetChild()->GetN(), node->GetN());
-    node->GetEdges()[i].GetChild()->SetW(w);
+    float w = q_to_prob(i->GetQ(), maxq, search_->params_.GetTemperature() - search_->params_.GetTemperatureVisitOffset() * node->GetN(), i->GetN(), node->GetN());
+    i->SetW(w);
     sum_of_w_of_expanded_nodes += w;
   }
   normalise_to_sum_of_p = sum_of_P_of_expanded_nodes / sum_of_w_of_expanded_nodes; // Avoid division in the loop, multiplication should be faster.
-  for (int i = 0; i < n; i++) {
+  ii = 0;
+	for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling(), ii++) {
     // Unlike MCTS we do not want to boost moves that already got relatively many visits.
     // So, we don't need the part log(parent.n + CpuctBase)/CpuctBase
     // Instead we only use the second part sqrt(log(parent.n))/(1+child.n)
     // However, a pure log10() seems enough, no need to embed that in a sqrt()
-    float cpuct=sqrt(log10(node->GetN())/(1+node->GetEdges()[i].GetChild()->GetN())); // Each time parent.n is tenfolded, cpuct is doubled
-    float exploration_term = search_->params_.GetTemperatureWinpctCutoff() * cpuct * node->GetEdges()[i].GetP() + search_->params_.GetCpuct() * cpuct;
+    float cpuct=sqrt(log10(node->GetN())/(1+i->GetN())); // Each time parent.n is tenfolded, cpuct is doubled
+    float exploration_term = search_->params_.GetTemperatureWinpctCutoff() * cpuct * node->GetEdges()[i->GetIndex()].GetP() + search_->params_.GetCpuct() * cpuct;
     // float capped_cpuct = exploration_term > search_->params_.GetMinimumKLDGainPerNode() ? search_->params_.GetMinimumKLDGainPerNode() : exploration_term;
     // ./lc0 -w /home/hans/32603 --cpuct=0.003 --temp-visit-offset=0.0000082 --temp-value-cutoff=1 --fpu-value=0.59 --temperature=36.2 --verbose-move-stats --logfile=\<stderr\> --policy-softmax-temp=1.0 --max-collision-visits=1 
     // TODO reuse this
-    relative_weight_of_p = pow(node->GetEdges()[i].GetChild()->GetN(), search_->params_.GetFpuValue(false)) / (0.05 + node->GetEdges()[i].GetChild()->GetN()); // 0.05 is here to make Q have some influence after 1 visit.
+    relative_weight_of_p = pow(i->GetN(), search_->params_.GetFpuValue(false)) / (0.05 + i->GetN()); // 0.05 is here to make Q have some influence after 1 visit.
     // relative_weight_of_p = capped_cpuct > relative_weight_of_p ? capped_cpuct : relative_weight_of_p; // If capped cpuct is greater than relative_weight_of_p, then use it instead.
     relative_weight_of_q = 1 - relative_weight_of_p;
-    weighted_p_and_q[i] = relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() * normalise_to_sum_of_p + relative_weight_of_p * node->GetEdges()[i].GetP() + exploration_term; // Weight for exploration
-    sum_of_weighted_p_and_q += weighted_p_and_q[i];
+    weighted_p_and_q[ii] = relative_weight_of_q * i->GetW() * normalise_to_sum_of_p + relative_weight_of_p * node->GetEdges()[i->GetIndex()].GetP() + exploration_term; // Weight for exploration
+    sum_of_weighted_p_and_q += weighted_p_and_q[ii];
   }
   float final_normalisation = sum_of_P_of_expanded_nodes / sum_of_weighted_p_and_q;
-  for (int i = 0; i < n; i++){
-    node->GetEdges()[i].GetChild()->SetW(weighted_p_and_q[i] * final_normalisation);
+	ii = 0;
+	for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling(), ii++) {
+    i->SetW(weighted_p_and_q[ii] * final_normalisation);
   }
   return(sum_of_P_of_expanded_nodes);
 }
@@ -585,7 +599,7 @@ void SearchGlow::ExtendNode(PositionHistory* history, NodeGlow* node) {
 
 void SearchWorkerGlow::pickNodesToExtend() {
 	NodeGlow* node;
-	int best_idx;
+	NodeGlow *best_child;
 
 	int nodes_visited = 0;
 
@@ -594,12 +608,11 @@ void SearchWorkerGlow::pickNodesToExtend() {
 
 		while (true) {
 			nodes_visited++;
-			best_idx = node->GetBestIdx();
-			if (best_idx == -1) {
+			best_child = node->GetBestChild();
+			if (best_child == nullptr) {
 				int nidx = node->GetNextUnexpandedEdge();
 				if (nidx < node->GetNumEdges() && nidx - node->GetNumChildren() < MAX_NEW_SIBLINGS) {
-					node->GetEdges()[nidx].CreateChild(node, nidx);
-					new_nodes_[new_nodes_size_] = {node->GetEdges()[nidx].GetChild(), 0xFFFF, -1};
+					new_nodes_[new_nodes_size_] = {std::make_unique<NodeGlow>(node, nidx), node, 0xFFFF, -1};
 					new_nodes_size_++;
 					node->SetNextUnexpandedEdge(nidx + 1);
 					break;
@@ -607,28 +620,28 @@ void SearchWorkerGlow::pickNodesToExtend() {
 					return;
 				}
 			}
-			node = node->GetEdges()[best_idx].GetChild();
+			node = best_child;
 		}
 
 		int junction_mode = 0;
 		uint16_t ccidx = (new_nodes_size_ - 1) | 0x8000;
 
 		while (true) {
-			int16_t max_idx = -1;
+			NodeGlow *max_child = nullptr;
 			float max_w = 0.0;
 			int nidx = node->GetNextUnexpandedEdge();
 			if (nidx < node->GetNumEdges() && nidx - node->GetNumChildren() < MAX_NEW_SIBLINGS) {
 				max_w = node->GetEdges()[nidx].GetP();
 			}
-			for (int i = 0; i < node->GetNumChildren(); i++) {
-				float br_max_w = node->GetEdges()[i].GetChild()->GetW() * node->GetEdges()[i].GetChild()->GetMaxW();
+			for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
+				float br_max_w = i->GetW() * i->GetMaxW();
 				if (br_max_w > max_w) {
 					max_w = br_max_w;
-					max_idx = i;
+					max_child = i;
 				}
 			}
 			node->SetMaxW(max_w);
-			node->SetBestIdx(max_idx);
+			node->SetBestChild(max_child);
 
 			if (junction_mode == 0) {
 				uint16_t n = node->GetBranchingInFlight();
@@ -691,7 +704,7 @@ void SearchWorkerGlow::buildJunctionRTree() {
 
 //	for (int i = new_nodes_.size() - 1; i >= 0; i--) {
 	for (int i = new_nodes_size_ - 1; i >= 0; i--) {
-		NodeGlow* node = new_nodes_[i].node->GetParent();
+		NodeGlow* node = new_nodes_[i].parent;
 		while (node->GetBranchingInFlight() != 0) {
 			node->SetBranchingInFlight(0);
 			if (node == root_node_) break;
@@ -763,42 +776,42 @@ int SearchWorkerGlow::extendTree(std::vector<Move> *movestack, PositionHistory *
 
 		for (; n > 0; n--, i++) {
 
-		NodeGlow* newchild = new_nodes_[i].node;
-		//int idx = new_nodes_[i].idx;
+			NodeGlow* newchild = new_nodes_[i].new_node.get();
+			//int idx = new_nodes_[i].idx;
 
-		count++;
+			count++;
 
-		int nappends = appendHistoryFromTo(movestack, history, root_node_, newchild);
-		//NodeGlow* newchild = node->GetEdges()[idx].GetChild();
+			int nappends = appendHistoryFromTo(movestack, history, root_node_, newchild);
+			//NodeGlow* newchild = node->GetEdges()[idx].GetChild();
 
-		//history->Append(node->GetEdges()[idx].move_);
+			//history->Append(node->GetEdges()[idx].move_);
 
-		search_->ExtendNode(history, newchild);
+			search_->ExtendNode(history, newchild);
 
-		if (!newchild->IsTerminal()) {
+			if (!newchild->IsTerminal()) {
 
-			int idx = AddNodeToComputation(newchild, history);
-			new_nodes_[i].batch_idx = idx;
-			//minibatch_.push_back({newchild, (uint16_t)i});
-			//LOGFILE << "minibatch add: " << new_nodes_[i].junction;
+				int idx = AddNodeToComputation(newchild, history);
+				new_nodes_[i].batch_idx = idx;
+				//minibatch_.push_back({newchild, (uint16_t)i});
+				//LOGFILE << "minibatch add: " << new_nodes_[i].junction;
 
-		} else {  // is terminal
-      new_nodes_amount_target_++;  // it's terminal so it shouldn't be counted towards the minibatch size
-			//non_computation_lock_.lock();
-			//non_computation_new_nodes_.push_back({newchild, (uint16_t)i});
-			//non_computation_lock_.unlock();
-		}
+			} else {  // is terminal
+				new_nodes_amount_target_++;  // it's terminal so it shouldn't be counted towards the minibatch size
+				//non_computation_lock_.lock();
+				//non_computation_new_nodes_.push_back({newchild, (uint16_t)i});
+				//non_computation_lock_.unlock();
+			}
 
-		history->Trim(played_history_length_);
-		//for (int j = 0; j <= nappends; j++) {
-		//	history->Pop();
-		//}
+			history->Trim(played_history_length_);
+			//for (int j = 0; j <= nappends; j++) {
+			//	history->Pop();
+			//}
 
-		// not checking and setting N = 0 (see code that propagates below) here means duplicates can exist in the queue if MULTIPLE_NEW_SIBLINGS = true
-		// but checking for duplicates that way does not work with multiple threads because N values are not restored until after the nn-computation (and meanwhile other threads can run)
+			// not checking and setting N = 0 (see code that propagates below) here means duplicates can exist in the queue if MULTIPLE_NEW_SIBLINGS = true
+			// but checking for duplicates that way does not work with multiple threads because N values are not restored until after the nn-computation (and meanwhile other threads can run)
 
-		if (nappends - 1 > full_tree_depth) full_tree_depth = nappends - 1;
-		cum_depth += nappends - 1;
+			if (nappends - 1 > full_tree_depth) full_tree_depth = nappends - 1;
+			cum_depth += nappends - 1;
 
 		}
 	}
@@ -822,8 +835,8 @@ void SearchWorkerGlow::picknextend(PositionHistory *history) {
 	// turn on global tree lock
 	while (new_nodes_size_ < new_nodes_amount_target_ && new_nodes_size_ < new_nodes_amount_limit_) {  // repeat this until minibatch_size amount of non terminal, non cache hit nodes have been found (or reached a predefined limit larger than minibatch size)
 		NodeGlow *node = root_node_;
-		int best_idx = node->GetBestIdx();
-		if (best_idx == -1 && (node->GetNextUnexpandedEdge() == node->GetNumEdges() || node->GetNextUnexpandedEdge() - node->GetNumChildren() == MAX_NEW_SIBLINGS)) break;  // no more expandable node
+		NodeGlow *best_child = node->GetBestChild();
+		if (best_child == nullptr && (node->GetNextUnexpandedEdge() == node->GetNumEdges() || node->GetNextUnexpandedEdge() - node->GetNumChildren() == MAX_NEW_SIBLINGS)) break;  // no more expandable node
 		// starting from root node follow maxidx until next move would make the sub tree to small
 		// propagate no availability upwards to root
 		// turn off global tree lock
@@ -831,7 +844,7 @@ void SearchWorkerGlow::picknextend(PositionHistory *history) {
 			// go down to max unexpanded node
 			unsigned int depth = 0;
 			while (true) {
-				if (best_idx == -1) break;  // best unexpanded node is child of this node
+				if (best_child == nullptr) break;  // best unexpanded node is child of this node
 // 				if (same_path) {
 // 					if (depth == last_depth) {  // reached end of last path without deviating
 // 						same_path = false;
@@ -858,11 +871,11 @@ void SearchWorkerGlow::picknextend(PositionHistory *history) {
 // 					} else {
 // 						path[depth] = best_idx;
 // 					}
-					history->Append(node->GetEdges()[best_idx].move_);
+					history->Append(node->GetEdges()[best_child->GetIndex()].move_);
 					nodes_visited++;
 // 				}
-				node = node->GetEdges()[best_idx].GetChild();
-				best_idx = node->GetBestIdx();
+				node = best_child;
+				best_child = node->GetBestChild();
 				depth++;
 			};
 
@@ -877,9 +890,9 @@ void SearchWorkerGlow::picknextend(PositionHistory *history) {
 			
 			int nidx = node->GetNextUnexpandedEdge();
 			history->Append(node->GetEdges()[nidx].move_);
-			NodeGlow* newnode = node->GetEdges()[nidx].CreateChild(node, nidx);
 			int nnidx = new_nodes_size_++;
-			new_nodes_[nnidx] = {newnode, 0xFFFF, -1};
+			new_nodes_[nnidx] = {std::make_unique<NodeGlow>(node, nidx), node, 0xFFFF, -1};
+			NodeGlow* newnode = new_nodes_[nnidx].new_node.get();
 			node->SetNextUnexpandedEdge(nidx + 1);
 			
 			search_->ExtendNode(history, newnode);
@@ -895,21 +908,21 @@ void SearchWorkerGlow::picknextend(PositionHistory *history) {
 			uint16_t ccidx = nnidx | 0x8000;
 
 			while (true) {
-				int16_t max_idx = -1;
+				NodeGlow *max_child = nullptr;
 				float max_w = 0.0;
 				int nidx = node->GetNextUnexpandedEdge();
 				if (nidx < node->GetNumEdges() && nidx - node->GetNumChildren() < MAX_NEW_SIBLINGS) {
 					max_w = node->GetEdges()[nidx].GetP();
 				}
-				for (int i = 0; i < node->GetNumChildren(); i++) {
-					float br_max_w = node->GetEdges()[i].GetChild()->GetW() * node->GetEdges()[i].GetChild()->GetMaxW();
+				for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
+					float br_max_w = i->GetW() * i->GetMaxW();
 					if (br_max_w > max_w) {
 						max_w = br_max_w;
-						max_idx = i;
+						max_child = i;
 					}
 				}
 				node->SetMaxW(max_w);
-				node->SetBestIdx(max_idx);
+				node->SetBestChild(max_child);
 
 				if (junction_mode == 0) {
 					uint16_t n = node->GetBranchingInFlight();
@@ -1021,8 +1034,8 @@ void SearchWorkerGlow::retrieveNNResult(NodeGlow* node, int batchidx) {
 
 void SearchWorkerGlow::recalcPropagatedQ(NodeGlow* node) {
   int n = 1;
-  for (int i = 0; i < node->GetNumChildren(); i++) {
-    n += node->GetEdges()[i].GetChild()->GetN();
+	for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
+    n += i->GetN();
   }
   node->SetN(n);
 
@@ -1048,45 +1061,29 @@ void SearchWorkerGlow::recalcPropagatedQ(NodeGlow* node) {
 
   // Average Q START
   float q = (1.0 - total_children_weight) * node->GetOrigQ();
-  for (int i = 0; i < node->GetNumChildren(); i++) {
-    q -= node->GetEdges()[i].GetChild()->GetW() * node->GetEdges()[i].GetChild()->GetQ();
+	for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
+    q -= i->GetW() * i->GetQ();
   }
   node->SetQ(q);
   // Average Q STOP
 
   total_children_weight = computeChildWeights(node, false);
 
-  
-	int first_non_created_child_idx = node->GetNumChildren();
-	while (first_non_created_child_idx < node->GetNumEdges() && node->GetEdges()[first_non_created_child_idx].GetChild() != nullptr) {
-		first_non_created_child_idx++;
-	}
-
-//  if (MULTIPLE_NEW_SIBLINGS)
-//    n = node->GetNumEdges() - first_non_created_child_idx;
-//  else
-//    n = node->GetNumEdges() > first_non_created_child_idx ? 1 : 0;
-
-//  for (int i = 0; i < node->GetNumChildren(); i++) {
-//    n += node->GetEdges()[i].GetChild()->GetNExtendable();
-//  }
-//  node->SetNExtendable(n);
-
-	int16_t max_idx = -1;
+	NodeGlow *max_child = nullptr;
 	float max_w = 0.0;
 	int nidx = node->GetNextUnexpandedEdge();
 	if (nidx < node->GetNumEdges() && nidx - node->GetNumChildren() < MAX_NEW_SIBLINGS) {
 		max_w = node->GetEdges()[nidx].GetP();
 	}
-	for (int i = 0; i < node->GetNumChildren(); i++) {
-		float br_max_w = node->GetEdges()[i].GetChild()->GetW() * node->GetEdges()[i].GetChild()->GetMaxW();
+	for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
+		float br_max_w = i->GetW() * i->GetMaxW();
 		if (br_max_w > max_w) {
 			max_w = br_max_w;
-			max_idx = i;
+			max_child = i;
 		}
 	}
 	node->SetMaxW(max_w);
-	node->SetBestIdx(max_idx);
+	node->SetBestChild(max_child);
 }
 
 
@@ -1115,7 +1112,7 @@ int SearchWorkerGlow::propagate() {
 		new_nodes_list_lock_.unlock();
 
 		for (; n > 0; n--, j++) {
-			NodeGlow* node = new_nodes_[j].node->GetParent();
+			NodeGlow* node = new_nodes_[j].parent;
 			uint16_t juncidx = new_nodes_[j].junction;
 
 			//LOGFILE << "node: " << node << ", juncidx: " << juncidx;
@@ -1359,7 +1356,6 @@ void SearchWorkerGlow::ThreadLoop(int thread_id) {
 						//<< ", node stack size: " << nodestack_.size()
 						//<< ", max_unexpanded_w: " << new_nodes_[0];
 
-		int my_iteration = search_->iteration_count_a_++;
 		search_->half_done_count_ += new_nodes_size_;
 
 		//LOGFILE << "Unlock " << thread_id;
@@ -1379,12 +1375,6 @@ void SearchWorkerGlow::ThreadLoop(int thread_id) {
 
 		search_->busy_mutex_.lock();
 
-		while (search_->iteration_count_b_ != my_iteration) {
-			search_->busy_mutex_.unlock();
-			std::this_thread::sleep_for(std::chrono::milliseconds(1));
-			search_->busy_mutex_.lock();
-		}
-		search_->iteration_count_b_++;
 		search_->half_done_count_ -= new_nodes_size_;
 
 		if (LOG_RUNNING_INFO) LOGFILE << "Working thread: " << thread_id;
@@ -1400,10 +1390,10 @@ void SearchWorkerGlow::ThreadLoop(int thread_id) {
 		}
 
 		for (int j = 0; j < (int)new_nodes_size_; j++) {
-			new_nodes_[j].node->IncrParentNumChildren();
 			if (new_nodes_[j].batch_idx != -1) {
-				retrieveNNResult(new_nodes_[j].node, new_nodes_[j].batch_idx);
+				retrieveNNResult(new_nodes_[j].new_node.get(), new_nodes_[j].batch_idx);
 			}
+			new_nodes_[j].parent->AddChild(std::move(new_nodes_[j].new_node));
 			new_nodes_amount_retrieved_++;
 		}
 
@@ -1468,15 +1458,15 @@ void SearchWorkerGlow::ThreadLoop(int thread_id) {
       LOGFILE << "#helper threads pre: " << N_HELPER_THREADS_PRE << ", #helper threads post: " << N_HELPER_THREADS_POST;
       LOGFILE << "root Q: " << root_node_->GetQ();
       LOGFILE << "move   P                 n   norm n     Q          w";
-	    for (int i = 0; i < root_node_->GetNumChildren(); i++) {
+			for (NodeGlow *i = root_node_->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
 	      LOGFILE << std::fixed << std::setfill(' ') 
-		      << (root_node_->GetEdges())[i].move_.as_string() << " "
-		      << std::setw(10) << (root_node_->GetEdges())[i].GetP() << " "
-		      << std::setw(10) << (root_node_->GetEdges())[i].GetChild()->GetN() << " "
-		      << std::setw(10) << (float)(root_node_->GetEdges())[i].GetChild()->GetN() / (float)(root_node_->GetN() - 1) << " "
-		// << std::setw(4) << (root_node_->GetEdges())[i].GetChild()->ComputeHeight() << " "
-		      << std::setw(10) << (float)(root_node_->GetEdges())[i].GetChild()->GetQ() << " "
-		      << std::setw(10) << root_node_->GetEdges()[i].GetChild()->GetW();
+		      << (root_node_->GetEdges())[i->GetIndex()].move_.as_string() << " "
+		      << std::setw(10) << (root_node_->GetEdges())[i->GetIndex()].GetP() << " "
+		      << std::setw(10) << i->GetN() << " "
+		      << std::setw(10) << (float)(i->GetN() / (float)(root_node_->GetN() - 1)) << " "
+		// << std::setw(4) << (i->ComputeHeight() << " "
+		      << std::setw(10) << (float)(i->GetQ()) << " "
+		      << std::setw(10) << i->GetW();
 	    }
 
       if (search_->count_iterations_ > 0) {
