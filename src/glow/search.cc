@@ -517,20 +517,24 @@ void SearchGlow::ExtendNode(PositionHistory* history, NodeGlow* node) {
   float sum_of_w_of_expanded_nodes = 0.0;
   float sum_of_weighted_p_and_q = 0.0;
   for (int i = 0; i < n; i++) {
-    float w = q_to_prob(node->GetEdges()[i].GetChild()->GetQ(), maxq, search_->params_.GetTemperature(), node->GetEdges()[i].GetChild()->GetN(), node->GetN());
+    float w = 0;
+    // w = q_to_prob(node->GetEdges()[i].GetChild()->GetQ(), maxq, search_->params_.GetTemperature(), node->GetEdges()[i].GetChild()->GetN(), node->GetN());
+    w = node->GetEdges()[i].GetChild()->GetQ();
     node->GetEdges()[i].GetChild()->SetW(w);
     sum_of_w_of_expanded_nodes += w;
     sum_of_P_of_expanded_nodes += node->GetEdges()[i].GetP();
   }
   float normalise_to_sum_of_p = sum_of_P_of_expanded_nodes / sum_of_w_of_expanded_nodes; // Avoid division in the loop, multiplication should be faster.
   std::vector<float> weighted_p_and_q(n);
-  float relative_weight_of_p = 0;
-  float relative_weight_of_q = 0;
+  // float relative_weight_of_p = 0;
   for (int i = 0; i < n; i++) {
     node->GetEdges()[i].GetChild()->SetW(node->GetEdges()[i].GetChild()->GetW() * normalise_to_sum_of_p); // Normalise sum of Q to sum of P
-    relative_weight_of_p = pow(node->GetEdges()[i].GetChild()->GetN(), search_->params_.GetFpuValue(false)) / (0.05 + node->GetEdges()[i].GetChild()->GetN()); // 0.05 is here to make Q have some influence after 1 visit.
-    float relative_weight_of_q = 1 - relative_weight_of_p;
-    weighted_p_and_q[i] = node->GetEdges()[i].GetChild()->GetW(); // Weight for evaluation
+    // relative_weight_of_p = pow(node->GetEdges()[i].GetChild()->GetN(), search_->params_.GetFpuValue(false)) / (0.05 + node->GetEdges()[i].GetChild()->GetN()); // 0.05 is here to make Q have some influence after 1 visit.
+    // if(node->GetN() < (uint32_t)search_->params_.GetMaxCollisionVisitsId()){
+    //   weighted_p_and_q[i] = (1 - relative_weight_of_p) * node->GetEdges()[i].GetChild()->GetW() + relative_weight_of_p * node->GetEdges()[i].GetP();
+    // } else {
+      weighted_p_and_q[i] = node->GetEdges()[i].GetChild()->GetW(); // Weight for evaluation
+    // }
     sum_of_weighted_p_and_q += weighted_p_and_q[i];
   }
 
