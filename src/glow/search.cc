@@ -509,29 +509,29 @@ void SearchGlow::ExtendNode(PositionHistory* history, NodeGlow* node) {
   int n = node->GetNumChildren();
   float sum_of_w_of_expanded_nodes = 0.0;
   float sum_of_P_of_expanded_nodes = 0.0;
-  float sum_of_weighted_p_and_q = 0.0;
-  std::vector<float> w_vector(n);
+  float normalising_factor = 0.0;
   for (int i = 0; i < n; i++) {
     sum_of_w_of_expanded_nodes += node->GetEdges()[i].GetChild()->GetW();
     sum_of_P_of_expanded_nodes += node->GetEdges()[i].GetP();
   }
-  float normalise_to_sum_of_p = sum_of_P_of_expanded_nodes / sum_of_w_of_expanded_nodes; // Avoid division in the loop, multiplication should be faster.
+  normalising_factor = sum_of_P_of_expanded_nodes / sum_of_w_of_expanded_nodes; // Avoid division in the loop, multiplication should be faster.
   for (int i = 0; i < n; i++) {
-    node->GetEdges()[i].GetChild()->SetW(node->GetEdges()[i].GetChild()->GetW() * normalise_to_sum_of_p); // Normalise sum of Q to sum of P
+    node->GetEdges()[i].GetChild()->SetW(node->GetEdges()[i].GetChild()->GetW() * normalising_factor); // Normalise sum of Q to sum of P
   }
 
   // If evalution_weights is requested, then we are done now.
   if(evaluation_weights){
     return(sum_of_P_of_expanded_nodes);
   }
-    
+  sum_of_w_of_expanded_nodes = 0;
+  std::vector<float> w_vector(n);
   for (int i = 0; i < n; i++) {
     w_vector[i] = node->GetEdges()[i].GetChild()->GetW() + node->GetEdges()[i].GetP() * ( search_->params_.GetCpuct() + search_->params_.GetCpuctFactor() * log((node->GetN() + search_->params_.GetCpuctBase())/search_->params_.GetCpuctBase())) * sqrt(node->GetN()) / ( 1 + node->GetEdges()[i].GetChild()->GetN()); // Weight for exploration, "score" in MCTS terms
-    sum_of_weighted_p_and_q += w_vector[i];
+    sum_of_w_of_expanded_nodes += w_vector[i];
   }
-  float final_normalisation = sum_of_P_of_expanded_nodes / sum_of_weighted_p_and_q;
+  normalising_factor = sum_of_P_of_expanded_nodes / sum_of_w_of_expanded_nodes;
   for (int i = 0; i < n; i++){
-    node->GetEdges()[i].GetChild()->SetW(w_vector[i] * final_normalisation);
+    node->GetEdges()[i].GetChild()->SetW(w_vector[i] * normalising_factor);
   }
   return(sum_of_P_of_expanded_nodes);
 }
