@@ -159,7 +159,9 @@ private:
 	};
 
 	int AddNodeToComputation(NodeGlow* node, PositionHistory *history);
+	int MaybeAddNodeToComputation(NodeGlow* node, PositionHistory *history);
 	void retrieveNNResult(NodeGlow* node, int batchidx);
+	inline void recalcMaxW(NodeGlow *node);
 	void recalcPropagatedQ(NodeGlow* node);
 	void pickNodesToExtend();
 	int appendHistoryFromTo(std::vector<Move> *movestack, PositionHistory *history, NodeGlow* from, NodeGlow* to);
