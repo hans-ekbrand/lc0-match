@@ -536,10 +536,14 @@ float SearchWorkerGlow::computeChildWeights(NodeGlow* node, bool evaluation_weig
   std::vector<float> weighted_p_and_q(n);
   float relative_weight_of_p = 0;
   float relative_weight_of_q = 0;
-	int ii = 0;
-	for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling(), ii++) {
+  int ii = 0;
+  for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling(), ii++) {
     i->SetW(i->GetW() * normalise_to_sum_of_p); // Normalise sum of Q to sum of P
-    relative_weight_of_p = pow(i->GetN(), search_->params_.GetFpuValue(false)) / (0.05 + i->GetN()); // 0.05 is here to make Q have some influence after 1 visit.
+    if(i->GetN() > (uint32_t)search_->params_.GetMaxCollisionVisitsId()){
+      relative_weight_of_p = 0;
+    } else {
+      relative_weight_of_p = pow(i->GetN(), search_->params_.GetFpuValue(false)) / (0.05 + i->GetN()); // 0.05 is here to make Q have some influence after 1 visit.
+    }
     float relative_weight_of_q = 1 - relative_weight_of_p;
     weighted_p_and_q[ii] = relative_weight_of_q * i->GetW() + relative_weight_of_p * node->GetEdges()[i->GetIndex()].GetP();  // Weight for evaluation
     sum_of_weighted_p_and_q += weighted_p_and_q[ii];
