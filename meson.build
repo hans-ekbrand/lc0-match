@@ -98,6 +98,8 @@ files += [
   'src/mcts/search.cc',
   'src/glow/node.cc',
   'src/glow/search.cc',
+  'src/glow/search_worker.cc',
+  'src/glow/strategy.cc',
   'src/neural/cache.cc',
   'src/neural/encoder.cc',
   'src/neural/factory.cc',
