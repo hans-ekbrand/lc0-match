@@ -890,6 +890,8 @@ void SearchWorkerGlow::picknextend(PositionHistory *history) {
 //	unsigned int last_depth = 0;
 	int nodes_visited = 0;
 //	bool same_path = false;
+	int full_tree_depth = search_->full_tree_depth_;
+	int cum_depth = 0;
 
 	// turn on global tree lock
 	while (new_nodes_size_ < new_nodes_amount_target_ && new_nodes_size_ < new_nodes_amount_limit_) {  // repeat this until minibatch_size amount of non terminal, non cache hit nodes have been found (or reached a predefined limit larger than minibatch size)
@@ -901,7 +903,7 @@ void SearchWorkerGlow::picknextend(PositionHistory *history) {
 		// turn off global tree lock
 		//for (;;) {  // repeat until localbatch_size amount of nodes have been found
 			// go down to max unexpanded node
-			unsigned int depth = 0;
+//			unsigned int depth = 0;
 			while (true) {
 				if (best_child == nullptr) break;  // best unexpanded node is child of this node
 // 				if (same_path) {
@@ -935,7 +937,7 @@ void SearchWorkerGlow::picknextend(PositionHistory *history) {
 // 				}
 				node = best_child;
 				best_child = node->GetBestChild();
-				depth++;
+//				depth++;
 			};
 
 			nodes_visited++;
@@ -974,7 +976,11 @@ void SearchWorkerGlow::picknextend(PositionHistory *history) {
 					new_nodes_[nnidx] = {std::move(newnode), node, 0xFFFF, batchidx};
 				}
 			}
+			int depth = history->GetLength() - played_history_length_;
 			history->Trim(played_history_length_);
+
+			if (depth > full_tree_depth) full_tree_depth = depth;
+			cum_depth += depth;
 
 			if (out_of_order) {
 				while (true) {
@@ -1033,9 +1039,8 @@ void SearchWorkerGlow::picknextend(PositionHistory *history) {
 					if (node == root_node_) break;
 					node = node->GetParent();
 				}
-
 			}
-			
+
 			// when deviating from previous path, trim history according to this and start pushing each new move
 			// create node, increment inner loop node count
 			// compute legal moves
@@ -1048,6 +1053,9 @@ void SearchWorkerGlow::picknextend(PositionHistory *history) {
 	}
 
 // 	history->Trim(played_history_length_);
+
+	if (full_tree_depth > search_->full_tree_depth_) search_->full_tree_depth_ = full_tree_depth;
+	search_->cum_depth_ += cum_depth;
 
 	search_->count_search_node_visits_ += nodes_visited;
 
