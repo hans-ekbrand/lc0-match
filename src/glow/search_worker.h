@@ -90,6 +90,7 @@ private:
 	float computeChildWeights(NodeGlow* node, bool evalution_weights);
 	int propagate();
 	int extendTree(std::vector<Move> *movestack, PositionHistory *history);
+	inline void update_junctions(NodeGlow *node, int &junction_mode, uint16_t &ccidx);
 	void buildJunctionRTree();
 
 	void picknextend(PositionHistory *history);
