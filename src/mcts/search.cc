@@ -48,7 +48,7 @@ namespace {
 const int kSmartPruningToleranceNodes = 300;
 const int kSmartPruningToleranceMs = 200;
 // Maximum delay between outputting "uci info" when nothing interesting happens.
-const int kUciInfoMinimumFrequencyMs = 5000;
+const int kUciInfoMinimumFrequencyMs = 2000;
 }  // namespace
 
 
