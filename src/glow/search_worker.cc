@@ -350,8 +350,8 @@ int SearchWorkerGlow::extendTree(std::vector<Move> *movestack, PositionHistory *
 }
 
 
-int const MIN_SUBTREE_SIZE = 100000000;  // 50;  // 100000000;  // 100;
-int const LOCAL_NODES_AMOUNT = 1;  // 20;  // 1;  // 10;
+int const MIN_SUBTREE_SIZE = 100;  // 50;  // 100000000;  // 100;
+int const LOCAL_NODES_AMOUNT = 10;  // 20;  // 1;  // 10;
 
 void SearchWorkerGlow::picknextend(PositionHistory *history) {
 
