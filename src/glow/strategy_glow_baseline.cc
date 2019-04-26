@@ -67,7 +67,7 @@ void set_strategy_parameters(const SearchParams *params) {
   // The implementation in this file is taken from rev 88439502739789a375cf532558bd69b9caece998 "Back to cpuct again, this is known well playing baseline." which I think is the best playing version at least for up to 100.000 nodes.
   // This version do not separate evaluation from exploration, and ignores MaxCollisionVisits
   // With OOE we haven't clopped values, only tested out at few (all with 4 threads):
-  // Sensible values on CPuct with this version is 0.2 (+5-3=22 at 6.000 nodes, 4 threads) For 3.000 nodes use CPuct = 0 (+7-3=20). @12.000 CPuct = 0.15 only even +3-3=24. @36.000 Cpuct = 0.1 even: +12-12=76
+  // Sensible values on CPuct with this version is 0.2 (+5-3=22 at 6.000 nodes, 4 threads) For 3.000 nodes use CPuct = 0 (+7-3=20). @12.000 CPuct = 0.15 only even +3-3=24. @36.000 Cpuct = 0.1 even: +12-12=76. @72.000 worse +6-17=77.
 
   // Another version which should be tested, and might be better than this is 5add726b69131a2cf0ffd6b8ba6c08e5097cd4db
 
