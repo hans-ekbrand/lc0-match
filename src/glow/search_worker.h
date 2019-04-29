@@ -94,7 +94,7 @@ private:
 	void buildJunctionRTree();
 
 	void picknextend(PositionHistory *history);
-
+	void picknextend_reference(std::vector<Move> *movestack, PositionHistory *history);
 
 
 

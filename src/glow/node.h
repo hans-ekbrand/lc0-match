@@ -161,6 +161,9 @@ class NodeGlow {
   // Debug information about the node.
   std::string DebugString() const;
 
+
+	void checkTree(PositionHistory* history);
+
 private:
 	// To minimize the number of padding bytes and to avoid having unnecessary
 	// padding when new fields are added, we arrange the fields by size, largest
