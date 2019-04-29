@@ -1,1 +1,1 @@
-strategy_glow_bounded_cpuct.cc
+strategy_improved_baseline.cc
