@@ -270,6 +270,52 @@ void NodeGlow::ReleaseChildrenExceptOne(NodeGlow* node_to_save) {
 	}
 }
 
+void NodeGlow::checkTree(PositionHistory* history) {
+	const auto& board = history->Last().GetBoard();
+	auto legal_moves = board.GenerateLegalMoves();
+
+	if (!IsTerminal()) {
+		if (legal_moves.size() != GetNumEdges()) {
+			std::cerr << "checkTree: wrong number of moves\n";
+			std::cerr << "in edges:\n";
+			for (int i = 0; i < GetNumEdges(); i++) {
+				std::cerr << GetEdges()[i].move_ << "\n";
+			}
+			std::cerr << "in legal_moves:\n";
+			for (unsigned int j = 0; j < legal_moves.size(); j++) {
+				std::cerr << legal_moves[j] << "\n";
+			}
+			
+			abort();
+		}
+	}
+	for (int i = 0; i < GetNumEdges(); i++) {
+		unsigned int j;
+		for (j = 0; j < legal_moves.size(); j++) {
+			if (GetEdges()[i].move_ == legal_moves[j]) break;
+		}
+		if (j == legal_moves.size()) {
+			std::cerr << "checkTree: illegal move\n";
+			abort();
+		}
+	}
+	
+	for (NodeGlow *i = GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
+		if (i->GetParent() != this) {
+			std::cerr << "checkTree: parent mismatch\n";
+			abort();
+		}
+		if (i->GetIndex() >= GetNumEdges()) {
+			std::cerr << "checkTree: edge index out of range\n";
+			abort();
+		}
+
+		history->Append(GetEdges()[i->GetIndex()].move_);
+		i->checkTree(history);
+		history->Pop();
+	}
+}
+
 
 
 
@@ -342,6 +388,5 @@ void NodeTreeGlow::DeallocateTree() {
   gamebegin_node_ = nullptr;
   current_head_ = nullptr;
 }
-
 
 }  // namespace lczero
