@@ -128,10 +128,10 @@ float computeChildWeights(NodeGlow* node, bool evaluation_weights) {
     i->SetW(i->GetW() * normalise_to_sum_of_p); // Normalise sum of Q to sum of P
     double cpuct_as_prob = 0;
     if(i->GetN() > (uint32_t)param_maxCollisionVisitsId){
-	double cpuct = log((node->GetN() + CpuctBase)/CpuctBase) * sqrt(log(node->GetN())/(1+i->GetN()));
+	double cpuct = 2 * param_cpuct * log((node->GetN() + CpuctBase)/CpuctBase) * sqrt(log(node->GetN())/(1+i->GetN()));
 	// transform cpuct with the sigmoid function (the logistic function, 1/(1 + exp(-x))
 	if(!evaluation_weights){
-	  cpuct_as_prob = 2 * 2 * param_cpuct * (1/(1 + exp(-cpuct)) - 0.5); // f(0) would be 0.5, we want it f(0) to be zero.	  
+	  cpuct_as_prob = (1/(1 + exp(-cpuct)) - 0.5); // f(0) would be 0.5, we want it f(0) to be zero.	  
 	}
     }
     relative_weight_of_p = pow(i->GetN(), param_fpuValue_false) / (0.05 + i->GetN()) + cpuct_as_prob; // 0.05 is here to make Q have some influence after 1 visit.
@@ -139,15 +139,10 @@ float computeChildWeights(NodeGlow* node, bool evaluation_weights) {
       relative_weight_of_p = 1;
       }
     relative_weight_of_q = 1 - relative_weight_of_p;
-    // get an new term which should encourage exploration by multiplying both policy and q with this number.
-    // or, for just add it in, the exploration bonus is for _everyone_.
-    // old version
-    // weighted_p_and_q[i] = relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() + relative_weight_of_p * node->GetEdges()[i].GetP() + node->GetEdges()[i].GetP() * search_->params_.GetCpuct() * log((node->GetN() + search_->params_.GetCpuctBase())/search_->params_.GetCpuctBase()) * sqrt(log(node->GetN())/(1+node->GetEdges()[i].GetChild()->GetN()));
-    // new version
     if(evaluation_weights){    
       weighted_p_and_q[ii] = relative_weight_of_q * i->GetW() + relative_weight_of_p * node->GetEdges()[i->GetIndex()].GetP() + node->GetEdges()[i->GetIndex()].GetP() * 0.1 * log((node->GetN() + CpuctBase)/CpuctBase) * sqrt(log(node->GetN())/(1+i->GetN())); // copied from baseline
     } else {
-      weighted_p_and_q[ii] = relative_weight_of_q * i->GetW() + relative_weight_of_p * pow(node->GetEdges()[i->GetIndex()].GetP(), 0.85);
+      weighted_p_and_q[ii] = relative_weight_of_q * i->GetW() + relative_weight_of_p * pow(node->GetEdges()[i->GetIndex()].GetP(), 0.5);
     }
     sum_of_weighted_p_and_q += weighted_p_and_q[ii];
   }
