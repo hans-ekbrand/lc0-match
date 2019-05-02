@@ -40,8 +40,8 @@ void set_strategy_parameters(const SearchParams *params);
 //  q of node's children
 //  orig_q of node
 //  p of node's edges
-//  n of node
 //  n of node's children
+//  node_n - n of node (note: node's n should not be read)
 // outputs:
 //  return new q (note: node's q should not be changed, that's up to function caller)
 //  w of node's children

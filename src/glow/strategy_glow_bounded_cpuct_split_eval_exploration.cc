@@ -104,7 +104,7 @@ inline float q_to_prob(const float q, const float max_q, const float q_concentra
 }
 
 
-float computeChildWeights(NodeGlow* node, bool evaluation_weights) {
+float computeChildWeights(NodeGlow* node, bool evaluation_weights, int node_n) {
   int n = 0;
   float maxq = -2.0;
 	for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
@@ -117,7 +117,7 @@ float computeChildWeights(NodeGlow* node, bool evaluation_weights) {
   float sum_of_w_of_expanded_nodes = 0.0;
   float sum_of_weighted_p_and_q = 0.0;
   for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
-    float w = q_to_prob(i->GetQ(), maxq, param_temperature, i->GetN(), node->GetN());
+    float w = q_to_prob(i->GetQ(), maxq, param_temperature, i->GetN(), node_n);
     i->SetW(w);
     sum_of_w_of_expanded_nodes += w;
     sum_of_P_of_expanded_nodes += node->GetEdges()[i->GetIndex()].GetP();
@@ -132,7 +132,7 @@ float computeChildWeights(NodeGlow* node, bool evaluation_weights) {
     i->SetW(i->GetW() * normalise_to_sum_of_p); // Normalise sum of Q to sum of P
     double cpuct_as_prob = 0;
     if(i->GetN() > (uint32_t)param_maxCollisionVisitsId){
-	double cpuct = log((node->GetN() + CpuctBase)/CpuctBase) * sqrt(log(node->GetN())/(1+i->GetN()));
+	double cpuct = log((node_n + CpuctBase)/CpuctBase) * sqrt(log(node_n)/(1+i->GetN()));
 	// transform cpuct with the sigmoid function (the logistic function, 1/(1 + exp(-x))
 	if(!evaluation_weights){
 	  cpuct_as_prob = 2 * 2 * param_cpuct * (1/(1 + exp(-cpuct)) - 0.5); // f(0) would be 0.5, we want it f(0) to be zero.	  
@@ -146,10 +146,10 @@ float computeChildWeights(NodeGlow* node, bool evaluation_weights) {
     // get an new term which should encourage exploration by multiplying both policy and q with this number.
     // or, for just add it in, the exploration bonus is for _everyone_.
     // old version
-    // weighted_p_and_q[i] = relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() + relative_weight_of_p * node->GetEdges()[i].GetP() + node->GetEdges()[i].GetP() * search_->params_.GetCpuct() * log((node->GetN() + search_->params_.GetCpuctBase())/search_->params_.GetCpuctBase()) * sqrt(log(node->GetN())/(1+node->GetEdges()[i].GetChild()->GetN()));
+    // weighted_p_and_q[i] = relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() + relative_weight_of_p * node->GetEdges()[i].GetP() + node->GetEdges()[i].GetP() * search_->params_.GetCpuct() * log((node_n + search_->params_.GetCpuctBase())/search_->params_.GetCpuctBase()) * sqrt(log(node_n)/(1+node->GetEdges()[i].GetChild()->GetN()));
     // new version
     if(evaluation_weights){    
-      weighted_p_and_q[ii] = relative_weight_of_q * i->GetW() + relative_weight_of_p * node->GetEdges()[i->GetIndex()].GetP() + node->GetEdges()[i->GetIndex()].GetP() * 0.1 * log((node->GetN() + CpuctBase)/CpuctBase) * sqrt(log(node->GetN())/(1+i->GetN())); // copied from baseline
+      weighted_p_and_q[ii] = relative_weight_of_q * i->GetW() + relative_weight_of_p * node->GetEdges()[i->GetIndex()].GetP() + node->GetEdges()[i->GetIndex()].GetP() * 0.1 * log((node_n + CpuctBase)/CpuctBase) * sqrt(log(node_n)/(1+i->GetN())); // copied from baseline
     } else {
       weighted_p_and_q[ii] = relative_weight_of_q * i->GetW() + relative_weight_of_p * pow(node->GetEdges()[i->GetIndex()].GetP(), 0.85);
     }
@@ -166,8 +166,8 @@ float computeChildWeights(NodeGlow* node, bool evaluation_weights) {
   return(sum_of_P_of_expanded_nodes);
 }
 
-float compute_q_and_weights(NodeGlow *node) {
-  float total_children_weight = computeChildWeights(node, true);
+float compute_q_and_weights(NodeGlow *node, int node_n) {
+  float total_children_weight = computeChildWeights(node, true, node_n);
 
 //  if (total_children_weight < 0.0 || total_children_weight - 1.0 > 1.00012) {
 //    std::cerr << "total_children_weight: " << total_children_weight << "\n";
@@ -194,7 +194,7 @@ float compute_q_and_weights(NodeGlow *node) {
   }
   // Average Q STOP
 
-  total_children_weight = computeChildWeights(node, false);	
+  total_children_weight = computeChildWeights(node, false, node_n);	
 
 	return q;
 }

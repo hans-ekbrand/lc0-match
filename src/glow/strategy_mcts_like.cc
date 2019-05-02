@@ -55,7 +55,7 @@ inline float q_to_prob(const float q, const float max_q, const float q_concentra
   return exp(q_concentration * (q - abs(max_q)/2)); // reduce the overflow risk. However, with the default q_concentration 36.2, overflow isn't possible since exp(36.2 * 1) is less than max float. TODO restrict the parameter so it can't overflow.
 }
 
-float computeChildWeights(NodeGlow* node, bool evaluation_weights) {
+float computeChildWeights(NodeGlow* node, bool evaluation_weights, int node_n) {
   int n = 0;  
   float sum_of_P_of_expanded_nodes = 0.0;
   float maxq = -2.0;
@@ -68,7 +68,7 @@ float computeChildWeights(NodeGlow* node, bool evaluation_weights) {
     // Just set w to normalised(q after q_to_prob)
     float sum_of_w_of_expanded_nodes = 0.0;  
     for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
-      i->SetW(q_to_prob(i->GetQ(), maxq, param_temperature - param_temperatureVisitOffset * node->GetN(), i->GetN(), node->GetN()));
+      i->SetW(q_to_prob(i->GetQ(), maxq, param_temperature - param_temperatureVisitOffset * node_n, i->GetN(), node_n));
       sum_of_P_of_expanded_nodes += node->GetEdges()[i->GetIndex()].GetP();
       sum_of_w_of_expanded_nodes += i->GetW();
     }
@@ -104,7 +104,7 @@ float computeChildWeights(NodeGlow* node, bool evaluation_weights) {
       sum_of_P_of_expanded_nodes += node->GetEdges()[i->GetIndex()].GetP();
       // Originally, I had i->GetQ() But that didn't work.
       // 3 for param_temperatureWinpctCutoff is just a number that works good here :-)
-      i->SetW(param_temperatureWinpctCutoff * i->GetW() + node->GetEdges()[i->GetIndex()].GetP() * ( param_cpuct + CpuctFactor * log((node->GetN() + CpuctBase)/CpuctBase) * sqrt(node->GetN()) / ( 1 + i->GetN())));
+      i->SetW(param_temperatureWinpctCutoff * i->GetW() + node->GetEdges()[i->GetIndex()].GetP() * ( param_cpuct + CpuctFactor * log((node_n + CpuctBase)/CpuctBase) * sqrt(node_n) / ( 1 + i->GetN())));
       sum_of_score_of_expanded_nodes += i->GetW();
       n++;
     }
@@ -117,9 +117,9 @@ float computeChildWeights(NodeGlow* node, bool evaluation_weights) {
     }
   }
 
-float compute_q_and_weights(NodeGlow *node) {
+float compute_q_and_weights(NodeGlow *node, int node_n) {
   // Evaluation weights      
-  float total_children_weight = computeChildWeights(node, true);
+  float total_children_weight = computeChildWeights(node, true, node_n);
 
   // Average Q START
   float q = (1.0 - total_children_weight) * node->GetOrigQ();
@@ -129,7 +129,7 @@ float compute_q_and_weights(NodeGlow *node) {
   // Average Q STOP
 
   // Exploration weights
-  total_children_weight = computeChildWeights(node, false);	
+  total_children_weight = computeChildWeights(node, false, node_n);	
 
 	return q;
 }
