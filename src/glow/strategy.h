@@ -45,7 +45,7 @@ void set_strategy_parameters(const SearchParams *params);
 // outputs:
 //  return new q (note: node's q should not be changed, that's up to function caller)
 //  w of node's children
-float compute_q_and_weights(NodeGlow *node);
+float compute_q_and_weights(NodeGlow *node, int node_n);
 
 
 }  // namespace lczero

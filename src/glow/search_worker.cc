@@ -25,6 +25,8 @@
   Program grant you additional permission to convey the resulting work.
 */
 
+//#include <signal.h>
+
 #include "glow/search.h"
 #include "glow/search_worker.h"
 #include "glow/strategy.h"
@@ -37,6 +39,7 @@
 
 #include "neural/encoder.h"
 
+
 namespace lczero {
 
 namespace {
@@ -47,12 +50,25 @@ int const MAX_NEW_SIBLINGS = 10000;
   // The maximum number of new siblings. If 1, then it's like old MULTIPLE_NEW_SIBLINGS = false, if >= maximum_number_of_legal_moves it's like MULTIPLE_NEW_SIBLINGS = true
 const int kUciInfoMinimumFrequencyMs = 5000;
 
-int const N_HELPER_THREADS_PRE = 3;
+int const N_HELPER_THREADS_PRE = 2;
 int const N_HELPER_THREADS_POST = 3;
 
 bool const DEBUG_MODE = false;
 
 bool const OLD_PICK_N_CREATE_MODE = false;
+
+
+// int debug_state[4];
+// 
+// void segfault_sigaction(int signal, siginfo_t *si, void *arg)
+// {
+//     printf("Caught segfault at address %p\n", si->si_addr);
+// 		for (int i = 0; i < 4; i++) {
+// 			std::cerr << debug_state[i] << "\n";
+// 		}
+//     exit(0);
+// }
+
 
 }  // namespace
 
@@ -107,7 +123,11 @@ inline void SearchWorkerGlow::update_junctions(NodeGlow *node, int &junction_mod
 		if (n == 0) {  // an unvisited node
 			node->SetBranchingInFlight(ccidx);
 		} else if (n & 0xC000) {  // part of a path between junctions
-			uint16_t new_junc_idx = junctions_.size();
+			uint16_t new_junc_idx = junctions_size_++;
+			if (new_junc_idx >= new_nodes_amount_limit_) {
+				std::cerr << "Too many junctions\n";
+				abort();
+			}
 			node->SetBranchingInFlight(new_junc_idx + 1);
 			uint16_t parent;
 			if (n & 0x8000) {
@@ -117,11 +137,11 @@ inline void SearchWorkerGlow::update_junctions(NodeGlow *node, int &junction_mod
 				parent = junctions_[n & 0x3FFF].parent;
 				junctions_[n & 0x3FFF].parent = new_junc_idx;
 			}
-			junctions_.push_back({node, parent, 0});
+			junctions_[new_junc_idx] = {node, parent, 0};
 
 			if (ccidx & 0x8000) {
 				new_nodes_[ccidx & 0x3FFF].junction = new_junc_idx;
-			} else {
+			} else {  // never the case?
 				junctions_[ccidx & 0x3FFF].parent = new_junc_idx;
 			}
 			ccidx = new_junc_idx | 0x4000;
@@ -142,6 +162,35 @@ inline void SearchWorkerGlow::update_junctions(NodeGlow *node, int &junction_mod
 			junction_mode = 2;
 		}
 	}
+}
+
+  // makes a junction at a node which is on a path but not previously on a junction
+void SearchWorkerGlow::insert_junction(NodeGlow *node) {
+	uint16_t n = node->GetBranchingInFlight();
+	uint16_t new_junc_idx = junctions_size_++;
+	if (new_junc_idx >= new_nodes_amount_limit_) {
+		std::cerr << "Too many junctions\n";
+		abort();
+	}
+	node->SetBranchingInFlight(new_junc_idx + 1);
+	uint16_t parent;
+	if (n & 0x8000) {
+		parent = new_nodes_[n & 0x3FFF].junction;
+		new_nodes_[n & 0x3FFF].junction = new_junc_idx;
+	} else {
+		parent = junctions_[n & 0x3FFF].parent;
+		junctions_[n & 0x3FFF].parent = new_junc_idx;
+	}
+	junctions_[new_junc_idx] = {node, parent, 0};
+
+	uint16_t ccidx = new_junc_idx | 0x4000;
+	for (;;) {
+		if (node == root_node_) break;
+		node = node->GetParent();
+		if ((node->GetBranchingInFlight() & 0xC000) == 0) break;
+		node->SetBranchingInFlight(ccidx);
+	}
+	
 }
 
 void SearchWorkerGlow::buildJunctionRTree() {
@@ -350,8 +399,9 @@ int SearchWorkerGlow::extendTree(std::vector<Move> *movestack, PositionHistory *
 }
 
 
-int const MIN_SUBTREE_SIZE = 100;  // 50;  // 100000000;  // 100;
-int const LOCAL_NODES_AMOUNT = 10;  // 20;  // 1;  // 10;
+int const MAX_SUBTREE_SIZE = 1000;  // 50;  // 100000000;  // 100;
+int const LOCAL_NODES_AMOUNT = 20;  // 20;  // 1;  // 10;
+//float const OVERLAP_FACTOR = 10.0;
 
 void SearchWorkerGlow::picknextend_reference(std::vector<Move> *movestack, PositionHistory *history) {
 
@@ -365,7 +415,7 @@ void SearchWorkerGlow::picknextend_reference(std::vector<Move> *movestack, Posit
 		NodeGlow *best_child = node->GetBestChild();
 		
 		while (true) {
-			if (best_child == nullptr || best_child->GetN() < MIN_SUBTREE_SIZE) break;
+			if (best_child == nullptr || node->GetN() <= MAX_SUBTREE_SIZE) break;
 			node = best_child;
 			best_child = node->GetBestChild();
 		}
@@ -453,6 +503,11 @@ void SearchWorkerGlow::picknextend_reference(std::vector<Move> *movestack, Posit
 
 
 void SearchWorkerGlow::picknextend(PositionHistory *history) {
+	
+	n_searchers_active_++;
+	//int debug_state_idx = n_searchers_active_++;
+
+	tree_lock_.lock();
 
 //	std::vector<int> path;
 //	unsigned int last_depth = 0;
@@ -461,25 +516,107 @@ void SearchWorkerGlow::picknextend(PositionHistory *history) {
 	int full_tree_depth = search_->full_tree_depth_;
 	int cum_depth = 0;
 
+	
 	// turn on global tree lock
-	while (new_nodes_size_ < new_nodes_amount_target_) {  // repeat this until minibatch_size amount of non terminal, non cache hit nodes have been found (or reached a predefined limit larger than minibatch size)
+	while (new_nodes_size_ <= new_nodes_amount_target_ - n_searchers_active_) {  // repeat this until minibatch_size amount of non terminal, non cache hit nodes have been found (or reached a predefined limit larger than minibatch size)
+
 		NodeGlow *node = root_node_;
 		if (node->GetMaxW() == 0.0) break;  // no more expandable node
 		NodeGlow *best_child = node->GetBestChild();
 //		if (best_child == nullptr && (node->GetNextUnexpandedEdge() == node->GetNumEdges() || node->GetNextUnexpandedEdge() - node->GetNumChildren() == MAX_NEW_SIBLINGS)) break;  // no more expandable node
 		
 		while (true) {
-			if (best_child == nullptr || best_child->GetN() < MIN_SUBTREE_SIZE) break;
+			if (best_child == nullptr || node->GetN() <= MAX_SUBTREE_SIZE) break;
 			history->Append(node->GetEdges()[best_child->GetIndex()].move_);
 			node = best_child;
 			best_child = node->GetBestChild();
 		}
-		
-		NodeGlow *local_root = node;
-		int local_root_depth = history->GetLength();
-		
-		int n_local_nodes = std::min(LOCAL_NODES_AMOUNT, new_nodes_amount_target_ - new_nodes_size_);
 
+		if (node->GetN() > MAX_SUBTREE_SIZE) {
+
+			int nidx = node->GetNextUnexpandedEdge();
+			history->Append(node->GetEdges()[nidx].move_);
+			node->SetNextUnexpandedEdge(nidx + 1);
+
+			std::unique_ptr<NodeGlow>newnode = std::make_unique<NodeGlow>(node, nidx);
+
+			bool out_of_order = false;
+			int nnidx = -1;
+
+			search_->ExtendNode(history, newnode.get());
+			if (newnode.get()->IsTerminal()) {
+				out_of_order = true;
+				node->AddChild(std::move(newnode));
+			} else {
+// 				int16_t batchidx = AddNodeToComputation(newnode.get(), history);
+// 				nnidx = new_nodes_size_++;
+// 				new_nodes_[nnidx] = {std::move(newnode), node, 0xFFFF, batchidx};
+
+				int16_t batchidx = MaybeAddNodeToComputation(newnode.get(), history);
+				if (batchidx == -1) {
+					out_of_order = true;
+					node->AddChild(std::move(newnode));
+				} else {
+					nnidx = new_nodes_size_++;
+					new_nodes_[nnidx] = {std::move(newnode), node, 0xFFFF, batchidx};
+				}
+			}
+			int depth = history->GetLength() - played_history_length_;
+			history->Trim(played_history_length_);
+
+			if (depth > full_tree_depth) full_tree_depth = depth;
+			cum_depth += depth;
+
+			if (out_of_order) {
+				while (true) {
+					recalcPropagatedQ(node);
+					nodes_visited++;
+					if (node == root_node_) break;
+					node = node->GetParent();
+				}
+			} else {  // not out of order
+				int junction_mode = 0;
+				uint16_t ccidx = nnidx | 0x8000;
+
+				while (true) {
+					recalcMaxW(node);
+					nodes_visited++;
+
+					update_junctions(node, junction_mode, ccidx);
+
+					if (node == root_node_) break;
+					node = node->GetParent();
+				}
+			}
+			
+			continue;
+		}
+
+		NodeGlow *local_root = node;
+
+		if (node->GetBranchingInFlight() & 0xC000) {
+			insert_junction(node);
+		}
+		
+//		float old_global_maxw = root_node_->GetMaxW();
+//		float old_local_maxw = local_root->GetMaxW();
+		node->SetMaxW(0.0);
+		while (node != root_node_) {
+			node = node->GetParent();
+
+			recalcMaxW(node);
+		}
+//		float new_global_maxw_local_equiv = (old_global_maxw - OVERLAP_FACTOR * (old_global_maxw - root_node_->GetMaxW())) * old_local_maxw / old_global_maxw;
+//std::cerr << old_local_maxw << " " << old_global_maxw << " " << root_node_->GetMaxW() << " " << new_global_maxw_local_equiv << " ";
+
+		tree_lock_.unlock();
+
+		node = local_root;
+
+		int local_root_depth = history->GetLength();
+
+//std::cerr << "d: " << local_root_depth - played_history_length_ << "\n";
+		
 		int global_junction_mode = 2;
 		uint16_t global_ccidx = 0;  // value unimportant
 		
@@ -488,7 +625,14 @@ void SearchWorkerGlow::picknextend(PositionHistory *history) {
 		// starting from root node follow maxidx until next move would make the sub tree to small
 		// propagate no availability upwards to root
 		// turn off global tree lock
-		for (; n_local_nodes > 0; n_local_nodes--) {  // repeat until localbatch_size amount of nodes have been found
+
+//int did = 0;
+
+		NQMaxw local_prop({0, 0.0, 0.0});  // don't care
+
+		for (int n = LOCAL_NODES_AMOUNT; n > 0; n--) {
+
+//did++;
 			// go down to max unexpanded node
 //			unsigned int depth = 0;
 			while (true) {
@@ -569,9 +713,12 @@ void SearchWorkerGlow::picknextend(PositionHistory *history) {
 			if (out_of_order) {
 				global_out_of_order = true;
 				while (true) {
-					recalcPropagatedQ(node);
+					local_prop = recalcPropagatedQ_local(node);
 					nodes_visited++;
 					if (node == local_root) break;
+					node->SetN(local_prop.n);
+					node->SetQ(local_prop.q);
+					node->SetMaxW(local_prop.maxw);
 					node = node->GetParent();
 				}
 			} else {  // not out of order
@@ -579,12 +726,13 @@ void SearchWorkerGlow::picknextend(PositionHistory *history) {
 				uint16_t ccidx = nnidx | 0x8000;
 
 				while (true) {
-					recalcMaxW(node);
+					local_prop.maxw = recalcMaxW_local(node);
 					nodes_visited++;
 
 					update_junctions(node, junction_mode, ccidx);
 
 					if (node == local_root) break;
+					node->SetMaxW(local_prop.maxw);
 					node = node->GetParent();
 				}
 				
@@ -592,7 +740,10 @@ void SearchWorkerGlow::picknextend(PositionHistory *history) {
 				if (junction_mode < 2) global_ccidx = ccidx;
 			}
 
-			if (node->GetMaxW() == 0.0) break;  // no more expandable node in sub tree
+			if (local_prop.maxw == 0.0) break;  // no more expandable node in sub tree
+//			if (local_prop.maxw < new_global_maxw_local_equiv) break;
+
+			if (new_nodes_size_ > new_nodes_amount_target_ - n_searchers_active_) break;
 
 			// node = local_root
 			best_child = node->GetBestChild();
@@ -604,7 +755,16 @@ void SearchWorkerGlow::picknextend(PositionHistory *history) {
 			// otherwise, add node to computation list and turn on limited max only propagation and forking tree mode. Increment computation node count.
 			// propagate to local tree root according to mode
 		}
-		
+//std::cerr << "did " << did << "\n";
+
+		tree_lock_.lock();
+
+		if (global_out_of_order) {
+			node->SetN(local_prop.n);
+			node->SetQ(local_prop.q);
+		}
+		node->SetMaxW(local_prop.maxw);
+
 		history->Trim(played_history_length_);
 
 		while (node != root_node_) {
@@ -619,7 +779,7 @@ void SearchWorkerGlow::picknextend(PositionHistory *history) {
 			
 			update_junctions(node, global_junction_mode, global_ccidx);
 		}
-		
+
 		// turn on global tree lock
 		// propagate to root
 	}
@@ -631,6 +791,11 @@ void SearchWorkerGlow::picknextend(PositionHistory *history) {
 
 	search_->count_search_node_visits_ += nodes_visited;
 
+	tree_lock_.unlock();
+
+	n_searchers_active_--;
+
+	
 }
 
 void SearchWorkerGlow::retrieveNNResult(NodeGlow* node, int batchidx) {
@@ -679,7 +844,7 @@ void SearchWorkerGlow::retrieveNNResult(NodeGlow* node, int batchidx) {
 }
 
 
-inline void SearchWorkerGlow::recalcMaxW(NodeGlow *node) {
+inline float SearchWorkerGlow::recalcMaxW_local(NodeGlow *node) {
 	NodeGlow *max_child = nullptr;
 	float max_w = 0.0;
 	int nidx = node->GetNextUnexpandedEdge();
@@ -693,8 +858,12 @@ inline void SearchWorkerGlow::recalcMaxW(NodeGlow *node) {
 			max_child = i;
 		}
 	}
-	node->SetMaxW(max_w);
 	node->SetBestChild(max_child);
+	return max_w;
+}
+
+inline void SearchWorkerGlow::recalcMaxW(NodeGlow *node) {
+	node->SetMaxW(recalcMaxW_local(node));
 }
 
 void SearchWorkerGlow::recalcPropagatedQ(NodeGlow* node) {
@@ -704,10 +873,22 @@ void SearchWorkerGlow::recalcPropagatedQ(NodeGlow* node) {
   }
   node->SetN(n);
 
-	float q = compute_q_and_weights(node);
+	float q = compute_q_and_weights(node, n);
 	node->SetQ(q);
 
 	recalcMaxW(node);
+}
+
+SearchWorkerGlow::NQMaxw SearchWorkerGlow::recalcPropagatedQ_local(NodeGlow* node) {
+  int n = 1;
+	for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
+    n += i->GetN();
+  }
+
+	float q = compute_q_and_weights(node, n);
+
+	float maxw = recalcMaxW_local(node);
+	return {n, q, maxw};
 }
 
 
@@ -791,9 +972,19 @@ int SearchWorkerGlow::propagate() {
 }
 
 
-
 void SearchWorkerGlow::ThreadLoop(int thread_id) {
 
+// 	for (int i = 0; i < 4; i++) {
+// 		debug_state[i] = -1;
+// 	}
+// 	struct sigaction sa;
+// 	memset(&sa, 0, sizeof(struct sigaction));
+// 	sigemptyset(&sa.sa_mask);
+// 	sa.sa_sigaction = segfault_sigaction;
+// 	sa.sa_flags   = SA_SIGINFO;
+// 	sigaction(SIGSEGV, &sa, NULL);
+	
+	
 	PositionHistory history(search_->played_history_);
 	std::vector<Move> movestack;
 
@@ -815,8 +1006,10 @@ void SearchWorkerGlow::ThreadLoop(int thread_id) {
     );
   }
 
-	for (int n = new_nodes_amount_limit_; n > 0; n--) {
-		junction_locks_.push_back(new std::mutex());
+  junctions_ = new Junction[new_nodes_amount_limit_];
+	junction_locks_ = new std::mutex *[new_nodes_amount_limit_];
+	for (int n = new_nodes_amount_limit_ - 1; n >= 0; n--) {
+		junction_locks_[n] = new std::mutex();
 	}
 
 //  auto board = history.Last().GetBoard();
@@ -938,10 +1131,20 @@ void SearchWorkerGlow::ThreadLoop(int thread_id) {
 
 		} else {  // new pick n create mode
 
-			start_comp_time = std::chrono::steady_clock::now();
+		helper_threads_mode_ = 1;
+		//LOGFILE << "Allowing helper threads to help";
+		for (int j = 0; j < N_HELPER_THREADS_PRE; j++) {
+			helper_thread_locks[j]->unlock();
+		}
+
+		start_comp_time = std::chrono::steady_clock::now();
 
 		picknextend(&history);
 //		picknextend_reference(&movestack, &history);
+
+		for (int j = 0; j < N_HELPER_THREADS_PRE; j++) {
+			helper_thread_locks[j]->lock();
+		}
 
 		if (new_nodes_size_ == 0) {
 			if (search_->half_done_count_ == 0) {  // no other thread is waiting for nn computation and new nodes to finish so the search tree is exhausted
@@ -964,7 +1167,8 @@ void SearchWorkerGlow::ThreadLoop(int thread_id) {
 		stop_comp_time = std::chrono::steady_clock::now();
 		search_->duration_junctions_ += (stop_comp_time - start_comp_time).count();
 
-		}
+		}  // end new pick n create mode
+
 		//~ if (minibatch_.size() < propagate_list_.size()) {
 			//~ std::cerr << "minibatch_.size() < propagate_list_.size(): " << minibatch_.size() << " < " << propagate_list_.size() << "\n";
 			//~ abort();
@@ -978,7 +1182,7 @@ void SearchWorkerGlow::ThreadLoop(int thread_id) {
 						<< ", new_nodes_ size: " << new_nodes_size_
             << ", new_nodes_amount_target_: " << new_nodes_amount_target_
 						//<< ", minibatch_ size: " << minibatch_.size()
-						<< ", junctions_ size: " << junctions_.size();
+						<< ", junctions_ size: " << junctions_size_;
 						//<< ", highest w: " << new_nodes_[new_nodes_.size() - 1].w
 						//<< ", node stack size: " << nodestack_.size()
 						//<< ", max_unexpanded_w: " << new_nodes_[0];
@@ -1046,9 +1250,10 @@ void SearchWorkerGlow::ThreadLoop(int thread_id) {
 		new_nodes_list_shared_idx_ = 0;
 		new_nodes_amount_retrieved_ = 0;
 
-    search_->count_junctions_ += junctions_.size();
+    search_->count_junctions_ += junctions_size_;
 
-		junctions_.clear();
+		//junctions_.clear();
+		junctions_size_ = 0;
 
 		//new_nodes_.clear();
 		new_nodes_size_ = 0;
@@ -1122,10 +1327,15 @@ void SearchWorkerGlow::ThreadLoop(int thread_id) {
     }
 	}
 
-	while (!junction_locks_.empty()) {
-		delete junction_locks_.back();
-		junction_locks_.pop_back();
+	for (int i = 0; i < new_nodes_amount_limit_; i++) {
+		delete junction_locks_[i];
 	}
+// 	while (!junction_locks_.empty()) {
+// 		delete junction_locks_.back();
+// 		junction_locks_.pop_back();
+// 	}
+	delete[] junction_locks_;
+	delete[] junctions_;
 
 	helper_threads_mode_ = -1;
   while (!helper_threads.empty()) {
@@ -1151,8 +1361,12 @@ void SearchWorkerGlow::HelperThreadLoop(int helper_thread_id, std::mutex* lock) 
 		lock->lock();
 
 		if (helper_threads_mode_ == 1 || helper_threads_mode_ == 2) {
-			int count = extendTree(&movestack, &history);
-			if (DEBUG_MODE) if (count > 0) LOGFILE << "helper thread " << helper_thread_id << " did new nodes: " << count;
+			if (OLD_PICK_N_CREATE_MODE) {
+				int count = extendTree(&movestack, &history);
+				if (DEBUG_MODE) if (count > 0) LOGFILE << "helper thread " << helper_thread_id << " did new nodes: " << count;
+			} else {
+				picknextend(&history);
+			}
 		} else {
 			if (helper_threads_mode_ == 3 || helper_threads_mode_ == 4) {
 				int count = propagate();

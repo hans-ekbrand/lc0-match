@@ -83,14 +83,26 @@ private:
 	int AddNodeToComputation(NodeGlow* node, PositionHistory *history);
 	int MaybeAddNodeToComputation(NodeGlow* node, PositionHistory *history);
 	void retrieveNNResult(NodeGlow* node, int batchidx);
+
+	inline float recalcMaxW_local(NodeGlow *node);
 	inline void recalcMaxW(NodeGlow *node);
+
+	struct NQMaxw {
+		int n;
+		float q;
+		float maxw;
+	};
+	
 	void recalcPropagatedQ(NodeGlow* node);
+	NQMaxw recalcPropagatedQ_local(NodeGlow* node);
+
 	void pickNodesToExtend();
 	int appendHistoryFromTo(std::vector<Move> *movestack, PositionHistory *history, NodeGlow* from, NodeGlow* to);
 	float computeChildWeights(NodeGlow* node, bool evalution_weights);
 	int propagate();
 	int extendTree(std::vector<Move> *movestack, PositionHistory *history);
 	inline void update_junctions(NodeGlow *node, int &junction_mode, uint16_t &ccidx);
+	void insert_junction(NodeGlow *node);
 	void buildJunctionRTree();
 
 	void picknextend(PositionHistory *history);
@@ -123,8 +135,11 @@ private:
 	int new_nodes_list_shared_idx_ = 0;  // SearchWorker instance not needed, move to Search?
 	std::mutex new_nodes_list_lock_;  // SearchWorker instance not needed, move to Search?
 
-	std::vector<Junction> junctions_;
-	std::vector<std::mutex *> junction_locks_;  // SearchWorker instance not needed, move to Search?
+	//std::vector<Junction> junctions_;
+	Junction *junctions_;
+	std::atomic<int> junctions_size_{0};
+	//std::vector<std::mutex *> junction_locks_;  // SearchWorker instance not needed, move to Search?
+	std::mutex **junction_locks_;  // SearchWorker instance not needed, move to Search?
 
 	int minibatch_shared_idx_ = 0;
 	std::atomic<int> new_nodes_amount_retrieved_{0};  // SearchWorker instance not needed, move to Search?
@@ -133,6 +148,8 @@ private:
 
 	int helper_threads_mode_ = 0;  // SearchWorker instance not needed, move to Search?
 
+	std::mutex tree_lock_;
+	std::atomic<int> n_searchers_active_{0};
 };
 
 }  // namespace lczero
