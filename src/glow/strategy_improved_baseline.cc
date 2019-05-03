@@ -147,7 +147,7 @@ float computeChildWeights(NodeGlow* node, bool evaluation_weights, int node_n) {
     if(evaluation_weights){    
       weighted_p_and_q[ii] = relative_weight_of_q * i->GetW() + relative_weight_of_p * node->GetEdges()[i->GetIndex()].GetP() + node->GetEdges()[i->GetIndex()].GetP() * 0.1 * log((node_n + CpuctBase)/CpuctBase) * sqrt(log(node_n)/(1+i->GetN())); // copied from baseline
     } else {
-      weighted_p_and_q[ii] = relative_weight_of_q * i->GetW() + relative_weight_of_p * pow(node->GetEdges()[i->GetIndex()].GetP(), 0.85);
+      weighted_p_and_q[ii] = relative_weight_of_q * i->GetW() + relative_weight_of_p * pow(node->GetEdges()[i->GetIndex()].GetP(), 0.75);
     }
     sum_of_weighted_p_and_q += weighted_p_and_q[ii];
   }
