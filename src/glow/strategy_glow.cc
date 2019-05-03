@@ -100,7 +100,7 @@ inline float q_to_prob(const float q, const float max_q, const float q_concentra
 }
 
 
-float computeChildWeights(NodeGlow* node, bool evaluation_weights) {
+float computeChildWeights(NodeGlow* node, bool evaluation_weights, int node_n) {
   int n = 0;
   float maxq = -2.0;
 	for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
@@ -113,7 +113,7 @@ float computeChildWeights(NodeGlow* node, bool evaluation_weights) {
   float sum_of_w_of_expanded_nodes = 0.0;
   float sum_of_weighted_p_and_q = 0.0;
 	for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
-    float w = q_to_prob(i->GetQ(), maxq, param_temperature, i->GetN(), node->GetN());
+    float w = q_to_prob(i->GetQ(), maxq, param_temperature, i->GetN(), node_n);
     i->SetW(w);
     sum_of_w_of_expanded_nodes += w;
     sum_of_P_of_expanded_nodes += node->GetEdges()[i->GetIndex()].GetP();
@@ -140,7 +140,7 @@ float computeChildWeights(NodeGlow* node, bool evaluation_weights) {
 
   // If evalution_weights is requested, then we are done now.
   // Also return if Parent N is less than MaxCollisionVisits
-  if(evaluation_weights || (node->GetN() < (uint32_t)param_maxCollisionVisitsId)){
+  if(evaluation_weights || (node_n < (uint32_t)param_maxCollisionVisitsId)){
     return(sum_of_P_of_expanded_nodes);
   }
     
@@ -152,7 +152,7 @@ float computeChildWeights(NodeGlow* node, bool evaluation_weights) {
     // New Q based on decreasing q_conc: TemperatureVisitOffset --temp-visit-offset
     // Boost policy: TemperatureWinpctCutoff --temp-value-cutoff
     // Boost all moves with few visits: CPuct --cpuct
-    float w = q_to_prob(i->GetQ(), maxq, param_temperature - param_temperatureVisitOffset * node->GetN(), i->GetN(), node->GetN());
+    float w = q_to_prob(i->GetQ(), maxq, param_temperature - param_temperatureVisitOffset * node_n, i->GetN(), node_n);
     i->SetW(w);
     sum_of_w_of_expanded_nodes += w;
   }
@@ -163,7 +163,7 @@ float computeChildWeights(NodeGlow* node, bool evaluation_weights) {
     // So, we don't need the part log(parent.n + CpuctBase)/CpuctBase
     // Instead we only use the second part sqrt(log(parent.n))/(1+child.n)
     // However, a pure log10() seems enough, no need to embed that in a sqrt()
-    float cpuct=sqrt(log10(node->GetN())/(1+i->GetN())); // Each time parent.n is tenfolded, cpuct is doubled
+    float cpuct=sqrt(log10(node_n)/(1+i->GetN())); // Each time parent.n is tenfolded, cpuct is doubled
     float exploration_term = param_temperatureWinpctCutoff * cpuct * node->GetEdges()[i->GetIndex()].GetP() + param_cpuct * cpuct;
     // float capped_cpuct = exploration_term > search_->params_.GetMinimumKLDGainPerNode() ? search_->params_.GetMinimumKLDGainPerNode() : exploration_term;
     // ./lc0 -w /home/hans/32603 --cpuct=0.003 --temp-visit-offset=0.0000082 --temp-value-cutoff=1 --fpu-value=0.59 --temperature=36.2 --verbose-move-stats --logfile=\<stderr\> --policy-softmax-temp=1.0 --max-collision-visits=1 
@@ -182,8 +182,8 @@ float computeChildWeights(NodeGlow* node, bool evaluation_weights) {
   return(sum_of_P_of_expanded_nodes);
 }
 
-float compute_q_and_weights(NodeGlow *node) {
-  float total_children_weight = computeChildWeights(node, true);
+float compute_q_and_weights(NodeGlow *node, int node_n) {
+  float total_children_weight = computeChildWeights(node, true, node_n);
 
 //  if (total_children_weight < 0.0 || total_children_weight - 1.0 > 1.00012) {
 //    std::cerr << "total_children_weight: " << total_children_weight << "\n";
@@ -210,7 +210,7 @@ float compute_q_and_weights(NodeGlow *node) {
   }
   // Average Q STOP
 
-  total_children_weight = computeChildWeights(node, false);
+  total_children_weight = computeChildWeights(node, false, node_n);
 
 	return q;
 }

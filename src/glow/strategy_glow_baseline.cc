@@ -107,7 +107,7 @@ inline float q_to_prob(const float q, const float max_q, const float q_concentra
 }
 
 
-float computeChildWeights(NodeGlow* node, bool evaluation_weights) {
+float computeChildWeights(NodeGlow* node, bool evaluation_weights, int node_n) {
   int n = 0;
   float maxq = -2.0;
 	for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
@@ -120,7 +120,7 @@ float computeChildWeights(NodeGlow* node, bool evaluation_weights) {
   float sum_of_w_of_expanded_nodes = 0.0;
   float sum_of_weighted_p_and_q = 0.0;
   for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
-    float w = q_to_prob(i->GetQ(), maxq, param_temperature, i->GetN(), node->GetN());
+    float w = q_to_prob(i->GetQ(), maxq, param_temperature, i->GetN(), node_n);
     i->SetW(w);
     sum_of_w_of_expanded_nodes += w;
     sum_of_P_of_expanded_nodes += node->GetEdges()[i->GetIndex()].GetP();
@@ -138,13 +138,13 @@ float computeChildWeights(NodeGlow* node, bool evaluation_weights) {
     relative_weight_of_q = 1 - relative_weight_of_p;
 
     // // Old style: i == node->GetEdges()[i].GetChild(); i->GetIndex() == i; ii == i
-    // weighted_p_and_q[i] = relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() + relative_weight_of_p * node->GetEdges()[i].GetP() + node->GetEdges()[i].GetP() * search_->params_.GetCpuct() * log((node->GetN() + search_->params_.GetCpuctBase())/search_->params_.GetCpuctBase()) * sqrt(log(node->GetN())/(1+node->GetEdges()[i].GetChild()->GetN()));
+    // weighted_p_and_q[i] = relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() + relative_weight_of_p * node->GetEdges()[i].GetP() + node->GetEdges()[i].GetP() * search_->params_.GetCpuct() * log((node_n + search_->params_.GetCpuctBase())/search_->params_.GetCpuctBase()) * sqrt(log(node_n)/(1+node->GetEdges()[i].GetChild()->GetN()));
 
     // // New style
     // weighted_p_and_q[ii] = relative_weight_of_q * i->GetW() + relative_weight_of_p * node->GetEdges()[i->GetIndex()].GetP();  // Weight for evaluation
 
     // Old code written in new style
-    weighted_p_and_q[ii] = relative_weight_of_q * i->GetW() + relative_weight_of_p * node->GetEdges()[i->GetIndex()].GetP() + node->GetEdges()[i->GetIndex()].GetP() * param_cpuct * log((node->GetN() + CpuctBase)/CpuctBase) * sqrt(log(node->GetN())/(1+i->GetN()));
+    weighted_p_and_q[ii] = relative_weight_of_q * i->GetW() + relative_weight_of_p * node->GetEdges()[i->GetIndex()].GetP() + node->GetEdges()[i->GetIndex()].GetP() * param_cpuct * log((node_n + CpuctBase)/CpuctBase) * sqrt(log(node_n)/(1+i->GetN()));
     
     sum_of_weighted_p_and_q += weighted_p_and_q[ii];
   }
@@ -159,8 +159,8 @@ float computeChildWeights(NodeGlow* node, bool evaluation_weights) {
   return(sum_of_P_of_expanded_nodes);
 }
 
-float compute_q_and_weights(NodeGlow *node) {
-  float total_children_weight = computeChildWeights(node, true);
+float compute_q_and_weights(NodeGlow *node, int node_n) {
+  float total_children_weight = computeChildWeights(node, true, node_n);
 
 //  if (total_children_weight < 0.0 || total_children_weight - 1.0 > 1.00012) {
 //    std::cerr << "total_children_weight: " << total_children_weight << "\n";
