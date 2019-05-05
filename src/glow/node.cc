@@ -316,7 +316,20 @@ void NodeGlow::checkTree(PositionHistory* history) {
 	}
 }
 
-
+void NodeGlow::show(bool is_black_to_move) {
+	LOGFILE << "Q: " << GetQ();
+	LOGFILE << "move   P                 n   norm n     Q          w";
+	for (NodeGlow *i = GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
+		LOGFILE << std::fixed << std::setfill(' ') 
+			<< GetEdges()[i->GetIndex()].GetMove(is_black_to_move).as_string() << " "
+			<< std::setw(10) << GetEdges()[i->GetIndex()].GetP() << " "
+			<< std::setw(10) << i->GetN() << " "
+			<< std::setw(10) << (float)(i->GetN() / (float)(GetN() - 1)) << " "
+	// << std::setw(4) << (i->ComputeHeight() << " "
+			<< std::setw(10) << (float)(i->GetQ()) << " "
+			<< std::setw(10) << i->GetW();
+	}
+}
 
 
 

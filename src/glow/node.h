@@ -163,6 +163,7 @@ class NodeGlow {
 
 
 	void checkTree(PositionHistory* history);
+	void show(bool is_black_to_move);
 
 private:
 	// To minimize the number of padding bytes and to avoid having unnecessary

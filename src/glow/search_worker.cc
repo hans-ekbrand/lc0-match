@@ -50,7 +50,7 @@ int const MAX_NEW_SIBLINGS = 10000;
   // The maximum number of new siblings. If 1, then it's like old MULTIPLE_NEW_SIBLINGS = false, if >= maximum_number_of_legal_moves it's like MULTIPLE_NEW_SIBLINGS = true
 const int kUciInfoMinimumFrequencyMs = 5000;
 
-int const N_HELPER_THREADS_PRE = 2;
+int const N_HELPER_THREADS_PRE = 3;
 int const N_HELPER_THREADS_POST = 3;
 
 bool const DEBUG_MODE = false;
@@ -250,6 +250,7 @@ int SearchWorkerGlow::AddNodeToComputation(NodeGlow* node, PositionHistory *hist
 
 int SearchWorkerGlow::MaybeAddNodeToComputation(NodeGlow* node, PositionHistory *history) {
   auto hash = history->HashLast(cache_history_length_plus_1_);
+	computation_lock_.lock();
 	{
 		NNCacheLock nneval(search_->cache_, hash);
 		if (nneval) {  // it's cached
@@ -299,9 +300,12 @@ int SearchWorkerGlow::MaybeAddNodeToComputation(NodeGlow* node, PositionHistory 
 			}
 			node->SetMaxW(node->GetEdges()[0].GetP());
 
+			computation_lock_.unlock();
 			return -1;
 		}
 	}
+	computation_lock_.unlock();
+
   auto planes = EncodePositionForNN(*history, 8, history_fill_);
   int nedge = node->GetNumEdges();
   std::vector<uint16_t> moves;
@@ -1299,18 +1303,11 @@ void SearchWorkerGlow::ThreadLoop(int thread_id) {
 	  if (DEBUG_MODE){
       LOGFILE << "Elapsed time for " << root_node_->GetN() << " nodes: " << elapsed_time << "ms";
       LOGFILE << "#helper threads pre: " << N_HELPER_THREADS_PRE << ", #helper threads post: " << N_HELPER_THREADS_POST;
-      LOGFILE << "root Q: " << root_node_->GetQ();
-      LOGFILE << "move   P                 n   norm n     Q          w";
-			for (NodeGlow *i = root_node_->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
-	      LOGFILE << std::fixed << std::setfill(' ') 
-		      << (root_node_->GetEdges())[i->GetIndex()].move_.as_string() << " "
-		      << std::setw(10) << (root_node_->GetEdges())[i->GetIndex()].GetP() << " "
-		      << std::setw(10) << i->GetN() << " "
-		      << std::setw(10) << (float)(i->GetN() / (float)(root_node_->GetN() - 1)) << " "
-		// << std::setw(4) << (i->ComputeHeight() << " "
-		      << std::setw(10) << (float)(i->GetQ()) << " "
-		      << std::setw(10) << i->GetW();
-	    }
+
+			const bool is_black_to_move = search_->played_history_.IsBlackToMove();
+			root_node_->show(is_black_to_move);
+			NodeGlow *bestmovenode = search_->indexOfHighestQEdge(root_node_, is_black_to_move, true);
+			bestmovenode->show(!is_black_to_move);
 
       if (search_->count_iterations_ > 0) {
         int divisor = search_->count_iterations_ * 1000;
