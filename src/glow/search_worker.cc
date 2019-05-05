@@ -874,6 +874,10 @@ void SearchWorkerGlow::recalcPropagatedQ(NodeGlow* node) {
   node->SetN(n);
 
 	float q = compute_q_and_weights(node, n);
+// 	if (isnan(q)) {
+// 		std::cerr << "q is nan\n";
+// 		abort();
+// 	}
 	node->SetQ(q);
 
 	recalcMaxW(node);
@@ -886,6 +890,10 @@ SearchWorkerGlow::NQMaxw SearchWorkerGlow::recalcPropagatedQ_local(NodeGlow* nod
   }
 
 	float q = compute_q_and_weights(node, n);
+// 	if (isnan(q)) {
+// 		std::cerr << "q is nan\n";
+// 		abort();
+// 	}
 
 	float maxw = recalcMaxW_local(node);
 	return {n, q, maxw};
@@ -991,7 +999,7 @@ void SearchWorkerGlow::ThreadLoop(int thread_id) {
 	new_nodes_ = new NewNode[new_nodes_amount_limit_];
 
 	search_->busy_mutex_.lock();
-	if (DEBUG_MODE) LOGFILE << "Working thread: " << thread_id;
+	//if (DEBUG_MODE) LOGFILE << "Working thread: " << thread_id;
 
 	std::vector<std::mutex *> helper_thread_locks;
 	std::vector<std::thread> helper_threads;
@@ -1101,7 +1109,7 @@ void SearchWorkerGlow::ThreadLoop(int thread_id) {
 
 		int count = extendTree(&movestack, &history);
 
-		if (DEBUG_MODE) LOGFILE << "main thread new nodes: " << count;
+		//if (DEBUG_MODE) LOGFILE << "main thread new nodes: " << count;
 
 		for (int j = 0; j < N_HELPER_THREADS_PRE; j++) {
 			helper_thread_locks[j]->lock();
@@ -1208,7 +1216,7 @@ void SearchWorkerGlow::ThreadLoop(int thread_id) {
 
 		search_->half_done_count_ -= new_nodes_size_;
 
-		if (DEBUG_MODE) LOGFILE << "Working thread: " << thread_id;
+		//if (DEBUG_MODE) LOGFILE << "Working thread: " << thread_id;
 
 
 		//i += minibatch.size();
@@ -1245,7 +1253,7 @@ void SearchWorkerGlow::ThreadLoop(int thread_id) {
 		search_->duration_propagate_ += (stop_comp_time - start_comp_time).count();
 		search_->count_iterations_++;
 
-		if (DEBUG_MODE) LOGFILE << "main thread did propagates: " << pcount;
+		//if (DEBUG_MODE) LOGFILE << "main thread did propagates: " << pcount;
 
 		new_nodes_list_shared_idx_ = 0;
 		new_nodes_amount_retrieved_ = 0;
@@ -1363,14 +1371,14 @@ void SearchWorkerGlow::HelperThreadLoop(int helper_thread_id, std::mutex* lock) 
 		if (helper_threads_mode_ == 1 || helper_threads_mode_ == 2) {
 			if (OLD_PICK_N_CREATE_MODE) {
 				int count = extendTree(&movestack, &history);
-				if (DEBUG_MODE) if (count > 0) LOGFILE << "helper thread " << helper_thread_id << " did new nodes: " << count;
+				//if (DEBUG_MODE) if (count > 0) LOGFILE << "helper thread " << helper_thread_id << " did new nodes: " << count;
 			} else {
 				picknextend(&history);
 			}
 		} else {
 			if (helper_threads_mode_ == 3 || helper_threads_mode_ == 4) {
 				int count = propagate();
-				if (DEBUG_MODE) LOGFILE << "helper thread " << helper_thread_id << " did propagates: " << count;
+				//if (DEBUG_MODE) LOGFILE << "helper thread " << helper_thread_id << " did propagates: " << count;
 			} else
 				if (helper_threads_mode_ == -1) {
 					lock->unlock();
