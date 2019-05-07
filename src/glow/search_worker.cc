@@ -870,11 +870,65 @@ inline void SearchWorkerGlow::recalcMaxW(NodeGlow *node) {
 	node->SetMaxW(recalcMaxW_local(node));
 }
 
-void SearchWorkerGlow::recalcPropagatedQ(NodeGlow* node) {
+
+
+inline int recalcN(NodeGlow *node) {
   int n = 1;
 	for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
-    n += i->GetN();
-  }
+		n += i->GetN();
+	}
+	return n;
+}
+
+// returns n or -n if node has turned terminal
+inline float checkTerminal(NodeGlow* node) {
+	if (node->GetNumChildren() < node->GetNumEdges()) {
+		for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
+			if (i->IsTerminal()) {
+				if (i->GetQ() == 1.0) {
+					return -1.0;
+				}
+			}
+		}
+		return 2.0;
+	} else {
+		float max_q_terminal = -1.0;
+		for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
+			if (i->IsTerminal()) {
+				float const q = i->GetQ();
+				if (q == 1.0) {
+					return -1.0;
+				} else {
+					if (q > max_q_terminal) max_q_terminal = q;
+				}
+			} else {
+				for (i = i->GetNextSibling(); i != nullptr; i = i->GetNextSibling()) {
+					if (i->IsTerminal()) {
+						if (i->GetQ() == 1.0) {
+							return -1.0;
+						}
+					}
+				}
+				return 2.0;
+			}
+		}
+		// all children present, all terminal, non with q = 1
+		
+		return -max_q_terminal;
+	}
+}
+
+void SearchWorkerGlow::recalcPropagatedQ(NodeGlow* node) {
+	int n = recalcN(node);
+	float termq = checkTerminal(node);
+	if (termq < 2.0) {  // terminal
+		node->SetN(n);
+		node->SetQ(termq);
+		node->SetBestChild(nullptr);
+		node->SetMaxW(0.0);
+//		node->is_terminal_ = true;
+		return;
+	}
   node->SetN(n);
 
 	float q = compute_q_and_weights(node, n);
@@ -888,10 +942,13 @@ void SearchWorkerGlow::recalcPropagatedQ(NodeGlow* node) {
 }
 
 SearchWorkerGlow::NQMaxw SearchWorkerGlow::recalcPropagatedQ_local(NodeGlow* node) {
-  int n = 1;
-	for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
-    n += i->GetN();
-  }
+	int n = recalcN(node);
+	float termq = checkTerminal(node);
+	if (termq < 2.0) {  // terminal
+		node->SetBestChild(nullptr);
+//		node->is_terminal_ = true;
+		return {n, termq, 0.0};
+	}
 
 	float q = compute_q_and_weights(node, n);
 // 	if (isnan(q)) {
