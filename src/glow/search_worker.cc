@@ -1245,16 +1245,16 @@ void SearchWorkerGlow::ThreadLoop(int thread_id) {
 
 		new_nodes_list_shared_idx_ = 0;
 
-		if (DEBUG_MODE) LOGFILE
-						<< "n: " << root_node_->GetN()
-//						<< ", new_nodes_ size: " << new_nodes_.size()
-						<< ", new_nodes_ size: " << new_nodes_size_
-            << ", new_nodes_amount_target_: " << new_nodes_amount_target_
-						//<< ", minibatch_ size: " << minibatch_.size()
-						<< ", junctions_ size: " << junctions_size_;
-						//<< ", highest w: " << new_nodes_[new_nodes_.size() - 1].w
-						//<< ", node stack size: " << nodestack_.size()
-						//<< ", max_unexpanded_w: " << new_nodes_[0];
+// 		if (DEBUG_MODE) LOGFILE
+// 						<< "n: " << root_node_->GetN()
+// //						<< ", new_nodes_ size: " << new_nodes_.size()
+// 						<< ", new_nodes_ size: " << new_nodes_size_
+//             << ", new_nodes_amount_target_: " << new_nodes_amount_target_
+// 						//<< ", minibatch_ size: " << minibatch_.size()
+// 						<< ", junctions_ size: " << junctions_size_;
+// 						//<< ", highest w: " << new_nodes_[new_nodes_.size() - 1].w
+// 						//<< ", node stack size: " << nodestack_.size()
+// 						//<< ", max_unexpanded_w: " << new_nodes_[0];
 
 		search_->half_done_count_ += new_nodes_size_;
 
