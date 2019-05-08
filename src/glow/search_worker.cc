@@ -82,6 +82,8 @@ void SearchWorkerGlow::pickNodesToExtend() {
 	int nodes_visited = 0;
 
 	for (int n = 0; n < new_nodes_amount_target_; n++) {
+//std::cout << root_node_->GetMaxW();
+
 		node = root_node_;
 
 		while (true) {
@@ -1282,6 +1284,8 @@ void SearchWorkerGlow::ThreadLoop(int thread_id) {
 
 		//i += minibatch.size();
 
+// float old_root_q = root_node_->GetQ();
+
 		start_comp_time = std::chrono::steady_clock::now();
 
 		helper_threads_mode_ = 3;
@@ -1313,6 +1317,8 @@ void SearchWorkerGlow::ThreadLoop(int thread_id) {
 		stop_comp_time = std::chrono::steady_clock::now();
 		search_->duration_propagate_ += (stop_comp_time - start_comp_time).count();
 		search_->count_iterations_++;
+
+// std::cout << " " << abs(old_root_q - root_node_->GetQ()) << "\n";
 
 		//if (DEBUG_MODE) LOGFILE << "main thread did propagates: " << pcount;
 
