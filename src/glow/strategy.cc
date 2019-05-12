@@ -1,1 +1,1 @@
-strategy_increasing_q_conc.cc
+strategy_simple.cc

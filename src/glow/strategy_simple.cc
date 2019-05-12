@@ -148,7 +148,7 @@ float computeChildWeights(NodeGlow* node, bool evaluation_weights, int node_n) {
   float normalise_weighted_sum = sum_of_P_of_expanded_nodes / sum_of_weighted_p_and_q;
   if(!evaluation_weights){
     // It is up to the caller to decide when exploration weights are wanted.
-    // mimic a/b pruning by encouraging exploration of unexpanded nodes for beta at low depth.
+    // mimic a/b pruning by encouraging exploration of unexpanded nodes for beta at low depth. Ideally only in our PV, but to some extent that should happen automatically, right?
     // Do the children represent moves by beta? If not, punish all children by normalising to a value lower than sum of P.
     // Is this node deep into the tree? If so punish all children by normalising to a value lower than sum of P.
     // Children represent moves by beta if depth is 1?
@@ -160,11 +160,12 @@ float computeChildWeights(NodeGlow* node, bool evaluation_weights, int node_n) {
     }
     if(depth % 2 != 0){
       // The children are moves by Alpha
-      // LOGFILE << "Alpha: Depth: " << depth << " Move: " << node->GetEdges()[node->GetFirstChild()->GetIndex()].GetMove(false).as_string();
+      // LOGFILE << "Alpha: Depth: " << depth << " Move: " << node->GetEdges()[node->GetFirstChild()->GetIndex()].GetMove(false).as_string() << " Reducing exploration weight for a alpha move by multiplying with " << normalise_weighted_sum * pow(param_temperatureWinpctCutoff, depth) << " instead of: " << normalise_weighted_sum;
       // Discourage exploring alphas moves
       normalise_weighted_sum = normalise_weighted_sum * pow(param_temperatureWinpctCutoff, depth);
     }
     // Penalize nodes deep in the tree:
+    // LOGFILE << "Depth: " << depth << " Move: " << node->GetEdges()[node->GetFirstChild()->GetIndex()].GetMove(false).as_string() << " Reducing exploration weight according to depth node by multiplying with  " << normalise_weighted_sum * pow(param_cpuct, depth) << " instead of: " << normalise_weighted_sum << " depth: " << depth;
     normalise_weighted_sum = normalise_weighted_sum * pow(param_cpuct, depth);    
   }
   ii = 0;
@@ -203,7 +204,7 @@ float compute_q_and_weights(NodeGlow *node, int node_n) {
   }
   // Average Q STOP
 
-	if(node_n > 18000){
+	if(node_n > 10){
 	  total_children_weight = computeChildWeights(node, false, node_n);
 	}
 
