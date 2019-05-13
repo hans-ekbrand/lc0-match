@@ -162,11 +162,15 @@ float computeChildWeights(NodeGlow* node, bool evaluation_weights, int node_n) {
       // The children are moves by Alpha
       // LOGFILE << "Alpha: Depth: " << depth << " Move: " << node->GetEdges()[node->GetFirstChild()->GetIndex()].GetMove(false).as_string() << " Reducing exploration weight for a alpha move by multiplying with " << normalise_weighted_sum * pow(param_temperatureWinpctCutoff, depth) << " instead of: " << normalise_weighted_sum;
       // Discourage exploring alphas moves
-      normalise_weighted_sum = normalise_weighted_sum * pow(param_temperatureWinpctCutoff, depth);
+      if(param_temperatureWinpctCutoff != 1.0){
+	normalise_weighted_sum = normalise_weighted_sum * pow(param_temperatureWinpctCutoff, log2(depth));
+      }
     }
     // Penalize nodes deep in the tree:
     // LOGFILE << "Depth: " << depth << " Move: " << node->GetEdges()[node->GetFirstChild()->GetIndex()].GetMove(false).as_string() << " Reducing exploration weight according to depth node by multiplying with  " << normalise_weighted_sum * pow(param_cpuct, depth) << " instead of: " << normalise_weighted_sum << " depth: " << depth;
-    normalise_weighted_sum = normalise_weighted_sum * pow(param_cpuct, depth);    
+    if(param_cpuct != 1.0){
+      normalise_weighted_sum = normalise_weighted_sum * pow(param_cpuct, log2(depth));
+    }
   }
   ii = 0;
   for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling(), ii++) {
