@@ -855,7 +855,19 @@ inline float SearchWorkerGlow::recalcMaxW_local(NodeGlow *node) {
 	float max_w = 0.0;
 	int nidx = node->GetNextUnexpandedEdge();
 	if (nidx < node->GetNumEdges() && nidx - node->GetNumChildren() < MAX_NEW_SIBLINGS) {
-		max_w = node->GetEdges()[nidx].GetP();
+	  if (node->GetN() > search_->params_.GetMaxCollisionVisitsId()){
+	    int depth = 0;
+	    NodeGlow *node_tmp = node;
+	    while (node_tmp != nullptr) {
+	      node_tmp = node_tmp->GetParent();
+	      depth++;
+	    }
+	    float coeff = 1.0;
+	    coeff = coeff * pow(search_->params_.GetCpuct(), log2(depth));
+	    max_w = node->GetEdges()[nidx].GetP() * coeff;
+	  } else {
+	    max_w = node->GetEdges()[nidx].GetP();
+	  }
 	}
 	for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
 		float br_max_w = i->GetW() * i->GetMaxW();
