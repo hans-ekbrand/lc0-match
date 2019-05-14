@@ -1,1 +1,1 @@
-strategy_pruning.cc
+strategy_simple.cc
