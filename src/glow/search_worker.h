@@ -87,6 +87,8 @@ private:
 	inline float recalcMaxW_local(NodeGlow *node);
 	inline void recalcMaxW(NodeGlow *node);
 
+	inline int recalcN(NodeGlow *node);
+
 	struct NQMaxw {
 		int n;
 		float q;

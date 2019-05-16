@@ -408,6 +408,7 @@ int SearchWorkerGlow::extendTree(std::vector<Move> *movestack, PositionHistory *
 int const MAX_SUBTREE_SIZE = 1000;  // 50;  // 100000000;  // 100;
 int const LOCAL_NODES_AMOUNT = 20;  // 20;  // 1;  // 10;
 //float const OVERLAP_FACTOR = 10.0;
+//float const DELTA_Q_THRESHOLD = 0.01;
 
 void SearchWorkerGlow::picknextend_reference(std::vector<Move> *movestack, PositionHistory *history) {
 
@@ -635,6 +636,7 @@ void SearchWorkerGlow::picknextend(PositionHistory *history) {
 //int did = 0;
 
 		NQMaxw local_prop({0, 0.0, 0.0});  // don't care
+//		float latest_local_root_q = -2.0;
 
 		for (int n = LOCAL_NODES_AMOUNT; n > 0; n--) {
 
@@ -723,10 +725,23 @@ void SearchWorkerGlow::picknextend(PositionHistory *history) {
 					nodes_visited++;
 					if (node == local_root) break;
 					node->SetN(local_prop.n);
-					node->SetQ(local_prop.q);
 					node->SetMaxW(local_prop.maxw);
+// 					if (abs(node->GetQ() - local_prop.q) < DELTA_Q_THRESHOLD) {
+// 						while (true) {
+// 							node = node->GetParent();
+// 							local_prop.n = recalcN(node);
+// 							local_prop.maxw = recalcMaxW_local(node);
+// 							if (node == local_root) break;
+// 							node->SetN(local_prop.n);
+// 							node->SetMaxW(local_prop.maxw);
+// 						}
+// 						local_prop.q = latest_local_root_q;
+// 						break;
+// 					}
+					node->SetQ(local_prop.q);
 					node = node->GetParent();
 				}
+// 				latest_local_root_q = local_prop.q;
 			} else {  // not out of order
 				int junction_mode = 0;
 				uint16_t ccidx = nnidx | 0x8000;
@@ -765,9 +780,19 @@ void SearchWorkerGlow::picknextend(PositionHistory *history) {
 
 		tree_lock_.lock();
 
+// 		bool recalc_q = true;
+
 		if (global_out_of_order) {
 			node->SetN(local_prop.n);
-			node->SetQ(local_prop.q);
+// 			if (local_prop.q == -2.0) {
+// 				recalc_q = false;
+// 			} else {
+// 				if (abs(node->GetQ() - local_prop.q) < DELTA_Q_THRESHOLD) {
+// 					recalc_q = false;
+// 				} else {
+					node->SetQ(local_prop.q);
+// 				}
+// 			}
 		}
 		node->SetMaxW(local_prop.maxw);
 
@@ -777,7 +802,17 @@ void SearchWorkerGlow::picknextend(PositionHistory *history) {
 			node = node->GetParent();
 
 			if (global_out_of_order) {
-				recalcPropagatedQ(node);
+// 				if (recalc_q) {
+// 					float old_q = node->GetQ();
+					recalcPropagatedQ(node);
+// 					if (abs(old_q - node->GetQ()) < DELTA_Q_THRESHOLD) {
+// 						node->SetQ(old_q);
+// 						recalc_q = false;
+// 					}
+// 				} else {
+// 					node->SetN(recalcN(node));
+// 					recalcMaxW(node);
+// 				}
 			} else {
 				recalcMaxW(node);
 			}
@@ -874,7 +909,7 @@ inline void SearchWorkerGlow::recalcMaxW(NodeGlow *node) {
 
 
 
-inline int recalcN(NodeGlow *node) {
+inline int SearchWorkerGlow::recalcN(NodeGlow *node) {
   int n = 1;
 	for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
 		n += i->GetN();
