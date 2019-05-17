@@ -50,12 +50,12 @@ int const MAX_NEW_SIBLINGS = 10000;
   // The maximum number of new siblings. If 1, then it's like old MULTIPLE_NEW_SIBLINGS = false, if >= maximum_number_of_legal_moves it's like MULTIPLE_NEW_SIBLINGS = true
 const int kUciInfoMinimumFrequencyMs = 5000;
 
-int const N_HELPER_THREADS_PRE = 3;
-int const N_HELPER_THREADS_POST = 3;
+int const N_HELPER_THREADS_PRE = 0;
+int const N_HELPER_THREADS_POST = 0;
 
-bool const DEBUG_MODE = false;
+bool const DEBUG_MODE = true;
 
-bool const OLD_PICK_N_CREATE_MODE = false;
+bool const OLD_PICK_N_CREATE_MODE = true;
 
 
 // int debug_state[4];
@@ -82,25 +82,42 @@ void SearchWorkerGlow::pickNodesToExtend() {
 	int nodes_visited = 0;
 
 	for (int n = 0; n < new_nodes_amount_target_; n++) {
-//std::cout << root_node_->GetMaxW();
+std::cout << root_node_->GetMaxW();
 
 		node = root_node_;
+
+float alpha = -1.0, beta = 1.0;
 
 		while (true) {
 			nodes_visited++;
 			best_child = node->GetBestChild();
+// if (best_child == nullptr) {
+// 	alpha = std::max(alpha, -node->GetQ());
+// } else {
+// 	if (best_child->GetQ() < -node->GetQ()) {
+// 		alpha = std::max(alpha, -node->GetQ());
+// 	}
+// }
+// alpha = -1.0 + 0.99 * (alpha + 1.0);
+for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
+	if (i != best_child && i->GetQ() > alpha) alpha = i->GetQ();
+}
 			if (best_child == nullptr) {
 				int nidx = node->GetNextUnexpandedEdge();
 				if (nidx < node->GetNumEdges() && nidx - node->GetNumChildren() < MAX_NEW_SIBLINGS) {
 					new_nodes_[new_nodes_size_] = {std::make_unique<NodeGlow>(node, nidx), node, 0xFFFF, -1};
 					new_nodes_size_++;
 					node->SetNextUnexpandedEdge(nidx + 1);
+std::cout << " " << beta - alpha;
 					break;
 				} else {  // no more child to add (before retrieved information about previous ones)
 					return;
 				}
 			}
 			node = best_child;
+float old_beta = beta;
+beta = -alpha;
+alpha = -old_beta;
 		}
 
 		int junction_mode = 0;
@@ -1319,7 +1336,7 @@ void SearchWorkerGlow::ThreadLoop(int thread_id) {
 
 		//i += minibatch.size();
 
-// float old_root_q = root_node_->GetQ();
+ float old_root_q = root_node_->GetQ();
 
 		start_comp_time = std::chrono::steady_clock::now();
 
@@ -1353,7 +1370,7 @@ void SearchWorkerGlow::ThreadLoop(int thread_id) {
 		search_->duration_propagate_ += (stop_comp_time - start_comp_time).count();
 		search_->count_iterations_++;
 
-// std::cout << " " << abs(old_root_q - root_node_->GetQ()) << "\n";
+ std::cout << " " << abs(old_root_q - root_node_->GetQ()) << "\n";
 
 		//if (DEBUG_MODE) LOGFILE << "main thread did propagates: " << pcount;
 
