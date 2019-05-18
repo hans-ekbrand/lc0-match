@@ -165,6 +165,10 @@ class NodeGlow {
 	void checkTree(PositionHistory* history);
 	void show(bool is_black_to_move);
 
+	void princVarProfile();
+	int depthProfileRec(int d);
+	void depthProfile();
+
 private:
 	// To minimize the number of padding bytes and to avoid having unnecessary
 	// padding when new fields are added, we arrange the fields by size, largest
