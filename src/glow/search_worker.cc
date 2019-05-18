@@ -53,7 +53,7 @@ const int kUciInfoMinimumFrequencyMs = 5000;
 int const N_HELPER_THREADS_PRE = 3;
 int const N_HELPER_THREADS_POST = 3;
 
-bool const DEBUG_MODE = false;
+bool const DEBUG_MODE = true;
 
 bool const OLD_PICK_N_CREATE_MODE = false;
 
@@ -1404,6 +1404,9 @@ void SearchWorkerGlow::ThreadLoop(int thread_id) {
                 << ", propagate node visits: " << search_->count_propagate_node_visits_ / search_->count_iterations_
                 << ", junctions: " << search_->count_junctions_ / search_->count_iterations_;
       }
+
+      root_node_->depthProfile();
+      root_node_->princVarProfile();
     }
 	}
 
