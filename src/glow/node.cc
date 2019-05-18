@@ -331,6 +331,54 @@ void NodeGlow::show(bool is_black_to_move) {
 	}
 }
 
+void NodeGlow::princVarProfile() {
+  std::cout << "princvar:\n";
+  NodeGlow *node = this;
+  bool as_opp = false;
+  for (;;) {
+	float highestq = -2.0;
+	NodeGlow *bestidx = nullptr;
+	for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
+		float q = i->GetQ();
+		if (q > highestq) {
+		  highestq = q;
+		  bestidx = i;
+		}
+	}
+
+	if (bestidx == nullptr) break;
+
+	std::cout << node->GetEdges()[bestidx->index_].GetMove(as_opp).as_string() << " ";
+	std::cout << (float)bestidx->GetN() / (float)node->GetN() << " ";
+
+	node = bestidx;
+	as_opp = !as_opp;
+
+  }
+  std::cout << "\n";
+}
+
+int NodeGlow::depthProfileRec(int d) {
+  int n = 0;
+  if (d == 0) {
+    n++;
+  } else {
+    for (NodeGlow *i = GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
+      n += i->depthProfileRec(d - 1);
+    }
+  }
+  return n;
+}
+
+void NodeGlow::depthProfile() {
+  std::cout << "depth:\n";
+  for (int d = 0;; d++) {
+    int n = this->depthProfileRec(d);
+    std::cout << d << " " << n << "\n";
+    if (n == 0) break;
+  }
+  std::cout << "\n";
+}
 
 
 /////////////////////////////////////////////////////////////////////////
