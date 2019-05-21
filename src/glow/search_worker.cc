@@ -138,7 +138,7 @@ void SearchWorkerGlow::pickNodesToExtend() {
 				  best_child = i; // Retry with a child of root.
 				  depth = 0;
 				  node = root_node_;
-				  continue;
+				  goto continue_inner_while;
 				}
 			      } else { // test failed
 				if(DEBUG_MODE) LOGFILE << "passed pruning test, our q: " << best_child->GetQ() << " maxq: " << maxq;
@@ -147,6 +147,7 @@ void SearchWorkerGlow::pickNodesToExtend() {
 			    } else { // We follow highest q.
 			      test_passed = true;
 			    }
+			  continue_inner_while:;
 			  }
 			} // Either test_passed is true, or we start again at a randomly selected child of root.
 
