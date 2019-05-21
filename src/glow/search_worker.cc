@@ -108,7 +108,7 @@ void SearchWorkerGlow::pickNodesToExtend() {
 				maxq = q;
 				child_with_highest_q = i;
 			      }
-			      n++;
+			      // n++;
 			    }
 			    if(best_child->GetQ() != maxq){
 			      // Sample a value from a normal distribution with maxq as mean. If our q is better than that, then we can continue.
