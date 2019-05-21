@@ -134,17 +134,16 @@ void SearchWorkerGlow::pickNodesToExtend() {
 				    i = i->GetNextSibling();
 				    j++;
 				  }
-				  // LOGFILE << "Restarting with child j=" << j;
 				  best_child = i; // Retry with a child of root.
 				  depth = 0;
 				  node = root_node_;
 				  goto continue_inner_while;
 				}
-			      } else { // test failed
+			      } else { // test succeeded
 				if(DEBUG_MODE) LOGFILE << "passed pruning test, our q: " << best_child->GetQ() << " maxq: " << maxq;
 				test_passed = true;
 			      }
-			    } else { // We follow highest q.
+			    } else { // We already follow highest q, no need to even test.
 			      test_passed = true;
 			    }
 			  continue_inner_while:;
