@@ -33,6 +33,7 @@
 
 #include <iostream>
 #include <fstream>
+#include <random> // normal distribution
 #include <math.h>
 #include <cassert>  // assert() used for debugging during development
 #include <iomanip>
@@ -53,9 +54,9 @@ const int kUciInfoMinimumFrequencyMs = 5000;
 int const N_HELPER_THREADS_PRE = 3;
 int const N_HELPER_THREADS_POST = 3;
 
-bool const DEBUG_MODE = true;
+bool const DEBUG_MODE = false;
 
-bool const OLD_PICK_N_CREATE_MODE = false;
+bool const OLD_PICK_N_CREATE_MODE = true;
 
 
 // int debug_state[4];
@@ -80,15 +81,75 @@ void SearchWorkerGlow::pickNodesToExtend() {
 	NodeGlow *best_child;
 
 	int nodes_visited = 0;
+	std::random_device rd{};
+	std::mt19937 gen{rd()};
 
 	for (int n = 0; n < new_nodes_amount_target_; n++) {
 //std::cout << root_node_->GetMaxW();
 
 		node = root_node_;
 
+		int depth = 0;
+
 		while (true) {
 			nodes_visited++;
 			best_child = node->GetBestChild();
+			depth++;
+
+			if(best_child != nullptr){
+			  bool test_passed = false;
+			  while(!test_passed){
+			    // If best_child is not the child with highest Q, then gamble against the child with highest Q. If you loose, restart at a randomly choosen child of root.
+			    float maxq = -2.0;
+			    NodeGlow* child_with_highest_q;
+			    for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
+			      float q = i->GetQ();
+			      if (q > maxq){
+				maxq = q;
+				child_with_highest_q = i;
+			      }
+			      n++;
+			    }
+			    if(best_child->GetQ() != maxq){
+			      // Sample a value from a normal distribution with maxq as mean. If our q is better than that, then we can continue.
+			      std::normal_distribution<> d{maxq, 0.021}; // 0.021 = sqrt(0.044)
+			      if(d(gen) < best_child->GetQ()){
+				if(DEBUG_MODE) LOGFILE << "failed pruning test, our q: " << best_child->GetQ() << " maxq: " << maxq;
+				// we didn't pass the test. Ideally I would like to restart from root now, but since that would end up here again, that would effectively try this test _until_ it passes.
+				// Temporary hack: as depth increases, increase the probability of starting at some child of root instead of continuing in this branch.
+				float prob_continue = pow(0.97, log2(depth));
+				// prob_continue = 1.0;
+				float r = static_cast <float> (rand()) / static_cast <float> (RAND_MAX); // random float within 0,1
+				if(r < prob_continue){
+				  best_child = child_with_highest_q;
+				  test_passed = true; // continue
+				  // LOGFILE << "Failed test continuing with best child";
+				} else {
+				  // pick a random child of root (only extended ones)
+				  std::uniform_int_distribution<> dis(1, root_node_->GetNumChildren());
+				  int this_child = dis(gen);
+				  int j = 1;
+				  NodeGlow* i = root_node_->GetFirstChild();
+				  while(j != this_child){
+				    i = i->GetNextSibling();
+				    j++;
+				  }
+				  // LOGFILE << "Restarting with child j=" << j;
+				  best_child = i; // Retry with a child of root.
+				  depth = 0;
+				  node = root_node_;
+				  continue;
+				}
+			      } else { // test failed
+				if(DEBUG_MODE) LOGFILE << "passed pruning test, our q: " << best_child->GetQ() << " maxq: " << maxq;
+				test_passed = true;
+			      }
+			    } else { // We follow highest q.
+			      test_passed = true;
+			    }
+			  }
+			} // Either test_passed is true, or we start again at a randomly selected child of root.
+
 			if (best_child == nullptr) {
 				int nidx = node->GetNextUnexpandedEdge();
 				if (nidx < node->GetNumEdges() && nidx - node->GetNumChildren() < MAX_NEW_SIBLINGS) {
@@ -101,6 +162,7 @@ void SearchWorkerGlow::pickNodesToExtend() {
 				}
 			}
 			node = best_child;
+			depth++;
 		}
 
 		int junction_mode = 0;
@@ -406,7 +468,7 @@ int SearchWorkerGlow::extendTree(std::vector<Move> *movestack, PositionHistory *
 
 
 int const MAX_SUBTREE_SIZE = 1000;  // 50;  // 100000000;  // 100;
-int const LOCAL_NODES_AMOUNT = 20;  // 20;  // 1;  // 10;
+int const LOCAL_NODES_AMOUNT = 1;  // 20;  // 1;  // 10;
 //float const OVERLAP_FACTOR = 10.0;
 
 void SearchWorkerGlow::picknextend_reference(std::vector<Move> *movestack, PositionHistory *history) {
@@ -1405,8 +1467,8 @@ void SearchWorkerGlow::ThreadLoop(int thread_id) {
                 << ", junctions: " << search_->count_junctions_ / search_->count_iterations_;
       }
 
-      root_node_->depthProfile();
-      root_node_->princVarProfile();
+      if(DEBUG_MODE) root_node_->depthProfile();
+      if(DEBUG_MODE) root_node_->princVarProfile();
     }
 	}
 
