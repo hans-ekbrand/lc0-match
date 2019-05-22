@@ -58,7 +58,6 @@ bool const DEBUG_MODE = false;
 
 bool const OLD_PICK_N_CREATE_MODE = true;
 
-
 // int debug_state[4];
 // 
 // void segfault_sigaction(int signal, siginfo_t *si, void *arg)
@@ -94,72 +93,35 @@ void SearchWorkerGlow::pickNodesToExtend() {
 		while (true) {
 			nodes_visited++;
 			best_child = node->GetBestChild();
-			depth++;
 
 			if(best_child != nullptr){
-			  bool test_passed = false;
-			  while(!test_passed){
-			    // If best_child is not the child with highest Q, then gamble against the child with highest Q. If you loose, restart at a randomly choosen child of root.
-			    float maxq = -2.0;
-			    NodeGlow* child_with_highest_q;
-			    for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
-			      float q = i->GetQ();
-			      if (q > maxq){
-				maxq = q;
-				child_with_highest_q = i;
-			      }
-			      // n++;
+			  // If best_child is not the child with highest Q, then gamble against the child with highest Q. If you loose, choose child with highest q.
+			  float maxq = -2.0;
+			  NodeGlow* child_with_highest_q;
+			  for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
+			    float q = i->GetQ();
+			    if (q > maxq){
+			      maxq = q;
+			      child_with_highest_q = i;
 			    }
-			    if(best_child->GetQ() != maxq){
-			      // Sample a value from a normal distribution with maxq as mean. If our q is better than that, then we can continue.
-			      std::normal_distribution<> d{maxq, 0.021}; // 0.021 = sqrt(0.044)
-			      if(d(gen) < best_child->GetQ()){
-				if(DEBUG_MODE) LOGFILE << "failed pruning test, our q: " << best_child->GetQ() << " maxq: " << maxq;
-				// we didn't pass the test. Ideally I would like to restart from root now, but since that would end up here again, that would effectively try this test _until_ it passes.
-				// Temporary hack: as depth increases, increase the probability of starting at some child of root instead of continuing in this branch.
-				float prob_continue = pow(0.97, log2(depth));
-				// prob_continue = 1.0;
-				float r = static_cast <float> (rand()) / static_cast <float> (RAND_MAX); // random float within 0,1
-				if(r < prob_continue){
-				  best_child = child_with_highest_q;
-				  test_passed = true; // continue
-				  // LOGFILE << "Failed test continuing with best child";
-				} else {
-				  // pick a random child of root (only extended ones)
-				  std::uniform_int_distribution<> dis(1, root_node_->GetNumChildren());
-				  int this_child = dis(gen);
-				  int j = 1;
-				  NodeGlow* i = root_node_->GetFirstChild();
-				  while(j != this_child){
-				    i = i->GetNextSibling();
-				    j++;
-				  }
-				  best_child = i; // Retry with a child of root.
-				  depth = 0;
-				  node = root_node_;
-				  goto continue_inner_while;
-				}
-			      } else { // test succeeded
-				if(DEBUG_MODE) LOGFILE << "passed pruning test, our q: " << best_child->GetQ() << " maxq: " << maxq;
-				test_passed = true;
-			      }
-			    } else { // We already follow highest q, no need to even test.
-			      test_passed = true;
-			    }
-			  continue_inner_while:;
 			  }
-			} // Either test_passed is true, or we start again at a randomly selected child of root.
-
-			if (best_child == nullptr) {
-				int nidx = node->GetNextUnexpandedEdge();
-				if (nidx < node->GetNumEdges() && nidx - node->GetNumChildren() < MAX_NEW_SIBLINGS) {
-					new_nodes_[new_nodes_size_] = {std::make_unique<NodeGlow>(node, nidx), node, 0xFFFF, -1};
-					new_nodes_size_++;
-					node->SetNextUnexpandedEdge(nidx + 1);
-					break;
-				} else {  // no more child to add (before retrieved information about previous ones)
-					return;
-				}
+			  if(best_child->GetQ() != maxq){
+			    // Sample a value from a normal distribution with maxq as mean. If our q is better than that, then we can continue.
+			    std::normal_distribution<> d{maxq, 0.044}; // 0.021 = sqrt(0.044)
+			    if(d(gen) < best_child->GetQ()){
+			      best_child = child_with_highest_q;
+			    }
+			  }
+			} else {
+			  int nidx = node->GetNextUnexpandedEdge();
+			  if (nidx < node->GetNumEdges() && nidx - node->GetNumChildren() < MAX_NEW_SIBLINGS) {
+			    new_nodes_[new_nodes_size_] = {std::make_unique<NodeGlow>(node, nidx), node, 0xFFFF, -1};
+			    new_nodes_size_++;
+			    node->SetNextUnexpandedEdge(nidx + 1);
+			    break;
+			  } else {  // no more child to add (before retrieved information about previous ones)
+			    return;
+			  }
 			}
 			node = best_child;
 			depth++;
@@ -571,7 +533,7 @@ void SearchWorkerGlow::picknextend_reference(std::vector<Move> *movestack, Posit
 
 
 void SearchWorkerGlow::picknextend(PositionHistory *history) {
-	
+
 	n_searchers_active_++;
 	//int debug_state_idx = n_searchers_active_++;
 
