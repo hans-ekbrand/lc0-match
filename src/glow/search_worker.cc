@@ -111,7 +111,7 @@ void SearchWorkerGlow::pickNodesToExtend() {
 			      child_with_highest_q = i;
 			    }
 			  }
-			  if(best_child->GetQ() != maxq){
+			  if(best_child->GetQ() != maxq && ! child_with_highest_q->IsTerminal()){ // added test for IsTerminal to get rid of segfaults at gpu-master.
 			    // Sample a value from a normal distribution with maxq as mean. If our q is better than that, then we can continue.
 			    std::normal_distribution<> d{maxq, 0.044}; // 0.021 = sqrt(0.044)
 			    if(d(gen) < best_child->GetQ()){
