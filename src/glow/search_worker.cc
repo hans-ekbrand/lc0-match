@@ -90,9 +90,15 @@ void SearchWorkerGlow::pickNodesToExtend() {
 
 		int depth = 0;
 
+		bool set_bestchild = true;
+
 		while (true) {
 			nodes_visited++;
-			best_child = node->GetBestChild();
+			if(set_bestchild){
+			  best_child = node->GetBestChild();
+			} else {
+			  set_bestchild = true;
+			}
 
 			if(best_child != nullptr){
 			  // If best_child is not the child with highest Q, then gamble against the child with highest Q. If you loose, choose child with highest q.
@@ -109,7 +115,27 @@ void SearchWorkerGlow::pickNodesToExtend() {
 			    // Sample a value from a normal distribution with maxq as mean. If our q is better than that, then we can continue.
 			    std::normal_distribution<> d{maxq, 0.044}; // 0.021 = sqrt(0.044)
 			    if(d(gen) < best_child->GetQ()){
-			      best_child = child_with_highest_q;
+			      // Let's encourage exploration by giving a random child of root a (low) probability of being entered at this point. Note that starting at certain child does not ensure that it will be entered, it still has
+			      // to pass the pruning test, or the highest q of root will be entered.
+			      // Actually we can use a constant here because with increasing depth, each additional node that is to be extended will have to pass more and more tests which will increase the probability of ending up here.
+			      float p_for_starting_at_random_root_child = 0.03;
+			      std::uniform_real_distribution<> dist_uni_real(0, 1);
+			      float my_sample = dist_uni_real(gen);
+			      if(my_sample < p_for_starting_at_random_root_child){
+				// make some random child of root best_child
+				node = root_node_;
+				std::uniform_int_distribution<int> dist_uni_int(1, node->GetNumEdges());
+				int this_one = dist_uni_int(gen);
+				for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
+				  if(i->GetIndex() == this_one){
+				    best_child = i;
+				    set_bestchild = false;
+				    continue;
+				  }
+				}
+			      } else {
+				best_child = child_with_highest_q;
+			      }
 			    }
 			  }
 			} else {
