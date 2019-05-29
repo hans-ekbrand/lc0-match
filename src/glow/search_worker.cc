@@ -118,7 +118,7 @@ void SearchWorkerGlow::pickNodesToExtend() {
 			      // Let's encourage exploration by giving a random child of root a (low) probability of being entered at this point. Note that starting at certain child does not ensure that it will be entered, it still has
 			      // to pass the pruning test, or the highest q of root will be entered.
 			      // Actually we can use a constant here because with increasing depth, each additional node that is to be extended will have to pass more and more tests which will increase the probability of ending up here.
-			      float p_for_starting_at_random_root_child = 0.03;
+			      float p_for_starting_at_random_root_child = 0.0;
 			      std::uniform_real_distribution<> dist_uni_real(0, 1);
 			      float my_sample = dist_uni_real(gen);
 			      if(my_sample < p_for_starting_at_random_root_child){
