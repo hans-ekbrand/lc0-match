@@ -72,9 +72,6 @@ bool const OLD_PICK_N_CREATE_MODE = true;
 
 }  // namespace
 
-
-
-
 void SearchWorkerGlow::pickNodesToExtend() {
 	NodeGlow* node;
 	NodeGlow *best_child;
@@ -88,69 +85,118 @@ void SearchWorkerGlow::pickNodesToExtend() {
 
 		node = root_node_;
 
-		int depth = 0;
-
-		bool set_bestchild = true;
-
 		while (true) {
 			nodes_visited++;
-			if(set_bestchild){
-			  best_child = node->GetBestChild();
-			} else {
-			  set_bestchild = true;
-			}
 
-			if(best_child != nullptr){
-			  // If best_child is not the child with highest Q, then gamble against the child with highest Q. If you loose, choose child with highest q.
-			  float maxq = -2.0;
-			  NodeGlow* child_with_highest_q;
-			  for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
-			    float q = i->GetQ();
-			    if (q > maxq){
-			      maxq = q;
-			      child_with_highest_q = i;
+			// unset best_child
+			best_child = nullptr;
+			
+			/// Pick a candidate edge. If your candidate is already extended set best_child to that node.
+			/// If not, do nothing and the next edge in policy order will be extended.
+
+			// Old code
+			// best_child = node->GetBestChild();
+
+			// New code PART 1 Maybe pick a random child
+			// Let's encourage exploration by giving a random edge of the current node a (low) probability of being entered at this point.
+			// float p_for_starting_at_random_root_child = 0.05;
+			float p_for_starting_at_random_root_child = search_->params_.GetTemperatureVisitOffset();
+			std::uniform_real_distribution<> dist_uni_real(0, 1);
+			float my_sample = dist_uni_real(gen);
+			if(my_sample < p_for_starting_at_random_root_child){
+			  // LOGFILE << "Random strategy choosen: p_for_starting_at_random_root_child=" << p_for_starting_at_random_root_child << " my sampled value=" << my_sample;
+			  // make a random edge/node the node to extend/best_child
+			  std::uniform_int_distribution<int> dist_uni_int(1, node->GetNumEdges());
+			  int this_one = dist_uni_int(gen)-1;
+			  // LOGFILE << "Accepted random edge number " << this_one;
+			  // Is the candidate edge already extended?
+			  for (NodeGlow *temp_node = node->GetFirstChild(); temp_node != nullptr && best_child == nullptr; temp_node = temp_node->GetNextSibling()) {
+			    if(temp_node->GetIndex() == this_one){
+			      // LOGFILE << "The random edge was already extended";
+			      best_child = temp_node;
 			    }
 			  }
-			  if(best_child->GetQ() != maxq){
-			    // Sample a value from a normal distribution with maxq as mean. If our q is better than that, then we can continue.
-			    std::normal_distribution<> d{maxq, 0.044}; // 0.021 = sqrt(0.044)
-			    if(d(gen) < best_child->GetQ()){
-			      // Let's encourage exploration by giving a random child of root a (low) probability of being entered at this point. Note that starting at certain child does not ensure that it will be entered, it still has
-			      // to pass the pruning test, or the highest q of root will be entered.
-			      // Actually we can use a constant here because with increasing depth, each additional node that is to be extended will have to pass more and more tests which will increase the probability of ending up here.
-			      float p_for_starting_at_random_root_child = 0.03;
-			      std::uniform_real_distribution<> dist_uni_real(0, 1);
-			      float my_sample = dist_uni_real(gen);
-			      if(my_sample < p_for_starting_at_random_root_child){
-				// make some random child of root best_child
-				node = root_node_;
-				std::uniform_int_distribution<int> dist_uni_int(1, node->GetNumEdges());
-				int this_one = dist_uni_int(gen);
-				for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
-				  if(i->GetIndex() == this_one){
-				    best_child = i;
-				    set_bestchild = false;
-				    continue;
-				  }
-				}
+			  if(best_child == nullptr){
+			    // LOGFILE << "The random edge was not extended";
+			  }
+			} else {
+			    // LOGFILE << "Not using random strategy";
+			}
+
+			// PART 2 Maybe pick a child using sampling with policy (only go here if not the random strategy was choosen and if node is evaluated).
+			if(best_child == nullptr && node->GetBestChild() != nullptr){
+			  float sum_of_policy_must_best_this_number = dist_uni_real(gen);
+			  int index_of_candidate = 0;
+			  float sum_of_policy = node->GetEdges()[index_of_candidate].GetP();
+			  // LOGFILE << "sum of policy:" << sum_of_policy << " sampled value: " << sum_of_policy_must_best_this_number;
+			  while(sum_of_policy < sum_of_policy_must_best_this_number &&
+				index_of_candidate < node->GetNumEdges()){ // if there are arounding problems, exit after last edge.
+			    index_of_candidate++;
+			    // LOGFILE << "adding policy " << node->GetEdges()[i].GetP() << " for edge: " << node->GetEdges()[i].GetMove(false).as_string();
+			    // LOGFILE << "i: " << i;
+			    sum_of_policy = sum_of_policy + node->GetEdges()[index_of_candidate].GetP();
+			  }
+			  // LOGFILE << "Edge number " << index_of_candidate << " selected as candidate";
+			  // Is the candidate edge already extended?
+			  bool candidate_edge_is_extended = false;
+			  for (NodeGlow *temp_node = node->GetFirstChild(); temp_node != nullptr && ! candidate_edge_is_extended; temp_node = temp_node->GetNextSibling()) {
+			    if(temp_node->GetIndex() == index_of_candidate){
+			      candidate_edge_is_extended = true;
+			      best_child = temp_node;
+			    }
+			  }
+			  
+			  // If the candidate edge has not been evaluated, then its target node is the node to evaluate (or, for now, just don't set best_child)
+			  // If it has been evaluated, test its q against the best q of the siblings.
+			  if(candidate_edge_is_extended){
+			    // LOGFILE << "Edge candidate is already extended";
+			    float maxq = -2.0;
+			    NodeGlow* child_with_highest_q;
+			    for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
+			      float q = i->GetQ();
+			      if (q > maxq){
+				maxq = q;
+				child_with_highest_q = i;
+			      }
+			    }
+			    if(best_child->GetQ() != maxq){
+			      // Sample a value from a normal distribution with maxq as mean. If our q is better than that, then we can continue.
+			      // std::normal_distribution<> d{maxq, 0.044}; // 0.021 = sqrt(0.044)
+			      std::normal_distribution<> d{maxq, search_->params_.GetCpuct()}; // 0.021 = sqrt(0.044)
+			      float my_first_sample = d(gen);
+			      // if(d(gen) < best_child->GetQ()){				  
+			      if(my_first_sample < best_child->GetQ()){
+				// The candidate edge passed the test, traverse the tree.
+				// LOGFILE << "Edge candidate (q=" << best_child->GetQ() << ") passed the q test (q required = " << my_first_sample << ")";
 			      } else {
+				// LOGFILE << "Edge candidate (q=" << best_child->GetQ() << ") failed the q test (q required = " << my_first_sample << ") best_child is set to child with highest q";
+				// The candidate edge chosen by policy didn't make it.
+				// We decided not to chose an edge randomly.
+				// Only one thing left to do: go by best q.
 				best_child = child_with_highest_q;
 			      }
 			    }
-			  }
-			} else {
-			  int nidx = node->GetNextUnexpandedEdge();
-			  if (nidx < node->GetNumEdges() && nidx - node->GetNumChildren() < MAX_NEW_SIBLINGS) {
-			    new_nodes_[new_nodes_size_] = {std::make_unique<NodeGlow>(node, nidx), node, 0xFFFF, -1};
-			    new_nodes_size_++;
-			    node->SetNextUnexpandedEdge(nidx + 1);
-			    break;
-			  } else {  // no more child to add (before retrieved information about previous ones)
-			    return;
+			  } else {
+			    // LOGFILE << "Edge candidate not extended";
 			  }
 			}
+
+			// END of new code. Only if our chosen edge was extended, we set best_child, otherwise best_child is still a nullptr
+
+
+			
+			if (best_child == nullptr) {
+				int nidx = node->GetNextUnexpandedEdge();
+				if (nidx < node->GetNumEdges() && nidx - node->GetNumChildren() < MAX_NEW_SIBLINGS) {
+					new_nodes_[new_nodes_size_] = {std::make_unique<NodeGlow>(node, nidx), node, 0xFFFF, -1};
+					new_nodes_size_++;
+					node->SetNextUnexpandedEdge(nidx + 1);
+					break;
+				} else {  // no more child to add (before retrieved information about previous ones)
+					return;
+				}
+			}
 			node = best_child;
-			depth++;
 		}
 
 		int junction_mode = 0;
@@ -1309,16 +1355,16 @@ void SearchWorkerGlow::ThreadLoop(int thread_id) {
 
 		new_nodes_list_shared_idx_ = 0;
 
-// 		if (DEBUG_MODE) LOGFILE
-// 						<< "n: " << root_node_->GetN()
-// //						<< ", new_nodes_ size: " << new_nodes_.size()
-// 						<< ", new_nodes_ size: " << new_nodes_size_
-//             << ", new_nodes_amount_target_: " << new_nodes_amount_target_
-// 						//<< ", minibatch_ size: " << minibatch_.size()
-// 						<< ", junctions_ size: " << junctions_size_;
-// 						//<< ", highest w: " << new_nodes_[new_nodes_.size() - 1].w
-// 						//<< ", node stack size: " << nodestack_.size()
-// 						//<< ", max_unexpanded_w: " << new_nodes_[0];
+		if (DEBUG_MODE) LOGFILE
+						<< "n: " << root_node_->GetN()
+//						<< ", new_nodes_ size: " << new_nodes_.size()
+						<< ", new_nodes_ size: " << new_nodes_size_
+            << ", new_nodes_amount_target_: " << new_nodes_amount_target_
+						//<< ", minibatch_ size: " << minibatch_.size()
+						<< ", junctions_ size: " << junctions_size_;
+						//<< ", highest w: " << new_nodes_[new_nodes_.size() - 1].w
+						//<< ", node stack size: " << nodestack_.size()
+						//<< ", max_unexpanded_w: " << new_nodes_[0];
 
 		search_->half_done_count_ += new_nodes_size_;
 
