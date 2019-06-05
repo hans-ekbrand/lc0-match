@@ -139,45 +139,45 @@ highestq = q;
 bestidx = i;
 		}
 	}
-	// return bestidx;
-	// This is mostly relevant for games played with very low nodecounts.
-	// Veto moves with too high uncertainty in Q, by requiring at least 3 * log(n) visits if number of subnodes is above n, and the suggested move is not a terminal node. TODO use some lookup table for log here
-	// This can fail if a candidate move leads to a position where the opponent only has a single move that draws and where that move is terminal, by repetition or move 50 rule.
-	// The solution would be to backpropagate the draw result and treat our as terminal too.
-	unsigned int threshold = ceil(3 * log(node->GetN()));
-	if (! filter_uncertain_moves ||
-		node->GetN() < 1000 ||
-		bestidx->GetN() >= threshold ||
-			bestidx->IsTerminal())
-			{
-				return bestidx;
-	}
+	return bestidx;
+	// // This is mostly relevant for games played with very low nodecounts.
+	// // Veto moves with too high uncertainty in Q, by requiring at least 3 * log(n) visits if number of subnodes is above n, and the suggested move is not a terminal node. TODO use some lookup table for log here
+	// // This can fail if a candidate move leads to a position where the opponent only has a single move that draws and where that move is terminal, by repetition or move 50 rule.
+	// // The solution would be to backpropagate the draw result and treat our as terminal too.
+	// unsigned int threshold = ceil(3 * log(node->GetN()));
+	// if (! filter_uncertain_moves ||
+	// 	node->GetN() < 1000 ||
+	// 	bestidx->GetN() >= threshold ||
+	// 		bestidx->IsTerminal())
+	// 		{
+	// 			return bestidx;
+	// }
 
-	// Search until an acceptable move is found. Should be a rare event to even end up here, so no point in optimising the code below.
-	std::vector<NodeGlow *> bad_moves(1);
-	bad_moves[0] = bestidx;
-	while(true){
-		LOGFILE << "VETO against the uncertain move " << node->GetEdges()[bestidx->GetIndex()].GetMove(black_to_move).as_string() << " with only " << bestidx->GetN() << " visits. Not acceptable.";
-		highestq = -2.0;
-		for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
-		if ( std::find(bad_moves.begin(), bad_moves.end(), i) == bad_moves.end() ){ // no match
-			float q = i->GetQ();
-			if (q > highestq) {
-				highestq = q;
-				bestidx = i;
-			}
-		}
-		}
-		if (bestidx->GetN() >= threshold ||
-			bestidx->IsTerminal()) {
-		return bestidx;
-		} else {
-		// add bestidx to the list of unacceptable moves
-		LOGFILE << "So many bad moves. Sad.";
-		bad_moves.push_back(bestidx);
-		LOGFILE << "Storing succeeded.";	
-		}
-	}
+	// // Search until an acceptable move is found. Should be a rare event to even end up here, so no point in optimising the code below.
+	// std::vector<NodeGlow *> bad_moves(1);
+	// bad_moves[0] = bestidx;
+	// while(true){
+	// 	LOGFILE << "VETO against the uncertain move " << node->GetEdges()[bestidx->GetIndex()].GetMove(black_to_move).as_string() << " with only " << bestidx->GetN() << " visits. Not acceptable.";
+	// 	highestq = -2.0;
+	// 	for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
+	// 	if ( std::find(bad_moves.begin(), bad_moves.end(), i) == bad_moves.end() ){ // no match
+	// 		float q = i->GetQ();
+	// 		if (q > highestq) {
+	// 			highestq = q;
+	// 			bestidx = i;
+	// 		}
+	// 	}
+	// 	}
+	// 	if (bestidx->GetN() >= threshold ||
+	// 		bestidx->IsTerminal()) {
+	// 	return bestidx;
+	// 	} else {
+	// 	// add bestidx to the list of unacceptable moves
+	// 	LOGFILE << "So many bad moves. Sad.";
+	// 	bad_moves.push_back(bestidx);
+	// 	LOGFILE << "Storing succeeded.";	
+	// 	}
+	// }
 }
 
 

@@ -76,6 +76,12 @@ bool const OLD_PICK_N_CREATE_MODE = true;
 
 
 void SearchWorkerGlow::pickNodesToExtend() {
+
+  // Parameters used:
+  // CPuct: Variance of the q value ~ 0.044
+  // TemperatureVisitOffset: Probability that we will go into a branch even if that branch lost against child_with_highest_q ~ 0.5
+  // TemperatureWinpctCutoff: Probability that we will to a random child of root if we don't go with the move suggested by weight. ~ 0.001
+  
 	NodeGlow* node;
 	NodeGlow *best_child;
 
@@ -113,24 +119,31 @@ void SearchWorkerGlow::pickNodesToExtend() {
 			  }
 			  if(best_child->GetQ() != maxq && ! child_with_highest_q->IsTerminal()){ // added test for IsTerminal to get rid of segfaults at gpu-master.
 			    // Sample a value from a normal distribution with maxq as mean. If our q is better than that, then we can continue.
-			    std::normal_distribution<> d{maxq, 0.044}; // 0.021 = sqrt(0.044)
+			    std::normal_distribution<> d{maxq, search_->params_.GetCpuct()}; // 0.044 is reasonable
 			    if(d(gen) < best_child->GetQ()){
-			      // Let's encourage exploration by giving a random child of root a (low) probability of being entered at this point. Note that starting at certain child does not ensure that it will be entered, it still has
-			      // to pass the pruning test, or the highest q of root will be entered.
-			      // Actually we can use a constant here because with increasing depth, each additional node that is to be extended will have to pass more and more tests which will increase the probability of ending up here.
-			      float p_for_starting_at_random_root_child = 0.0;
+			      // OK we lost against best child, but perhaps we should go there _anyway_?
+			      float p_for_ignoring_test_result = search_->params_.GetTemperatureVisitOffset(); // 0.5 might be OK.
 			      std::uniform_real_distribution<> dist_uni_real(0, 1);
 			      float my_sample = dist_uni_real(gen);
-			      if(my_sample < p_for_starting_at_random_root_child){
-				// make some random child of root best_child
-				node = root_node_;
-				std::uniform_int_distribution<int> dist_uni_int(1, node->GetNumEdges());
-				int this_one = dist_uni_int(gen);
-				for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
-				  if(i->GetIndex() == this_one){
-				    best_child = i;
-				    set_bestchild = false;
-				    continue;
+			      if(my_sample > p_for_ignoring_test_result){
+				// OK we definitely don't go there
+				// Let's encourage exploration by giving a random child of root a (low) probability of being entered at this point. Note that starting at certain child does not ensure that it will be entered, it still has
+				// to pass the pruning test, or the highest q of root will be entered.
+				// Actually we can use a constant here because with increasing depth, each additional node that is to be extended will have to pass more and more tests which will increase the probability of ending up here.
+				float p_for_starting_at_random_root_child = search_->params_.GetTemperatureWinpctCutoff(); // should be low.
+				std::uniform_real_distribution<> dist_uni_real(0, 1);
+				float my_sample = dist_uni_real(gen);
+				if(my_sample < p_for_starting_at_random_root_child){
+				  // make some random child of root best_child
+				  node = root_node_;
+				  std::uniform_int_distribution<int> dist_uni_int(1, node->GetNumEdges());
+				  int this_one = dist_uni_int(gen);
+				  for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
+				    if(i->GetIndex() == this_one){
+				      best_child = i;
+				      set_bestchild = false;
+				      continue;
+				    }
 				  }
 				}
 			      } else {
@@ -905,19 +918,7 @@ inline float SearchWorkerGlow::recalcMaxW_local(NodeGlow *node) {
 	float max_w = 0.0;
 	int nidx = node->GetNextUnexpandedEdge();
 	if (nidx < node->GetNumEdges() && nidx - node->GetNumChildren() < MAX_NEW_SIBLINGS) {
-	  if (node->GetN() > search_->params_.GetMaxCollisionVisitsId()){
-	    int depth = 0;
-	    NodeGlow *node_tmp = node;
-	    while (node_tmp != nullptr) {
-	      node_tmp = node_tmp->GetParent();
-	      depth++;
-	    }
-	    float coeff = 1.0;
-	    coeff = coeff * pow(search_->params_.GetCpuct(), log2(depth));
-	    max_w = node->GetEdges()[nidx].GetP() * coeff;
-	  } else {
-	    max_w = node->GetEdges()[nidx].GetP();
-	  }
+	  max_w = node->GetEdges()[nidx].GetP();
 	}
 	for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
 		float br_max_w = i->GetW() * i->GetMaxW();
