@@ -1,1 +1,1 @@
-strategy_mcts_like.cc
+strategy_improved_baseline.cc
