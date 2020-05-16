@@ -34,6 +34,8 @@
 #include <math.h>
 #include <cassert>  // assert() used for debugging during development
 #include <iomanip>
+#include <gsl/gsl_cdf.h> // for the cummulative beta distribution gsl_cdf_beta_Q()
+#include <gsl/gsl_errno.h> // for gsl_set_error_handler_off();
 
 #include "neural/encoder.h"
 
@@ -132,26 +134,29 @@ NodeGlow *SearchGlow::indexOfHighestQEdge(NodeGlow* node, bool black_to_move, bo
 	for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
 		float q = i->GetQ();
 		if(q < -1 || q > 1){
-LOGFILE << "Warning abs(Q) is above 1, q=" << q;
+		  LOGFILE << "Warning abs(Q) is above 1, q=" << q;
+		  q = std::round(q);
+		  LOGFILE << "Q is now rounded to " << q;
 		}
 		if (q > highestq) {
-highestq = q;
-bestidx = i;
+		  highestq = q;
+		  bestidx = i;
 		}
 	}
 	return bestidx;
-	// // This is mostly relevant for games played with very low nodecounts.
-	// // Veto moves with too high uncertainty in Q, by requiring at least 3 * log(n) visits if number of subnodes is above n, and the suggested move is not a terminal node. TODO use some lookup table for log here
-	// // This can fail if a candidate move leads to a position where the opponent only has a single move that draws and where that move is terminal, by repetition or move 50 rule.
-	// // The solution would be to backpropagate the draw result and treat our as terminal too.
-	// unsigned int threshold = ceil(3 * log(node->GetN()));
-	// if (! filter_uncertain_moves ||
-	// 	node->GetN() < 1000 ||
-	// 	bestidx->GetN() >= threshold ||
-	// 		bestidx->IsTerminal())
-	// 		{
-	// 			return bestidx;
-	// }
+
+	// This is mostly relevant for games played with very low nodecounts.
+	// Veto moves with too high uncertainty in Q, by requiring at least 3 * log(n) visits if number of subnodes is above n, and the suggested move is not a terminal node. TODO use some lookup table for log here
+	// This can fail if a candidate move leads to a position where the opponent only has a single move that draws and where that move is terminal, by repetition or move 50 rule.
+	// The solution would be to backpropagate the draw result and treat our as terminal too.
+	unsigned int threshold = ceil(3 * log(node->GetN()));
+	if (! filter_uncertain_moves ||
+		node->GetN() < 1000 ||
+		bestidx->GetN() >= threshold ||
+			bestidx->IsTerminal())
+			{
+				return bestidx;
+	}
 
 	// // Search until an acceptable move is found. Should be a rare event to even end up here, so no point in optimising the code below.
 	// std::vector<NodeGlow *> bad_moves(1);
@@ -178,6 +183,59 @@ bestidx = i;
 	// 	LOGFILE << "Storing succeeded.";	
 	// 	}
 	// }
+}
+	
+NodeGlow *SearchGlow::indexOfPreferredEdge(NodeGlow* node, bool black_to_move, bool filter_uncertain_moves) {
+	float highestq = -2.0;
+	double highest_lower_bound = -2.0;
+	NodeGlow *bestidx = nullptr;
+	NodeGlow *bestidx_alt = nullptr;	
+	for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
+		float q = i->GetQ();
+		if(q < -1 || q > 1){
+		  LOGFILE << "Warning abs(Q) is above 1, q=" << q;
+		  q = std::round(q);
+		  LOGFILE << "Q is now rounded to " << q;
+		}
+		if (q > highestq) {
+		  highestq = q;
+		  bestidx = i;
+		}
+		if(i->GetN() > 0){
+		  // Rescale Q from [-1, 1] to [0, 1] by (Q + 1)/2, making 0.5 a balanced position		  
+		  float q_rescaled = (q + 1)/2;
+		  // floor() to be conservative
+		  double alpha = 1 + floor(i->GetN() * q_rescaled);
+		  double beta = 1 + floor(i->GetN() * (1 - q_rescaled));
+		  double this_lower_bound = q;
+		  gsl_set_error_handler_off();
+		  try {
+		    this_lower_bound = gsl_cdf_beta_Qinv(0.99, alpha, beta);
+		  }
+		  catch (...) {
+		    LOGFILE << "Failed to converge";
+		  }
+		  if(isnan(this_lower_bound)){
+		    // failed convergence
+		    LOGFILE << "Failed convergence";
+		    while(isnan(this_lower_bound)){
+		      alpha = alpha * 0.95;
+		      beta = beta * 0.95;
+		      this_lower_bound = gsl_cdf_beta_Qinv(0.99, alpha, beta);
+		    }
+		  }
+		  if(this_lower_bound > highest_lower_bound) {
+		    highest_lower_bound = this_lower_bound;
+		    bestidx_alt = i;
+		  }
+		}
+	}
+	if(bestidx_alt != nullptr && bestidx_alt != bestidx ){
+	  LOGFILE << "Highest Q has " << node->GetEdges()[bestidx->GetIndex()].GetMove(black_to_move).as_string() << " (" << highestq << ") but " << node->GetEdges()[bestidx_alt->GetIndex()].GetMove(black_to_move).as_string() << " has a higher lower bound." ;
+	  bestidx = bestidx_alt;
+	}
+	
+	return bestidx;
 }
 
 

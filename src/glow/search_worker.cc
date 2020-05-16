@@ -38,7 +38,13 @@
 #include <cassert>  // assert() used for debugging during development
 #include <iomanip>
 
+#include <sstream> // beta dist
+#include <string> // beta dist
+
+
 #include "neural/encoder.h"
+
+
 
 
 namespace lczero {
@@ -79,8 +85,8 @@ void SearchWorkerGlow::pickNodesToExtend() {
 
   // Parameters used:
   // CPuct: Variance of the q value ~ 0.044
-  // TemperatureVisitOffset: Probability that we will go into a branch even if that branch lost against child_with_highest_q ~ 0.5
-  // TemperatureWinpctCutoff: Probability that we will to a random child of root if we don't go with the move suggested by weight. ~ 0.001
+  // TemperatureVisitOffset: Probability that we will go into a branch even if that branch lost against child_with_highest_q ~ 0.05
+  // TemperatureWinpctCutoff: Probability that we will go a random child of root if we don't go with the move suggested by weight. ~ 0.01
   
 	NodeGlow* node;
 	NodeGlow *best_child;
@@ -101,12 +107,17 @@ void SearchWorkerGlow::pickNodesToExtend() {
 		while (true) {
 			nodes_visited++;
 			if(set_bestchild){
-			  best_child = node->GetBestChild();
+
+			  best_child = node->GetBestChild(); // Isn't this guaranteed to be the edge with the highest Q, if the node is expanded?
+			  // for unexpanded nodes, this is the index of the child with highest policy
+			  // nodes with at least 1 exanded edge, this returns the index of the child with the heighest weight, where the weight depends on which weight_strategy is in use in compute_q_and_weights()
+			  // If weight_strategy gives all weights to q, then best_child will indeed have the highest Q.
 			} else {
 			  set_bestchild = true;
 			}
 
 			if(best_child != nullptr){
+			  
 			  // If best_child is not the child with highest Q, then gamble against the child with highest Q. If you loose, choose child with highest q.
 			  float maxq = -2.0;
 			  NodeGlow* child_with_highest_q;
@@ -117,40 +128,51 @@ void SearchWorkerGlow::pickNodesToExtend() {
 			      child_with_highest_q = i;
 			    }
 			  }
-			  if(best_child->GetQ() != maxq && ! child_with_highest_q->IsTerminal()){ // added test for IsTerminal to get rid of segfaults at gpu-master.
-			    // Sample a value from a normal distribution with maxq as mean. If our q is better than that, then we can continue.
-			    std::normal_distribution<> d{maxq, search_->params_.GetCpuct()}; // 0.044 is reasonable
-			    if(d(gen) < best_child->GetQ()){
-			      // OK we lost against best child, but perhaps we should go there _anyway_?
-			      float p_for_ignoring_test_result = search_->params_.GetTemperatureVisitOffset(); // 0.5 might be OK.
-			      std::uniform_real_distribution<> dist_uni_real(0, 1);
-			      float my_sample = dist_uni_real(gen);
-			      if(my_sample > p_for_ignoring_test_result){
-				// OK we definitely don't go there
-				// Let's encourage exploration by giving a random child of root a (low) probability of being entered at this point. Note that starting at certain child does not ensure that it will be entered, it still has
-				// to pass the pruning test, or the highest q of root will be entered.
-				// Actually we can use a constant here because with increasing depth, each additional node that is to be extended will have to pass more and more tests which will increase the probability of ending up here.
-				float p_for_starting_at_random_root_child = search_->params_.GetTemperatureWinpctCutoff(); // should be low.
-				std::uniform_real_distribution<> dist_uni_real(0, 1);
-				float my_sample = dist_uni_real(gen);
-				if(my_sample < p_for_starting_at_random_root_child){
-				  // make some random child of root best_child
-				  node = root_node_;
-				  std::uniform_int_distribution<int> dist_uni_int(1, node->GetNumEdges());
-				  int this_one = dist_uni_int(gen);
-				  for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
-				    if(i->GetIndex() == this_one){
-				      best_child = i;
-				      set_bestchild = false;
-				      continue;
-				    }
-				  }
-				}
-			      } else {
-				best_child = child_with_highest_q;
-			      }
+
+			  // make some random child of best_child
+			  std::uniform_int_distribution<int> dist_uni_int(1, node->GetNumEdges());
+			  int this_one = dist_uni_int(gen);
+			  for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
+			    if(i->GetIndex() == this_one){
+			      best_child = i;
+			      continue;
 			    }
 			  }
+			  
+			  // if(best_child->GetQ() != maxq && ! child_with_highest_q->IsTerminal()){ // added test for IsTerminal to get rid of segfaults at gpu-master.
+			  // Sample a value from a normal distribution with maxq as mean. If our q is better than that, then we can continue.
+			  std::normal_distribution<> d{maxq, search_->params_.GetCpuct()}; // 0.044 is reasonable
+			  if(d(gen) > best_child->GetQ()){
+			    // OK we lost against best child, but perhaps we should go there _anyway_?
+			    float p_for_ignoring_test_result = search_->params_.GetTemperatureVisitOffset(); // 0.5 might be OK.
+			    std::uniform_real_distribution<> dist_uni_real(0, 1);
+			    float my_sample = dist_uni_real(gen);
+			    if(my_sample > p_for_ignoring_test_result){
+			      // OK we definitely don't go there
+			      // Let's encourage exploration by giving a random child of root a (low) probability of being entered at this point. Note that starting at certain child does not ensure that it will be entered, it still has
+			      // to pass the pruning test, or the highest q of root will be entered.
+			      // Actually we can use a constant here because with increasing depth, each additional node that is to be extended will have to pass more and more tests which will increase the probability of ending up here.
+			      float p_for_starting_at_random_root_child = search_->params_.GetTemperatureWinpctCutoff(); // should be low.
+			      std::uniform_real_distribution<> dist_uni_real(0, 1);
+			      float my_sample = dist_uni_real(gen);
+			      if(my_sample < p_for_starting_at_random_root_child){
+				// make some random child of root best_child
+				node = root_node_;
+				std::uniform_int_distribution<int> dist_uni_int(1, node->GetNumEdges());
+				int this_one = dist_uni_int(gen);
+				for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
+				  if(i->GetIndex() == this_one){
+				    best_child = i;
+				    set_bestchild = false;
+				    continue;
+				  }
+				}
+			      }
+			    } else {
+			      best_child = child_with_highest_q;
+			    }
+			  }
+			  // }
 			} else {
 			  int nidx = node->GetNextUnexpandedEdge();
 			  if (nidx < node->GetNumEdges() && nidx - node->GetNumChildren() < MAX_NEW_SIBLINGS) {

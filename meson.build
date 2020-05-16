@@ -410,6 +410,9 @@ if not has_backends and get_option('build_backends')
         -Dbuild_backends=false to the build command line.''')
 endif
 
+## GSL
+gsl_dep = cc.find_library('gsl', required : false)
+deps += [ gsl_dep ]
 
 #############################################################################
 ## Dependencies
