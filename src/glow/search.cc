@@ -35,6 +35,7 @@
 #include <cassert>  // assert() used for debugging during development
 #include <iomanip>
 
+
 #include "neural/encoder.h"
 
 namespace lczero {
