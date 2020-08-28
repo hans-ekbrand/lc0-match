@@ -35,6 +35,8 @@
 #include <gsl/gsl_rng.h>
 #include <gsl/gsl_randist.h> // gsl_ran_beta()
 
+// #include <functional> // for placeholders used with std::transform
+
 namespace lczero {
 
 float param_temperature;
@@ -86,81 +88,121 @@ void set_strategy_parameters(const SearchParams *params) {
 
   // Tree traversing is sufficiently different from backpropagating that we can have two different functions. computeChildWeight() is for backpropagating and could be analytical (or use sampling)
 
-  int follow_this_edge(NodeGlow* node, int n_samples, int policy_predicts_k_nodes, int share_visits_after_m_visits, int x0, float spare_L_proportion_to_self, float steepness){
-    // You only get here when there is already at least one extended edge. Before that, just extend the edge with highest policy.
-  }
-
-float computeChildWeights(NodeGlow* node, int n_samples) {
+  float computeChildWeights(NodeGlow* node, int n_samples, bool normalise_to_sum_of_p) {
 
   // 1. find out the sum of P for all extended nodes (return this)
   // 2. Obtain the probability of each node have the highest <true value>/<generating rate>
-  // 2a. Set up a matrix with n columns and m rows, where n is the number of extended nodes and m is the number of samples you can afford.
+  // 2a. Set up a matrix with m rows and n columns, where n is the number of extended nodes and m is the number of samples you can afford.
   // 2b. Fill in the matrix column by column with samples
   // 2c. count number of wins row by row.
   // 2d. calculate the proportion of wins for each edge.
   // 3. Set each node's weight to that probability (normalised to the sum of P for all extended nodes, if used with glow, not normalised if used with a mcmc tree traverser).
 
-  int n = 0;
-  float sum_of_P_of_expanded_nodes = 0.0;
-  float sum_of_w_of_expanded_nodes = 0.0;
-  float sum_of_weighted_p_and_q = 0.0;
+  // Todo: re-use one random number generator, don't initiate a new one for every node!
+  // If it's problematic to share one instance between threads, then at least use only one per thread.
+  gsl_rng * r = gsl_rng_alloc(gsl_rng_taus);
+  // LOGFILE << "the random number generation is in place; r points to it";
+  int n = node->GetN();
+  // LOGFILE << "number of children " << n ;
+  std::valarray<double> matrix( n_samples * n );
 
+  // LOGFILE << "entering bad loop";
+  for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
+    // Set alpha and beta so that
+    // alpha + beta = number of children - 2
+    // alpha / (alpha + beta) == q
+    float winrate = (i->GetQ() + 1) * 0.5;
+    int visits = i->GetN() + 2; // count the pseudo visits too.
+    // LOGFILE << "At child " << i->GetIndex() << " winrate=" << winrate << " visits=" << visits;
+    double alpha = winrate * (visits - 2);
+    double beta = visits - 2 - alpha;
+    int j = 0;
+    for(j = 0; j < n_samples; j++) {
+      double foo = gsl_ran_beta(r, alpha, beta);    
+      // LOGFILE << "generating samples using alpha=" << alpha << ", beta=" << beta << " result: " << foo << " like a boss";
+      // j is the row number, i->GetIndex() is the colum number.
+      matrix[j * i->GetIndex() + i->GetIndex()] = foo;
+      // LOGFILE << "filling the matrix at position (" << j << ", " << i->GetIndex() << ") with value " << matrix[j * i->GetIndex() + i->GetIndex()] ;
+    }
+  }
+  // Derive weights, by counting the number of wins for each edge (column).
+  std::vector<float> win_counts(n);
+  int my_winner;
+  int j = 0;
+  for(j = 0; j < n_samples; j++) {
+    // Set up a slice: j=start, n_samples=size, n=stride
+    std::valarray<double> my_row_val = matrix[std::slice(j,n,n_samples)];
+    std::vector<float> my_row_vector(begin(my_row_val), end(my_row_val));
+    my_winner = std::distance(my_row_vector.begin(), std::max_element(my_row_vector.begin(), my_row_vector.end()));
+    // LOGFILE << "The winner in row " << j << " is edge: " << my_winner;
+    win_counts[my_winner]++;
+  }
+  // rescale win_counts to win_rates (weights)
+  float my_scaler = 1 / n_samples;
+  std::vector<float> my_weights(n);
+  j = 0; // reset a counter
+  for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {  
+    my_weights[j] = win_counts[j] * my_scaler;
+    i->SetW(my_weights[j]);
+    j++;
+    // LOGFILE << "Child " << j << " has wins " << win_counts[j] << " and weight " << my_weights[j];
+  }
+
+  float sum_of_P_of_expanded_nodes = 0.0;
   for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
     sum_of_P_of_expanded_nodes += node->GetEdges()[i->GetIndex()].GetP();
     n++;
   }
-  int m = 50; // Number of samples drawn from each extended edge
-  std::valarray<double> matrix( m * n );
-  for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
-    // Set up a beta distribution to sample from
-    const gsl_rng * r;
-    double foo = gsl_ran_beta(r, 1, 6.7);
+  
+  if(normalise_to_sum_of_p){
+    // float sum_of_w_of_expanded_nodes = 0.0;
+    // float sum_of_weighted_p_and_q = 0.0;
+    // to be written
   }
 
+  return(sum_of_P_of_expanded_nodes); // with this, parent immediatly get q of first child.
 
-  float normalise_to_sum_of_p = sum_of_P_of_expanded_nodes / sum_of_w_of_expanded_nodes; // Avoid division in the loop, multiplication should be faster.
-  std::vector<float> weighted_p_and_q(n);
-  float relative_weight_of_p = 0;
-  float relative_weight_of_q = 0;
-  float CpuctBase = 7000;
-  int ii = 0;
-  for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling(), ii++) {
-    i->SetW(i->GetW() * normalise_to_sum_of_p); // Normalise sum of Q to sum of P
-    double cpuct_as_prob = 0;
-    if(i->GetN() > (uint32_t)param_maxCollisionVisitsId){
-	double cpuct = log((node->GetN() + CpuctBase)/CpuctBase) * sqrt(log(node->GetN())/(1+i->GetN()));
-	// transform cpuct with the sigmoid function (the logistic function, 1/(1 + exp(-x))
-	cpuct_as_prob = 2 * 2 * param_cpuct * (1/(1 + exp(-cpuct)) - 0.5); // f(0) would be 0.5, we want it f(0) to be zero.
-    }
-    relative_weight_of_p = pow(i->GetN(), param_fpuValue_false) / (0.05 + i->GetN()) + cpuct_as_prob; // 0.05 is here to make Q have some influence after 1 visit.
-    if (relative_weight_of_p > 1){
-      relative_weight_of_p = 1;
-      }
-    relative_weight_of_q = 1 - relative_weight_of_p;
-    // get an new term which should encourage exploration by multiplying both policy and q with this number.
-    // or, for just add it in, the exploration bonus is for _everyone_.
-    // old version
-    // weighted_p_and_q[i] = relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() + relative_weight_of_p * node->GetEdges()[i].GetP() + node->GetEdges()[i].GetP() * search_->params_.GetCpuct() * log((node->GetN() + search_->params_.GetCpuctBase())/search_->params_.GetCpuctBase()) * sqrt(log(node->GetN())/(1+node->GetEdges()[i].GetChild()->GetN()));
-    // new version
-    weighted_p_and_q[ii] = relative_weight_of_q * i->GetW() + relative_weight_of_p * pow(node->GetEdges()[i->GetIndex()].GetP(), 0.85);
-    sum_of_weighted_p_and_q += weighted_p_and_q[ii];
-  }
+  // float normalise_to_sum_of_p_scaler = sum_of_P_of_expanded_nodes / sum_of_w_of_expanded_nodes; // Avoid division in the loop, multiplication should be faster.
+  // std::vector<float> weighted_p_and_q(n);
+  // float relative_weight_of_p = 0;
+  // float relative_weight_of_q = 0;
+  // float CpuctBase = 7000;
+  // int ii = 0;
+  // for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling(), ii++) {
+  //   i->SetW(i->GetW() * normalise_to_sum_of_p_scaler); // Normalise sum of Q to sum of P
+  //   double cpuct_as_prob = 0;
+  //   if(i->GetN() > (uint32_t)param_maxCollisionVisitsId){
+  // 	double cpuct = log((node->GetN() + CpuctBase)/CpuctBase) * sqrt(log(node->GetN())/(1+i->GetN()));
+  // 	// transform cpuct with the sigmoid function (the logistic function, 1/(1 + exp(-x))
+  // 	cpuct_as_prob = 2 * 2 * param_cpuct * (1/(1 + exp(-cpuct)) - 0.5); // f(0) would be 0.5, we want it f(0) to be zero.
+  //   }
+  //   relative_weight_of_p = pow(i->GetN(), param_fpuValue_false) / (0.05 + i->GetN()) + cpuct_as_prob; // 0.05 is here to make Q have some influence after 1 visit.
+  //   if (relative_weight_of_p > 1){
+  //     relative_weight_of_p = 1;
+  //     }
+  //   relative_weight_of_q = 1 - relative_weight_of_p;
+  //   // get an new term which should encourage exploration by multiplying both policy and q with this number.
+  //   // or, for just add it in, the exploration bonus is for _everyone_.
+  //   // old version
+  //   // weighted_p_and_q[i] = relative_weight_of_q * node->GetEdges()[i].GetChild()->GetW() + relative_weight_of_p * node->GetEdges()[i].GetP() + node->GetEdges()[i].GetP() * search_->params_.GetCpuct() * log((node->GetN() + search_->params_.GetCpuctBase())/search_->params_.GetCpuctBase()) * sqrt(log(node->GetN())/(1+node->GetEdges()[i].GetChild()->GetN()));
+  //   // new version
+  //   weighted_p_and_q[ii] = relative_weight_of_q * i->GetW() + relative_weight_of_p * pow(node->GetEdges()[i->GetIndex()].GetP(), 0.85);
+  //   sum_of_weighted_p_and_q += weighted_p_and_q[ii];
+  // }
 
-  // Normalise the weighted sum Q + P to sum of P
-  float normalise_weighted_sum = sum_of_P_of_expanded_nodes / sum_of_weighted_p_and_q;
-  ii = 0;
-  for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling(), ii++) {
-    i->SetW(weighted_p_and_q[ii] * normalise_weighted_sum);
-  }
+  // // Normalise the weighted sum Q + P to sum of P
+  // float normalise_weighted_sum = sum_of_P_of_expanded_nodes / sum_of_weighted_p_and_q;
+  // ii = 0;
+  // for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling(), ii++) {
+  //   i->SetW(weighted_p_and_q[ii] * normalise_weighted_sum);
+  // }
 
-  return(sum_of_P_of_expanded_nodes);
 }
 
-
-
 float compute_q_and_weights(NodeGlow *node) {
-  int number_of_samples = 10;
-  float total_children_weight = computeChildWeights(node, number_of_samples);
+  int number_of_samples = 100; // use this many samples to derive weights
+  // LOGFILE << "in compute_q_and_weights";
+  float total_children_weight = computeChildWeights(node, number_of_samples, false);
 
   // Average Q START
   float q = (1.0 - total_children_weight) * node->GetOrigQ();
