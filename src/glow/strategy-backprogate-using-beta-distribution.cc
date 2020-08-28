@@ -90,9 +90,7 @@ void set_strategy_parameters(const SearchParams *params) {
     // You only get here when there is already at least one extended edge. Before that, just extend the edge with highest policy.
   }
 
-
 float computeChildWeights(NodeGlow* node, int n_samples) {
-
 
   // 1. find out the sum of P for all extended nodes (return this)
   // 2. Obtain the probability of each node have the highest <true value>/<generating rate>
@@ -161,7 +159,8 @@ float computeChildWeights(NodeGlow* node, int n_samples) {
 
 
 float compute_q_and_weights(NodeGlow *node) {
-  float total_children_weight = computeChildWeights(node);
+  int number_of_samples = 10;
+  float total_children_weight = computeChildWeights(node, number_of_samples);
 
   // Average Q START
   float q = (1.0 - total_children_weight) * node->GetOrigQ();
