@@ -48,7 +48,8 @@ int const MAX_NEW_SIBLINGS = 10000;
 const int kUciInfoMinimumFrequencyMs = 5000;
 
 int const N_HELPER_THREADS_PRE = 0;
-int const N_HELPER_THREADS_POST = 3;
+// int const N_HELPER_THREADS_POST = 3;
+int const N_HELPER_THREADS_POST = 0;
 
 bool const LOG_RUNNING_INFO = false;
 
@@ -589,12 +590,12 @@ inline void SearchWorkerGlow::recalcMaxW(NodeGlow *node) {
 
 void SearchWorkerGlow::recalcPropagatedQ(NodeGlow* node) {
   int n = 1;
-	for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
+  for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
     n += i->GetN();
   }
   node->SetN(n);
 
-	float q = compute_q_and_weights(node);
+  float q = compute_q_and_weights(node);
 	node->SetQ(q);
 
 	recalcMaxW(node);
