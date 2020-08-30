@@ -39,8 +39,6 @@
 
 namespace lczero {
 
-  gsl_rng * r = gsl_rng_alloc(gsl_rng_mt19937);
-
 float param_temperature;
 float param_fpuValue_false;
 int param_maxCollisionVisitsId;
@@ -92,6 +90,9 @@ void set_strategy_parameters(const SearchParams *params) {
 
   float computeChildWeights(NodeGlow* node, int n_samples, bool normalise_to_sum_of_p) {
 
+  LOGFILE << "trying to allocate r ";
+  gsl_rng * r = gsl_rng_alloc(gsl_rng_mt19937);
+  LOGFILE << "success allocating r ";
   // 1. find out the sum of P for all extended nodes (return this)
   // 2. Obtain the probability of each node have the highest <true value>/<generating rate>
   // 2a. Set up a matrix with m rows and n columns, where n is the number of extended nodes and m is the number of samples you can afford.
@@ -151,7 +152,19 @@ void set_strategy_parameters(const SearchParams *params) {
     int row = 0;
     for(row = 0; row < n_samples; row++) {
       // LOGFILE << "generating samples using alpha=" << alpha << ", beta=" << beta;
-      double foo = gsl_ran_beta(r, alpha, beta);
+
+      double foo;
+      bool success = false;
+      while (!success) {
+	try {
+	  foo = gsl_ran_beta(r, alpha, beta);
+	  success = true;
+	} catch (const std::exception&) {
+	  LOGFILE << "Caught exception";
+	}
+      }
+
+      // double foo = gsl_ran_beta(r, alpha, beta);
       // LOGFILE << "At edge " << i->GetIndex() << " row " << row << "(position " << i->GetIndex() + row * n << ") generating samples using alpha=" << alpha << ", beta=" << beta << " result: " << foo << " like a boss";
       // i->GetIndex() is the colum number.
       // matrix[row * i->GetIndex() + i->GetIndex()] = foo;
@@ -162,7 +175,7 @@ void set_strategy_parameters(const SearchParams *params) {
     }
   }
 
-  // gsl_rng_free (r);
+  gsl_rng_free (r);
 
   // LOGFILE << matrix[2] << " should be second result for edge 0";
   // LOGFILE << my_matrix[1][0] << " should again be second result edge 0";
