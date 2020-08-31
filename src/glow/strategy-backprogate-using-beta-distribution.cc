@@ -87,7 +87,7 @@ void set_strategy_parameters(const SearchParams *params) {
 
   // Tree traversing is sufficiently different from backpropagating that we can have two different functions. computeChildWeight() is for backpropagating and could be analytical (or use sampling)
 
-  float computeChildWeights(NodeGlow* node, int n_samples, bool normalise_to_sum_of_p) {
+  float computeChildWeights(NodeGlow* node, int n_samples) {
 
     // LOGFILE << "Entered computeChildweights";
 
@@ -110,12 +110,17 @@ void set_strategy_parameters(const SearchParams *params) {
     return(policy);
   }
 
-  // // Not sure why this stops early. is W set to 0 elsewhere?
-  // // All edges are extended, then we know that all children have got a weight, and we may ignore setting/updating the weights to save computation time.
-  // if(node->GetNextUnexpandedEdge() == node->GetNumEdges()){
-  //   if(node->GetN() % 5 > 0){ // Only update if the parent has a number visits that is divisible with 5
-  //     return(1);
+  // // Be faster
+  // if(node->GetN() > 20 && node->GetN() % 2 == 0){ // Return without updating the weights if the parent has a number visits that is divisible with 2.
+  //   // Just make sure that any new child gets it's first weight
+  //   float sum_of_P_of_expanded_nodes = 0.0;
+  //   for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
+  //     sum_of_P_of_expanded_nodes += node->GetEdges()[i->GetIndex()].GetP();
+  //     if(i->GetN() == 1){
+  // 	i->SetW(node->GetEdges()[0].GetP());
+  //     }
   //   }
+  //   return(sum_of_P_of_expanded_nodes);
   // }
 
   std::valarray<double> matrix( n_samples * n );
@@ -220,7 +225,7 @@ void set_strategy_parameters(const SearchParams *params) {
 
 float compute_q_and_weights(NodeGlow *node) {
   int number_of_samples = 500; // use this many samples to derive weights
-  float total_children_weight = computeChildWeights(node, number_of_samples, true);
+  float total_children_weight = computeChildWeights(node, number_of_samples);
 
   // Average Q START
   float q = (1.0 - total_children_weight) * node->GetOrigQ();
