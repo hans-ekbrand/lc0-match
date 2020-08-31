@@ -170,7 +170,7 @@ void set_strategy_parameters(const SearchParams *params) {
   for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {  
     my_weights[j] = win_counts[j] * my_scaler;
 
-    float policy_decay_factor = 2.0f;
+    float policy_decay_factor = 3.5f;
     float alpha_prior = node->GetEdges()[i->GetIndex()].GetP() * policy_decay_factor;
     float beta_prior = policy_decay_factor - alpha_prior;
 
