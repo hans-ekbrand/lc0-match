@@ -48,8 +48,7 @@ int const MAX_NEW_SIBLINGS = 10000;
 const int kUciInfoMinimumFrequencyMs = 5000;
 
 int const N_HELPER_THREADS_PRE = 0;
-// int const N_HELPER_THREADS_POST = 3;
-int const N_HELPER_THREADS_POST = 0;
+int const N_HELPER_THREADS_POST = 3;
 
 bool const LOG_RUNNING_INFO = false;
 

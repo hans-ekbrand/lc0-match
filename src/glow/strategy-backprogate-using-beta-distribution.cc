@@ -28,14 +28,13 @@
 #include "glow/strategy.h"
 
 #include <iostream>
-#include <valarray>
+#include <valarray> // for easily finding winners from the beta sampling
 
-#include <gsl/gsl_cdf.h> // for the cummulative beta distribution gsl_cdf_beta_Q()
-// #include <gsl/gsl_errno.h> // for gsl_set_error_handler_off();
-#include <gsl/gsl_rng.h>
-#include <gsl/gsl_randist.h> // gsl_ran_beta()
+// use kumaraswamy instead of beta, sample from uniform [0,1]
+#include <iostream>
+#include <random>
 
-// #include <functional> // for placeholders used with std::transform
+#include <cassert>  // assert() used for debugging during development
 
 namespace lczero {
 
@@ -90,9 +89,8 @@ void set_strategy_parameters(const SearchParams *params) {
 
   float computeChildWeights(NodeGlow* node, int n_samples, bool normalise_to_sum_of_p) {
 
-  LOGFILE << "trying to allocate r ";
-  gsl_rng * r = gsl_rng_alloc(gsl_rng_mt19937);
-  LOGFILE << "success allocating r ";
+    // LOGFILE << "Entered computeChildweights";
+
   // 1. find out the sum of P for all extended nodes (return this)
   // 2. Obtain the probability of each node have the highest <true value>/<generating rate>
   // 2a. Set up a matrix with m rows and n columns, where n is the number of extended nodes and m is the number of samples you can afford.
@@ -112,143 +110,128 @@ void set_strategy_parameters(const SearchParams *params) {
     return(policy);
   }
 
-  // gsl_rng * r = gsl_rng_alloc(gsl_rng_mt19937);
-
-  // LOGFILE << "number of children " << n ;
-
-  // std::valarray<int> my_matrix( 3 * 4);
-  // for (int i=0; i < 3 * 4 ; ++i) my_matrix[i]=i;
-
-// slice( std::size_t start, std::size_t size, std::size_t stride );
-// size_t star : is the index of the first element in the selection
-// size_t size : is the number of elements in the selection
-// stride : is the span that separates the elements selected.
-
-  // // Extract the second row
-  // std::slice_array<int> test = my_matrix[std::slice(3,1,3)];
-
-  // printf("testing matrix slices, this should be 3 but it is %d, the first column on the second row, first row 0, 1, 2, second row 3, 4, 5", test[0]);
+  // // Not sure why this stops early. is W set to 0 elsewhere?
+  // // All edges are extended, then we know that all children have got a weight, and we may ignore setting/updating the weights to save computation time.
+  // if(node->GetNextUnexpandedEdge() == node->GetNumEdges()){
+  //   if(node->GetN() % 5 > 0){ // Only update if the parent has a number visits that is divisible with 5
+  //     return(1);
+  //   }
+  // }
 
   std::valarray<double> matrix( n_samples * n );
 
-  // double my_matrix[200][30];
+  std::default_random_engine generator;
+  std::uniform_real_distribution<double> distribution(0.0,1.0);  
 
-  // const gsl_rng_type * T;
-  // gsl_rng * r;
-  // gsl_rng_env_setup(); // read environmental variables to set the type 
-  // T = gsl_rng_default;
-  // r = gsl_rng_alloc (T);
-
+  int column = 0;
   for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
     // Set alpha and beta so that
     // alpha + beta = number of visits + 2
     // alpha / (alpha + beta) == q
     float winrate = (i->GetQ() + 1) * 0.5;
     // float winrate = -0.5 * i->GetQ();
-    int visits = i->GetN() + 2; // count the pseudo visits too.
-    // LOGFILE << "At child " << i->GetIndex() << " winrate=" << winrate << " visits=" << visits;
-    double alpha = winrate * visits;
-    double beta = visits - alpha;
+    int realvisits = i->GetN() + 2; // count the pseudo visits too.
+    int visits = 0;
+    if (realvisits > 100){
+      visits = 100;
+    } else {
+      visits = realvisits;
+    }
+    float alpha = winrate * visits;
+    float beta = visits - alpha;
     int row = 0;
     for(row = 0; row < n_samples; row++) {
-      // LOGFILE << "generating samples using alpha=" << alpha << ", beta=" << beta;
-
-      double foo;
-      bool success = false;
-      while (!success) {
-	try {
-	  foo = gsl_ran_beta(r, alpha, beta);
-	  success = true;
-	} catch (const std::exception&) {
-	  LOGFILE << "Caught exception";
-	}
-      }
-
-      // double foo = gsl_ran_beta(r, alpha, beta);
-      // LOGFILE << "At edge " << i->GetIndex() << " row " << row << "(position " << i->GetIndex() + row * n << ") generating samples using alpha=" << alpha << ", beta=" << beta << " result: " << foo << " like a boss";
-      // i->GetIndex() is the colum number.
-      // matrix[row * i->GetIndex() + i->GetIndex()] = foo;
-      matrix[i->GetIndex() + row * n] = foo;
-      // LOGFILE << "filling matrix at position (" << i->GetIndex() + row * n << ") with value " << matrix[i->GetIndex() + row * n] ;
-      // my_matrix[row][i->GetIndex()] = foo;
-      // LOGFILE << "filling my_matrix at position [" << row << "][" << i->GetIndex() << "] with value " << my_matrix[row][i->GetIndex()];
+      double foo = pow(1 - pow((1 - distribution(generator)), (1/beta)), (1/alpha));
+      matrix[column + row * n] = foo;
+      // LOGFILE << "At edge " << i->GetIndex() << " row " << row << " column " << column << "(position " << column + row * n << ") generating samples using alpha=" << alpha << ", beta=" << beta << " result: " << foo << " like a boss";
     }
+    column++;
   }
-
-  gsl_rng_free (r);
-
-  // LOGFILE << matrix[2] << " should be second result for edge 0";
-  // LOGFILE << my_matrix[1][0] << " should again be second result edge 0";
 
   // Derive weights, by counting the number of wins for each edge (column).
   std::vector<int> win_counts(n);
-  std::vector<int> real_win_counts(n);
   int my_winner;
-  // int real_my_winner;
   int j = 0;
-  // int k = 0;
   for(j = 0; j < n_samples * n; j = j + n) {
     // Set up a slice: j=start, n_samples=size, n=stride
     std::valarray<double> my_row_val = matrix[std::slice(j,n,1)];
-    std::vector<float> my_row_vector(begin(my_row_val), end(my_row_val));
+    std::vector<double> my_row_vector(begin(my_row_val), end(my_row_val));
     my_winner = std::distance(my_row_vector.begin(), std::max_element(my_row_vector.begin(), my_row_vector.end()));
-    // LOGFILE << "competition: " << my_row_vector[0] << " against " << my_row_vector[1] << " winner: " << my_winner;
+    // if(n == 3){
+    //   LOGFILE << "competition: " << my_row_vector[0] << " "<< my_row_vector[1] << " "<< my_row_vector[2] << " The winner is " << my_winner;
+    // }
     win_counts[my_winner]++;
   }
-  // for(j = 0; j < n_samples; j++) {
-  //   std::vector<float> my_real_row_vector(n); // store the samples here
-  //   for(k=0; k < n; k++){
-  //     my_real_row_vector[k] = my_matrix[j][k];
-  //   }
-  //   // identify the highes sample in each row (j)
-  //   real_my_winner = std::distance(my_real_row_vector.begin(), std::max_element(my_real_row_vector.begin(), my_real_row_vector.end()));
-  //   real_win_counts[real_my_winner]++;
-  //   // LOGFILE << "The winner in row " << j << " is edge: " << my_winner;
-  // }
 
   // rescale win_counts to win_rates (weights)
   float my_scaler = 1.0f / n_samples;
-  // LOGFILE << "n_samples: " << n_samples << " my_scaler:" << my_scaler;
   std::vector<float> my_weights(n);
+  j = 0;
   for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {  
-    my_weights[i->GetIndex()] = win_counts[i->GetIndex()] * my_scaler;
-    i->SetW(my_weights[i->GetIndex()]);
-    // LOGFILE << "Child " << node->GetEdges()[i->GetIndex()].GetMove(false).as_string()  << " has index " << i->GetIndex() << " and " << i->GetN() << " true visits and " << win_counts[i->GetIndex()] << " wins and " << real_win_counts[i->GetIndex()] << " real wins and weight " << my_weights[i->GetIndex()];
+    my_weights[j] = win_counts[j] * my_scaler;
+
+    float policy_decay_factor = 2.0f;
+    float alpha_prior = node->GetEdges()[i->GetIndex()].GetP() * policy_decay_factor;
+    float beta_prior = policy_decay_factor - alpha_prior;
+
+    int realvisits = i->GetN();
+    int visits = 0;
+    if (realvisits > 100){
+      visits = 100;
+    } else {
+      visits = realvisits;
+    }
+    float alpha = my_weights[j] * visits;
+    float beta = visits - alpha;
+    float E = (alpha + alpha_prior) / (alpha + alpha_prior + beta + beta_prior);
+
+    // Terminal nodes does not have policy, so don't try this on a terminal node.
+    if(i->IsTerminal()){
+      // // Terminal nodes will not get visits anyway, just set the weight to whatever rescaled Q is
+      // i->SetW(i->GetOrigQ());
+    } else {					
+      // i->SetW(my_weights[j]);
+      i->SetW(E);
+    }
+    // LOGFILE << "Child " << node->GetEdges()[i->GetIndex()].GetMove(false).as_string()  << " has policy " << node->GetEdges()[i->GetIndex()].GetP() << " and " << i->GetN() << " true visits and " << win_counts[j] << " out of " << n_samples << " trials and would have got weight " << my_weights[j] << " but with the policy prior the weight becomes: " << E;
+    j++;
   }
 
   float sum_of_P_of_expanded_nodes = 0.0;
+  float sum_of_weights = 0.0;  
   for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
     sum_of_P_of_expanded_nodes += node->GetEdges()[i->GetIndex()].GetP();
+    sum_of_weights += i->GetW();
     n++;
   }
+  float my_final_scaler = sum_of_P_of_expanded_nodes / sum_of_weights;
 
   // This is only necessary when there are unexpanded edges
-  if(normalise_to_sum_of_p & (node->GetNumChildren() < node->GetNumEdges())){
-    my_scaler = sum_of_P_of_expanded_nodes;
-    // LOGFILE << "Normalising weights to sum to " << sum_of_P_of_expanded_nodes;
+  // if(normalise_to_sum_of_p & (node->GetNumChildren() < node->GetNumEdges())){
     for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
-      // LOGFILE << "scaling the weight for child" << i->GetIndex() << " from " << i->GetW() << " to " << i->GetW() * my_scaler;
-      i->SetW(i->GetW() * my_scaler);
+      // i->SetW(i->GetW() * sum_of_P_of_expanded_nodes);
+      i->SetW(i->GetW() * my_final_scaler);
     }
-  }
+  // }
 
   return(sum_of_P_of_expanded_nodes); // with this, parent immediatly get q of first child.
 
 }
 
 float compute_q_and_weights(NodeGlow *node) {
-  int number_of_samples = 30; // use this many samples to derive weights
+  int number_of_samples = 500; // use this many samples to derive weights
   float total_children_weight = computeChildWeights(node, number_of_samples, true);
 
   // Average Q START
   float q = (1.0 - total_children_weight) * node->GetOrigQ();
   for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
+    assert(i->GetW() <= 1 & i->GetW() >= 0);
+    assert(i->GetQ() <= 1 & i->GetQ() >= 0);
     q -= i->GetW() * i->GetQ();
   }
   // Average Q STOP
+  assert(q <= 1 & q >=0);
   return q;
 }
 
 }  // namespace lczero
-
-
