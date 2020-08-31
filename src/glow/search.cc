@@ -207,7 +207,7 @@ void SearchGlow::SendUciInfo() {
     common_info.depth = cum_depth_ / (root_node_->GetN() - initial_visits_);
   common_info.seldepth = full_tree_depth_;
   common_info.time = GetTimeSinceStart();
-  common_info.nodes = root_node_->GetN();
+  // common_info.nodes = root_node_->GetN();
   common_info.hashfull =
       cache_->GetSize() * 1000LL / std::max(cache_->GetCapacity(), 1);
   common_info.nps =
@@ -220,22 +220,22 @@ void SearchGlow::SendUciInfo() {
 
   float prevq = 2.0;
   NodeGlow *previdx = nullptr;
-	for (;;) {
+  for (;;) {
     float bestq = -2.0;
     NodeGlow *bestidx = nullptr;
-		for (NodeGlow *j = root_node_->GetFirstChild(); j != nullptr; j = j->GetNextSibling()) {
+    for (NodeGlow *j = root_node_->GetFirstChild(); j != nullptr; j = j->GetNextSibling()) {
       float q = j->GetQ();
-			if (q < prevq && q > bestq) {
+      if (q < prevq && q > bestq) {
         bestq = q;
         bestidx = j;
-			} else if (q == prevq && q > bestq) {
-				if (j == previdx) {
-					previdx = nullptr;
-				} else if (previdx == nullptr) {
-					bestq = q;
-					bestidx = j;
-				}
-			}
+      } else if (q == prevq && q > bestq) {
+	if (j == previdx) {
+	  previdx = nullptr;
+	} else if (previdx == nullptr) {
+	  bestq = q;
+	  bestidx = j;
+	}
+      }
     }
     if (bestidx == nullptr) break;
     prevq = bestq;
@@ -266,6 +266,7 @@ void SearchGlow::SendUciInfo() {
       uci_info.pv.push_back(n->GetEdges()[bestidx->GetIndex()].GetMove(flip));
       n = bestidx;
     }
+    uci_info.nodes = bestidx->GetN();
   }
 
   // reverse the order
