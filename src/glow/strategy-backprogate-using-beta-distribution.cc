@@ -126,7 +126,7 @@ void set_strategy_parameters(const SearchParams *params) {
   std::valarray<double> matrix( n_samples * n );
 
   std::default_random_engine generator;
-  std::uniform_real_distribution<double> distribution(0.0,1.0);  
+  std::uniform_real_distribution<double> distribution(0.0,1.0);
 
   int column = 0;
   for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
@@ -135,15 +135,15 @@ void set_strategy_parameters(const SearchParams *params) {
     // alpha / (alpha + beta) == q
     float winrate = (i->GetQ() + 1) * 0.5;
     // float winrate = -0.5 * i->GetQ();
-    int realvisits = i->GetN() + 2; // count the pseudo visits too.
+    int realvisits = i->GetN();
     int visits = 0;
     if (realvisits > 100){
       visits = 100;
     } else {
       visits = realvisits;
     }
-    float alpha = winrate * visits;
-    float beta = visits - alpha;
+    float alpha = winrate * visits + 1;
+    float beta = visits - alpha + 1;
     int row = 0;
     for(row = 0; row < n_samples; row++) {
       double foo = pow(1 - pow((1 - distribution(generator)), (1/beta)), (1/alpha));
@@ -172,10 +172,10 @@ void set_strategy_parameters(const SearchParams *params) {
   float my_scaler = 1.0f / n_samples;
   std::vector<float> my_weights(n);
   j = 0;
-  for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {  
+  for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
     my_weights[j] = win_counts[j] * my_scaler;
 
-    float policy_decay_factor = 3.5f;
+    float policy_decay_factor = 0.0f;
     float alpha_prior = node->GetEdges()[i->GetIndex()].GetP() * policy_decay_factor;
     float beta_prior = policy_decay_factor - alpha_prior;
 
@@ -194,7 +194,7 @@ void set_strategy_parameters(const SearchParams *params) {
     if(i->IsTerminal()){
       // // Terminal nodes will not get visits anyway, just set the weight to whatever rescaled Q is
       // i->SetW(i->GetOrigQ());
-    } else {					
+    } else {
       // i->SetW(my_weights[j]);
       i->SetW(E);
     }
@@ -203,7 +203,7 @@ void set_strategy_parameters(const SearchParams *params) {
   }
 
   float sum_of_P_of_expanded_nodes = 0.0;
-  float sum_of_weights = 0.0;  
+  float sum_of_weights = 0.0;
   for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
     sum_of_P_of_expanded_nodes += node->GetEdges()[i->GetIndex()].GetP();
     sum_of_weights += i->GetW();
