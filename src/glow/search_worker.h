@@ -94,6 +94,8 @@ private:
 
 	void picknextend(PositionHistory *history);
 
+        inline int GetInterestingChild(NodeGlow *node);
+
 
 
 

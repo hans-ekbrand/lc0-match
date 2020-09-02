@@ -34,6 +34,7 @@
 #include <math.h>
 #include <cassert>  // assert() used for debugging during development
 #include <iomanip>
+#include <random>
 
 #include "neural/encoder.h"
 
@@ -56,8 +57,57 @@ bool const OLD_PICK_N_CREATE_MODE = false;
 
 }  // namespace
 
+  int SearchWorkerGlow::GetInterestingChild(NodeGlow* node) {
+    // pick an interesting child based on Weight and Policy.
 
+    // If there are no extended children, just return -1 and let pickNodesToExtend() do its thing.
+    if(node->GetFirstChild() == nullptr){
+      return -1;
+    }
+    
+    std::vector<float> effective_weights(node->GetNumEdges(), 0);
+    float sum_of_effective_weights = 0;
+    std::vector<int> edges(node->GetNumEdges(), -1);
+    
+    // Calculate weights for extended children:
+    for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
+      edges[i->GetIndex()] == i->GetIndex();
+      // How strong should the policy prior be? That is an open question, for now just set it to some number. Since policy is trained on 800 nodes, some number in that ballpark is
+      // probably fine. To make policy and weigh equally after 100 visits, simply set the policy_prior_strength to 100.
+      float policy_prior_strength = 100;
+      float alpha_policy_prior = policy_prior_strength * node->GetEdges()[i->GetIndex()].GetP();
+      float beta_policy_prior = policy_prior_strength - alpha_policy_prior;
+      float alpha_weight = i->GetN() * i->GetW();
+      float beta_weight = i->GetN() - alpha_weight;
+      float alpha = alpha_policy_prior + alpha_weight;
+      float beta = beta_policy_prior + beta_weight;
+      effective_weights[i->GetIndex()] = alpha / (alpha + beta);
+      sum_of_effective_weights =+ effective_weights[i->GetIndex()];
+    }
 
+    // Set weights for unextended children too,
+    for (int k = 0; k > node->GetNumEdges(); k++){
+      if(edges[k] == -1){
+	// this means that the edge with index k is unextended
+	edges[k] == k;
+	effective_weights[k] = node->GetEdges()[k].GetP(); // The weight for unextended edges is simply the policy for that edge.
+	sum_of_effective_weights =+ effective_weights[k];
+      }
+    }
+    // scale weights so they sum to 1.
+    std::transform(effective_weights.begin(), effective_weights.end(), effective_weights.begin(), [&sum_of_effective_weights](auto& c){return c*sum_of_effective_weights;});
+    std::default_random_engine generator;
+    std::uniform_real_distribution<double> distribution(0.0,1.0); // uniform over 0,1
+    float the_sample = distribution(generator);
+    // Which weight interval covers the sample?
+    sum_of_effective_weights = 0;
+    int i = 0;
+    while(effective_weights[i] < the_sample){
+      sum_of_effective_weights =+ effective_weights[i];
+      i++;
+    }
+    return(i);
+  }
 
 void SearchWorkerGlow::pickNodesToExtend() {
 	NodeGlow* node;
