@@ -45,7 +45,7 @@ namespace {
 // Alternatives:
 
 // int const MAX_NEW_SIBLINGS = 10000;
-int const MAX_NEW_SIBLINGS = 1;
+int const MAX_NEW_SIBLINGS = 2;
   // The maximum number of new siblings. If 1, then it's like old MULTIPLE_NEW_SIBLINGS = false, if >= maximum_number_of_legal_moves it's like MULTIPLE_NEW_SIBLINGS = true
 const int kUciInfoMinimumFrequencyMs = 5000;
 
@@ -57,12 +57,14 @@ bool const LOG_RUNNING_INFO = false;
 bool const OLD_PICK_N_CREATE_MODE = false;
 
 }  // namespace
+
+
   NodeGlow* SearchWorkerGlow::GetInterestingChild(NodeGlow* node) {
     // pick an interesting child based on Weight and Policy.
 
     // If there are no extended children, just return nullptr and let pickNodesToExtend() do its thing.
     if(node->GetFirstChild() == nullptr){
-      LOGFILE << "No extended children yet";
+      std::cerr << "No extended children yet";
       return nullptr;
     } 
     
@@ -122,6 +124,7 @@ void SearchWorkerGlow::pickNodesToExtend() {
 
 	int nodes_visited = 0;
 
+	std::cerr << "here again";
 	LOGFILE << "here at last";
 
 	for (int n = 0; n < new_nodes_amount_target_ && n < new_nodes_amount_limit_; n++) {
@@ -824,7 +827,7 @@ void SearchWorkerGlow::ThreadLoop(int thread_id) {
 		start_comp_time = std::chrono::steady_clock::now();
 		//auto start_comp_time2 = start_comp_time;
 
-		//LOGFILE << "Working myself.";
+		// LOGFILE << "Working myself.";
     pickNodesToExtend();
 
 		helper_threads_mode_ = 2;  // from now no new nodes will be added

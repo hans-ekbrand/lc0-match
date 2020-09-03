@@ -31,7 +31,6 @@
 #include <valarray> // for easily finding winners from the beta sampling
 
 // use kumaraswamy instead of beta, sample from uniform [0,1]
-#include <iostream>
 #include <random>
 
 #include <cassert>  // assert() used for debugging during development
