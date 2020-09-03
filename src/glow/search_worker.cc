@@ -44,7 +44,8 @@ namespace {
 
 // Alternatives:
 
-int const MAX_NEW_SIBLINGS = 10000;
+// int const MAX_NEW_SIBLINGS = 10000;
+int const MAX_NEW_SIBLINGS = 1;
   // The maximum number of new siblings. If 1, then it's like old MULTIPLE_NEW_SIBLINGS = false, if >= maximum_number_of_legal_moves it's like MULTIPLE_NEW_SIBLINGS = true
 const int kUciInfoMinimumFrequencyMs = 5000;
 
@@ -56,14 +57,14 @@ bool const LOG_RUNNING_INFO = false;
 bool const OLD_PICK_N_CREATE_MODE = false;
 
 }  // namespace
-
-  int SearchWorkerGlow::GetInterestingChild(NodeGlow* node) {
+  NodeGlow* SearchWorkerGlow::GetInterestingChild(NodeGlow* node) {
     // pick an interesting child based on Weight and Policy.
 
-    // If there are no extended children, just return -1 and let pickNodesToExtend() do its thing.
+    // If there are no extended children, just return nullptr and let pickNodesToExtend() do its thing.
     if(node->GetFirstChild() == nullptr){
-      return -1;
-    }
+      LOGFILE << "No extended children yet";
+      return nullptr;
+    } 
     
     std::vector<float> effective_weights(node->GetNumEdges(), 0);
     float sum_of_effective_weights = 0;
@@ -71,7 +72,7 @@ bool const OLD_PICK_N_CREATE_MODE = false;
     
     // Calculate weights for extended children:
     for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
-      edges[i->GetIndex()] == i->GetIndex();
+      edges[i->GetIndex()] = i->GetIndex();
       // How strong should the policy prior be? That is an open question, for now just set it to some number. Since policy is trained on 800 nodes, some number in that ballpark is
       // probably fine. To make policy and weigh equally after 100 visits, simply set the policy_prior_strength to 100.
       float policy_prior_strength = 100;
@@ -83,15 +84,17 @@ bool const OLD_PICK_N_CREATE_MODE = false;
       float beta = beta_policy_prior + beta_weight;
       effective_weights[i->GetIndex()] = alpha / (alpha + beta);
       sum_of_effective_weights =+ effective_weights[i->GetIndex()];
+      LOGFILE << "at child " << i->GetIndex() << " with policy " << node->GetEdges()[i->GetIndex()].GetP() << " and weight " << i->GetW() << " and visits " << i->GetN() << " effective weight " << effective_weights[i->GetIndex()];
     }
 
     // Set weights for unextended children too,
     for (int k = 0; k > node->GetNumEdges(); k++){
       if(edges[k] == -1){
 	// this means that the edge with index k is unextended
-	edges[k] == k;
+	edges[k] = k;
 	effective_weights[k] = node->GetEdges()[k].GetP(); // The weight for unextended edges is simply the policy for that edge.
 	sum_of_effective_weights =+ effective_weights[k];
+	LOGFILE << "at child " << k << " with policy " << node->GetEdges()[k].GetP() << " not yet extended";
       }
     }
     // scale weights so they sum to 1.
@@ -101,12 +104,16 @@ bool const OLD_PICK_N_CREATE_MODE = false;
     float the_sample = distribution(generator);
     // Which weight interval covers the sample?
     sum_of_effective_weights = 0;
-    int i = 0;
-    while(effective_weights[i] < the_sample){
-      sum_of_effective_weights =+ effective_weights[i];
-      i++;
+    for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
+      if(effective_weights[i->GetIndex()] < the_sample){
+	sum_of_effective_weights =+ effective_weights[i->GetIndex()];
+      } else {
+	LOGFILE << "Sample drawn: " << the_sample << " interesting child " << i->GetIndex() << " has effective weight " << effective_weights[i->GetIndex()];
+	return(i);
+      }
     }
-    return(i);
+    LOGFILE << "No child was interesting! Should never happen";
+    abort();
   }
 
 void SearchWorkerGlow::pickNodesToExtend() {
@@ -115,11 +122,15 @@ void SearchWorkerGlow::pickNodesToExtend() {
 
 	int nodes_visited = 0;
 
+	LOGFILE << "here at last";
+
 	for (int n = 0; n < new_nodes_amount_target_ && n < new_nodes_amount_limit_; n++) {
 		node = root_node_;
 
 		while (true) {
 			nodes_visited++;
+			LOGFILE << "Calling GetInterestingChild()";
+			// best_child = GetInterestingChild(node);
 			best_child = node->GetBestChild();
 			if (best_child == nullptr) {
 				int nidx = node->GetNextUnexpandedEdge();

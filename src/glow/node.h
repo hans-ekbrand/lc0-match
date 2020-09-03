@@ -110,7 +110,6 @@ class NodeGlow {
 	NodeGlow* GetFirstChild() { return child_.get(); }
 	NodeGlow* GetNextSibling() { return sibling_.get(); }
 
-
 	
   // Gets parent node.
   NodeGlow* GetParent() const { return parent_; }

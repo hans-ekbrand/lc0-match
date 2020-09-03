@@ -86,6 +86,7 @@ private:
 	inline void recalcMaxW(NodeGlow *node);
 	void recalcPropagatedQ(NodeGlow* node);
 	void pickNodesToExtend();
+  	NodeGlow* GetInterestingChild();
 	int appendHistoryFromTo(std::vector<Move> *movestack, PositionHistory *history, NodeGlow* from, NodeGlow* to);
 	float computeChildWeights(NodeGlow* node, bool evalution_weights);
 	int propagate();
@@ -94,10 +95,7 @@ private:
 
 	void picknextend(PositionHistory *history);
 
-        inline int GetInterestingChild(NodeGlow *node);
-
-
-
+        NodeGlow* GetInterestingChild(NodeGlow* node);
 
 	SearchGlow *search_;
 
