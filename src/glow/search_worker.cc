@@ -45,7 +45,7 @@ namespace {
 // Alternatives:
 
 // int const MAX_NEW_SIBLINGS = 10000;
-  int const MAX_NEW_SIBLINGS = 1;
+  int const MAX_NEW_SIBLINGS = 3;
   // The maximum number of new siblings. If 1, then it's like old MULTIPLE_NEW_SIBLINGS = false, if >= maximum_number_of_legal_moves it's like MULTIPLE_NEW_SIBLINGS = true
 const int kUciInfoMinimumFrequencyMs = 5000;
 
@@ -56,7 +56,7 @@ bool const LOG_RUNNING_INFO = false;
 
   // with this set to true pickNodesToExtend() is not used
   // bool const OLD_PICK_N_CREATE_MODE = false;
-bool const OLD_PICK_N_CREATE_MODE = true;
+  bool const OLD_PICK_N_CREATE_MODE = true;
 
 }  // namespace
 
@@ -87,7 +87,7 @@ bool const OLD_PICK_N_CREATE_MODE = true;
       edges[i->GetIndex()] = i->GetIndex();
       // How strong should the policy prior be? That is an open question, for now just set it to some number. Since policy is trained on 800 nodes, some number in that ballpark is
       // probably fine. To make policy and weigh equally after 100 visits, simply set the policy_prior_strength to 100.
-      float policy_prior_strength = 10;
+      float policy_prior_strength = 100;
       float alpha_policy_prior = policy_prior_strength * node->GetEdges()[i->GetIndex()].GetP();
       float beta_policy_prior = policy_prior_strength - alpha_policy_prior;
       float alpha_weight = i->GetN() * i->GetW();
@@ -441,7 +441,8 @@ void SearchWorkerGlow::picknextend(PositionHistory *history) {
 	// turn on global tree lock
 	while (new_nodes_size_ < new_nodes_amount_target_ && new_nodes_size_ < new_nodes_amount_limit_) {  // repeat this until minibatch_size amount of non terminal, non cache hit nodes have been found (or reached a predefined limit larger than minibatch size)
 		NodeGlow *node = root_node_;
-		NodeGlow *best_child = node->GetBestChild();
+		// NodeGlow *best_child = node->GetBestChild();
+		NodeGlow *best_child = GetInterestingChild(node, cum_depth);
 		if (best_child == nullptr && (node->GetNextUnexpandedEdge() == node->GetNumEdges() || node->GetNextUnexpandedEdge() - node->GetNumChildren() == MAX_NEW_SIBLINGS)) break;  // no more expandable node
 		// starting from root node follow maxidx until next move would make the sub tree to small
 		// propagate no availability upwards to root
