@@ -94,12 +94,15 @@ bool const LOG_RUNNING_INFO = false;
       float beta_weight = i->GetN() - alpha_weight;
       float alpha = alpha_policy_prior + alpha_weight;
       float beta = beta_policy_prior + beta_weight;
-      effective_weights[i->GetIndex()] = alpha / (alpha + beta);
+      // effective_weights[i->GetIndex()] = alpha / (alpha + beta);
+      // Let's introduce a bias towards promising branches, take this fair distribution of weights and sharpen it.
+      // This will make it play more optimistically (going for good but uncertain variations).
+      effective_weights[i->GetIndex()] = pow(alpha / (alpha + beta), 0.75);
       sum_of_effective_weights += effective_weights[i->GetIndex()];
       // LOGFILE << "at child " << i->GetIndex() << " with policy " << node->GetEdges()[i->GetIndex()].GetP() << " and weight " << i->GetW() << " and visits " << i->GetN() << " effective weight " << effective_weights[i->GetIndex()];
     }
 
-    // Set weights for unextended children too,
+    // Set weights for unextended children too, This is only necessary when/if we implement extending nodes in non-policy order.
     for (int k = 0; k < node->GetNumEdges(); k++){
       if(edges[k] == -1){
 	// this means that the edge with index k is unextended
