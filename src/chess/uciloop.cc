@@ -243,7 +243,7 @@ void UciLoop::SendInfo(const std::vector<ThinkingInfo>& infos) {
     if (info.game_id != -1) res += " gameid " + std::to_string(info.game_id);
     if (info.is_black)
       res += " side " + std::string(*info.is_black ? "black" : "white");
-    if (info.depth >= 0) res += " depth " + std::to_string(info.depth);
+    if (info.depth >= 0) res += " depth " + std::to_string(std::max(info.depth, 1)); // https://github.com/LeelaChessZero/lc0/pull/1247/files
     if (info.seldepth >= 0) res += " seldepth " + std::to_string(info.seldepth);
     if (info.time >= 0) res += " time " + std::to_string(info.time);
     if (info.nodes >= 0) res += " nodes " + std::to_string(info.nodes);

@@ -64,7 +64,7 @@ bool const LOG_RUNNING_INFO = false;
   NodeGlow* SearchWorkerGlow::GetInterestingChild(NodeGlow* node, int depth) {
     // pick an interesting child based on Weight and Policy.
 
-    std::vector<double> effective_weights(node->GetNumEdges(), 0);
+    std::vector<double> effective_weights(node->GetNumEdges(), 0.0f);
     double sum_of_effective_weights = 0;
     std::vector<int> edges(node->GetNumEdges(), -1);
 
@@ -94,10 +94,7 @@ bool const LOG_RUNNING_INFO = false;
       float beta_weight = i->GetN() - alpha_weight;
       float alpha = alpha_policy_prior + alpha_weight;
       float beta = beta_policy_prior + beta_weight;
-      // effective_weights[i->GetIndex()] = alpha / (alpha + beta);
-      // Let's introduce a bias towards promising branches, take this fair distribution of weights and sharpen it.
-      // This will make it play more optimistically (going for good but uncertain variations).
-      effective_weights[i->GetIndex()] = pow(alpha / (alpha + beta), 0.75);
+      effective_weights[i->GetIndex()] = alpha / (alpha + beta);
       sum_of_effective_weights += effective_weights[i->GetIndex()];
       // LOGFILE << "at child " << i->GetIndex() << " with policy " << node->GetEdges()[i->GetIndex()].GetP() << " and weight " << i->GetW() << " and visits " << i->GetN() << " effective weight " << effective_weights[i->GetIndex()];
     }
@@ -118,6 +115,16 @@ bool const LOG_RUNNING_INFO = false;
     // scale weights so they sum to 1.
     std::transform(effective_weights.begin(), effective_weights.end(), effective_weights.begin(), [&scaler](auto& c){return c*scaler;});
 
+    // Let's introduce a bias towards promising branches, take this fair distribution of weights and sharpen it.
+    // This will make it play more optimistically (going for good but uncertain variations).
+    sum_of_effective_weights = 0;
+    for(int k = 0; k < node->GetNumEdges(); k++){
+      effective_weights[k] = pow(effective_weights[k], 2.0f); // above 1 means reduce sharpness of the weight(s), below 1 means sharpen the weights.
+      sum_of_effective_weights += effective_weights[k];
+    }
+    scaler = 1/sum_of_effective_weights;
+    std::transform(effective_weights.begin(), effective_weights.end(), effective_weights.begin(), [&scaler](auto& c){return c*scaler;});
+
     std::random_device r;
     std::default_random_engine eng{r()};
     std::uniform_real_distribution<double> urd(0, 1); // if this sum is just below 1, we could get into a situation where no edge won.
@@ -135,10 +142,16 @@ bool const LOG_RUNNING_INFO = false;
 	    }
 	  }
 	  // The sampled edge is not yet extended
-	  assert(k > node->GetNumChildren());
+	  if(! (k >= node->GetNumChildren())){
+	    LOGFILE << "k is not greater than number of children, but no child had k as index, what is up?";
+	    abort();
+	  }
+	  // assert(k > node->GetNumChildren());
 	  return(nullptr);
       }
     }
+    LOGFILE << "No interesting child found!";
+    abort();
   }
 
 void SearchWorkerGlow::pickNodesToExtend() {
@@ -153,8 +166,8 @@ void SearchWorkerGlow::pickNodesToExtend() {
 
 		while (true) {
 			nodes_visited++;
-			// best_child = node->GetBestChild();
-			best_child = GetInterestingChild(node, depth);
+			best_child = node->GetBestChild();
+			// best_child = GetInterestingChild(node, depth);
 			
 			if (best_child == nullptr) {
 				int nidx = node->GetNextUnexpandedEdge();
@@ -444,8 +457,8 @@ void SearchWorkerGlow::picknextend(PositionHistory *history) {
 	// turn on global tree lock
 	while (new_nodes_size_ < new_nodes_amount_target_ && new_nodes_size_ < new_nodes_amount_limit_) {  // repeat this until minibatch_size amount of non terminal, non cache hit nodes have been found (or reached a predefined limit larger than minibatch size)
 		NodeGlow *node = root_node_;
-		// NodeGlow *best_child = node->GetBestChild();
-		NodeGlow *best_child = GetInterestingChild(node, cum_depth);
+		NodeGlow *best_child = node->GetBestChild();
+		// NodeGlow *best_child = GetInterestingChild(node, cum_depth);
 		if (best_child == nullptr && (node->GetNextUnexpandedEdge() == node->GetNumEdges() || node->GetNextUnexpandedEdge() - node->GetNumChildren() == MAX_NEW_SIBLINGS)) break;  // no more expandable node
 		// starting from root node follow maxidx until next move would make the sub tree to small
 		// propagate no availability upwards to root

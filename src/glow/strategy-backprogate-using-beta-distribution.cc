@@ -229,12 +229,12 @@ float compute_q_and_weights(NodeGlow *node) {
   // Average Q START
   float q = (1.0 - total_children_weight) * node->GetOrigQ();
   for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
-    assert(i->GetW() <= 1 & i->GetW() >= 0);
-    assert(i->GetQ() <= 1 & i->GetQ() >= 0);
+    assert((i->GetW() <= 1) & (i->GetW() >= 0));
+    assert((i->GetQ() <= 1) & (i->GetQ() >= -1));
     q -= i->GetW() * i->GetQ();
   }
   // Average Q STOP
-  assert(q <= 1 & q >=0);
+  assert((q <= 1) & (q >=-1));
   return q;
 }
 
