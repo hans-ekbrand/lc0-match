@@ -136,8 +136,8 @@ void set_strategy_parameters(const SearchParams *params) {
     // float winrate = -0.5 * i->GetQ();
     int realvisits = i->GetN();
     int visits = 0;
-    if (realvisits > 100){
-      visits = 100;
+    if (realvisits > 300){
+      visits = 300;
     } else {
       visits = realvisits;
     }

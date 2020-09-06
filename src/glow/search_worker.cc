@@ -45,7 +45,7 @@ namespace {
 // Alternatives:
 
 // int const MAX_NEW_SIBLINGS = 10000;
-int const MAX_NEW_SIBLINGS = 10000;
+  int const MAX_NEW_SIBLINGS = 1;
   // The maximum number of new siblings. If 1, then it's like old MULTIPLE_NEW_SIBLINGS = false, if >= maximum_number_of_legal_moves it's like MULTIPLE_NEW_SIBLINGS = true
 const int kUciInfoMinimumFrequencyMs = 5000;
 
@@ -55,27 +55,39 @@ int const N_HELPER_THREADS_POST = 3;
 bool const LOG_RUNNING_INFO = false;
 
   // with this set to true pickNodesToExtend() is not used
-bool const OLD_PICK_N_CREATE_MODE = false;
-  // bool const OLD_PICK_N_CREATE_MODE = true;
+  // bool const OLD_PICK_N_CREATE_MODE = false;
+bool const OLD_PICK_N_CREATE_MODE = true;
 
 }  // namespace
 
 
-  NodeGlow* SearchWorkerGlow::GetInterestingChild(NodeGlow* node) {
+  NodeGlow* SearchWorkerGlow::GetInterestingChild(NodeGlow* node, int depth) {
     // pick an interesting child based on Weight and Policy.
 
-    std::vector<float> effective_weights(node->GetNumEdges(), 0);
+    std::vector<double> effective_weights(node->GetNumEdges(), 0);
     double sum_of_effective_weights = 0;
     std::vector<int> edges(node->GetNumEdges(), -1);
 
-    // LOGFILE << "About to calculate weights for extended children";
-    
+    // if there are less than two edges extended, return fast
+    if(node->GetNumChildren() == 0){
+      return(nullptr);
+    }
+
+    if(node->GetNumEdges() == 1){
+      // Only one legal move
+      if(node->GetNumChildren() == 1){
+	return(node->GetFirstChild());
+      } else {
+	return(nullptr);
+      }
+    }
+
     // Calculate weights for extended children:
     for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
       edges[i->GetIndex()] = i->GetIndex();
       // How strong should the policy prior be? That is an open question, for now just set it to some number. Since policy is trained on 800 nodes, some number in that ballpark is
       // probably fine. To make policy and weigh equally after 100 visits, simply set the policy_prior_strength to 100.
-      float policy_prior_strength = 50;
+      float policy_prior_strength = 10;
       float alpha_policy_prior = policy_prior_strength * node->GetEdges()[i->GetIndex()].GetP();
       float beta_policy_prior = policy_prior_strength - alpha_policy_prior;
       float alpha_weight = i->GetN() * i->GetW();
@@ -106,31 +118,24 @@ bool const OLD_PICK_N_CREATE_MODE = false;
     std::random_device r;
     std::default_random_engine eng{r()};
     std::uniform_real_distribution<double> urd(0, 1); // if this sum is just below 1, we could get into a situation where no edge won.
-    float the_sample = urd(eng);
+    double the_sample = urd(eng);
     // LOGFILE << "Sample drawn: " << the_sample;
     sum_of_effective_weights = 0;
     for (int k = 0; k < node->GetNumEdges(); k++){
       sum_of_effective_weights += effective_weights[k];
       if(sum_of_effective_weights >= the_sample){
-	// LOGFILE << "Returning interesting child " << k << " which has effective weight " << effective_weights[k];
-	// If the interesting child is already extended, return a pointer to it, otherwise return nullptr, and the caller shall extend the first unexpanded edge.
-	if(k <= node->GetNumChildren()){
-	  // Return a pointer to this child
+	  // Return a pointer to this child, if it is extended
 	  // This is a bit convoluted, there is no easy way to get a pointer to a node from its index. 
 	  for (NodeGlow *iC = node->GetFirstChild(); iC != nullptr; iC = iC->GetNextSibling()) {
 	    if(iC->GetIndex() == k){
 	      return(iC);
 	    }
 	  }
-	} else {
 	  // The sampled edge is not yet extended
+	  assert(k > node->GetNumChildren());
 	  return(nullptr);
-	}
       }
     }
-    LOGFILE << "No interesting child found. This should never happen. Rounding error? I'll send the node 0 for now.";
-    abort();
-    // return(0);
   }
 
 void SearchWorkerGlow::pickNodesToExtend() {
@@ -138,6 +143,7 @@ void SearchWorkerGlow::pickNodesToExtend() {
 	NodeGlow *best_child;
 
 	int nodes_visited = 0;
+	int depth = 0;
 
 	for (int n = 0; n < new_nodes_amount_target_ && n < new_nodes_amount_limit_; n++) {
 		node = root_node_;
@@ -145,7 +151,7 @@ void SearchWorkerGlow::pickNodesToExtend() {
 		while (true) {
 			nodes_visited++;
 			// best_child = node->GetBestChild();
-			best_child = GetInterestingChild(node);
+			best_child = GetInterestingChild(node, depth);
 			
 			if (best_child == nullptr) {
 				int nidx = node->GetNextUnexpandedEdge();
@@ -159,6 +165,7 @@ void SearchWorkerGlow::pickNodesToExtend() {
 				}
 			}
 			node = best_child;
+			depth++;
 		}
 
 		int junction_mode = 0;
