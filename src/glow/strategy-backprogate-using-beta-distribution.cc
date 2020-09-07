@@ -189,12 +189,17 @@ void set_strategy_parameters(const SearchParams *params) {
     float beta = visits - alpha;
     float E = (alpha + alpha_prior) / (alpha + alpha_prior + beta + beta_prior);
 
-    // Terminal nodes does not have policy, so don't try this on a terminal node.
+    // I haven't thought through how to deal with weights for terminal nodes
     if(i->IsTerminal()){
-      // // Terminal nodes will not get visits anyway, just set the weight to whatever rescaled Q is
-      // i->SetW(i->GetOrigQ());
+      // If it is winning weight is one.
+      // Otherwise, let's leave it at policy for now. TODO fix this here and in search.
+      if(i->GetOrigQ() == 1){
+	i->SetW(1);
+      } else {
+	i->SetW(node->GetEdges()[i->GetIndex()].GetP());
+      }
     } else {
-      // i->SetW(my_weights[j]);
+      // Node was not terminal
       i->SetW(E);
     }
     // LOGFILE << "Child " << node->GetEdges()[i->GetIndex()].GetMove(false).as_string()  << " has policy " << node->GetEdges()[i->GetIndex()].GetP() << " and " << i->GetN() << " true visits and " << win_counts[j] << " out of " << n_samples << " trials and would have got weight " << my_weights[j] << " but with the policy prior the weight becomes: " << E;
@@ -225,15 +230,16 @@ void set_strategy_parameters(const SearchParams *params) {
 float compute_q_and_weights(NodeGlow *node) {
   int number_of_samples = 500; // use this many samples to derive weights
   float total_children_weight = computeChildWeights(node, number_of_samples);
-
-  // Average Q START
+  assert(total_children_weight <= 1) & (total_children_weight >= 0));
+  // weighted average Q START
+  assert((node->GetOrigQ() <= 1) & (node->GetOrigQ() >= -1));
   float q = (1.0 - total_children_weight) * node->GetOrigQ();
   for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
     assert((i->GetW() <= 1) & (i->GetW() >= 0));
     assert((i->GetQ() <= 1) & (i->GetQ() >= -1));
     q -= i->GetW() * i->GetQ();
   }
-  // Average Q STOP
+  // weighted average Q STOP
   assert((q <= 1) & (q >=-1));
   return q;
 }
