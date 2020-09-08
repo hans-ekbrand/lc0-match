@@ -119,7 +119,7 @@ bool const LOG_RUNNING_INFO = false;
     // This will make it play more optimistically (going for good but uncertain variations).
     sum_of_effective_weights = 0;
     for(int k = 0; k < node->GetNumEdges(); k++){
-      effective_weights[k] = pow(effective_weights[k], 2.0f); // above 1 means reduce sharpness of the weight(s), below 1 means sharpen the weights.
+      effective_weights[k] = pow(effective_weights[k], 1.0f); // above 1 means reduce sharpness of the weight(s), below 1 means sharpen the weights.
       sum_of_effective_weights += effective_weights[k];
     }
     scaler = 1/sum_of_effective_weights;
@@ -296,58 +296,69 @@ int SearchWorkerGlow::AddNodeToComputation(NodeGlow* node, PositionHistory *hist
 
 int SearchWorkerGlow::MaybeAddNodeToComputation(NodeGlow* node, PositionHistory *history) {
   auto hash = history->HashLast(cache_history_length_plus_1_);
-	{
-		NNCacheLock nneval(search_->cache_, hash);
-		if (nneval) {  // it's cached
+  {
+    NNCacheLock nneval(search_->cache_, hash);
+    if (nneval) {  // it's cached
 			
-			//float q = -computation_->GetQVal(batchidx);
-			float q = -nneval->q;
-			if (q < -1.0 || q > 1.0) {
-				std::cerr << "q = " << q << "\n";
-				abort();
-				//if (q < -1.0) q = -1.0;
-				//if (q > 1.0) q = 1.0;
-			}
-			node->SetOrigQ(q);
+      //float q = -computation_->GetQVal(batchidx);
+      float q = -nneval->q;
+      if (q < -1.0 || q > 1.0) {
+	std::cerr << "q = " << q << "\n";
+	abort();
+	//if (q < -1.0) q = -1.0;
+	//if (q > 1.0) q = 1.0;
+      }
+      node->SetOrigQ(q);
+      
+      float total = 0.0;
+      int nedge = node->GetNumEdges();
 
-			float total = 0.0;
-			int nedge = node->GetNumEdges();
-			pvals_.clear();
-			for (int k = 0; k < nedge; k++) {
-				if (nneval->p[k].first != node->GetEdges()[k].move_.as_nn_index()) {std::cerr << "as_nn_index mismatch\n"; abort();};
-				float p = nneval->p[k].second;
-				if (p < 0.0) {
-					std::cerr << "p value < 0\n";
-					abort();
-					//p = 0.0;
-				}
-				//if (p > 1.0) {
-				//  std::cerr << "p value > 1\n";
-				//  abort();
-				//}
-				if (p_concentration_ != 1.0) {
-					p = pow(p, p_concentration_);
-				}
-				pvals_.push_back(p);
-				total += p;
-			}
-			if (total > 0.0f) {
-				float scale = 1.0f / total;
-				for (int k = 0; k < nedge; k++) {
-					(node->GetEdges())[k].SetP(pvals_[k] * scale);
-				}
-				node->SortEdgesByPValue();
-			} else {
-				float x = 1.0f / (float)nedge;
-				for (int k = 0; k < nedge; k++) {
-					(node->GetEdges())[k].SetP(x);
-				}
-			}
-			node->SetMaxW(node->GetEdges()[0].GetP());
-
-			return -1;
-		}
+      // Since this is a cache hit, why don't we just copy p and q as is?
+      
+      for (int k = 0; k < nedge; k++) {
+	if (nneval->p[k].first != node->GetEdges()[k].move_.as_nn_index()) {std::cerr << "as_nn_index mismatch\n"; abort();};
+	float p = nneval->p[k].second;
+	if (p < 0.0) {
+	  std::cerr << "p value < 0\n";
+	  abort();
+	  //p = 0.0;
 	}
+	if (p > 1.0) {
+	  std::cerr << "p value > 1\n";
+	  abort();
+	}
+	pvals_.push_back(p);
+	total += p;
+      }
+      if (total > 0.0f) {
+	// this applies policy-softmax-temp, and make sure the sum of P is one, but isn't that already done in the node which we copy from?
+	pvals_.clear();
+	for (int k = 0; k < nedge; k++) {
+	  float p = node->GetEdges()[k].GetP();
+	  if(p_concentration_ != 1.0f){
+	    p = pow(p, p_concentration_);
+	  }
+	  pvals_.push_back(p);
+	  total += p;
+	}
+	float scale = 1 / total;
+	for (int k = 0; k < nedge; k++) {
+	  node->GetEdges()[k].SetPRaw(pvals_[k] * scale);
+	}
+	node->SortEdgesByPValue();		    
+      }
+      if (total == 0.0f){
+	float x = 1.0f / (float)nedge;
+	for (int k = 0; k < nedge; k++) {
+	  (node->GetEdges())[k].SetPRaw(x);
+	}
+      }
+      
+      node->SetMaxW(node->GetEdges()[0].GetP()); // Why would Policy of the first node be the weight?
+      
+      return -1;
+    }
+  }
   auto planes = EncodePositionForNN(*history, 8, history_fill_);
   int nedge = node->GetNumEdges();
   std::vector<uint16_t> moves;
@@ -355,12 +366,12 @@ int SearchWorkerGlow::MaybeAddNodeToComputation(NodeGlow* node, PositionHistory 
   for (int k = 0; k < nedge; k++) {
     moves.emplace_back(node->GetEdges()[k].move_.as_nn_index());
   }  
-	computation_lock_.lock();
-	//computation_->AddInput(std::move(planes));
-	computation_->AddInput(hash, std::move(planes), std::move(moves));
+  computation_lock_.lock();
+  //computation_->AddInput(std::move(planes));
+  computation_->AddInput(hash, std::move(planes), std::move(moves));
   int idx = minibatch_shared_idx_++;
-	computation_lock_.unlock();
-	return idx;
+  computation_lock_.unlock();
+  return idx;
 }
 
 
@@ -643,11 +654,11 @@ void SearchWorkerGlow::retrieveNNResult(NodeGlow* node, int batchidx) {
       abort();
       //p = 0.0;
     }
-    //if (p > 1.0) {
-    //  std::cerr << "p value > 1\n";
-    //  abort();
-    //}
-    if (p_concentration_ != 1.0) {
+    if (p > 1.0) {
+     std::cerr << "p value > 1\n";
+     abort();
+    }
+    if (p_concentration_ != 1.0f) {
       p = pow(p, p_concentration_);
     }
     pvals_.push_back(p);
@@ -655,6 +666,7 @@ void SearchWorkerGlow::retrieveNNResult(NodeGlow* node, int batchidx) {
   }
   if (total > 0.0f) {
     float scale = 1.0f / total;
+    scale = 1.0f; // debug
     for (int k = 0; k < nedge; k++) {
       (node->GetEdges())[k].SetP(pvals_[k] * scale);
     }

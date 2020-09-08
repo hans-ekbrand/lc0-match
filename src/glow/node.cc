@@ -154,11 +154,17 @@ void EdgeGlow::SetP(float p) {
   p_ = (tmp < 0) ? 0 : static_cast<uint16_t>(tmp >> 12);
 }
 
+void EdgeGlow::SetPRaw(float p) {
+  assert(0.0f <= p && p <= 1.0f);
+  p_ = p;
+}
+
 float EdgeGlow::GetP() const {
   // Reshift into place and set the assumed-set exponent bits.
   uint32_t tmp = (static_cast<uint32_t>(p_) << 12) | (3 << 28);
   float ret;
   std::memcpy(&ret, &tmp, sizeof(uint32_t));
+  assert(0.0f <= ret && ret <= 1.0f);
   return ret;
 }
 

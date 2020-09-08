@@ -105,6 +105,7 @@ void set_strategy_parameters(const SearchParams *params) {
   // If there is only one expanded child, this child has the weight of policy.
   if(n == 1){
     float policy = node->GetEdges()[0].GetP();
+    assert(0.0f <= policy && policy <= 1.0f);
     node->GetFirstChild()->SetW(policy);
     return(policy);
   }
@@ -219,6 +220,7 @@ void set_strategy_parameters(const SearchParams *params) {
   // if(normalise_to_sum_of_p & (node->GetNumChildren() < node->GetNumEdges())){
     for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
       // i->SetW(i->GetW() * sum_of_P_of_expanded_nodes);
+      assert(0.0f <= i->GetW() * my_final_scaler && i->GetW() * my_final_scaler <= 1.0f);
       i->SetW(i->GetW() * my_final_scaler);
     }
   // }
@@ -230,7 +232,10 @@ void set_strategy_parameters(const SearchParams *params) {
 float compute_q_and_weights(NodeGlow *node) {
   int number_of_samples = 500; // use this many samples to derive weights
   float total_children_weight = computeChildWeights(node, number_of_samples);
-  assert(total_children_weight <= 1) & (total_children_weight >= 0));
+  if((total_children_weight > 1) | (total_children_weight < 0)){
+    LOGFILE << "total weight weird " << total_children_weight;
+  }
+  assert((total_children_weight <= 1) & (total_children_weight >= 0));
   // weighted average Q START
   assert((node->GetOrigQ() <= 1) & (node->GetOrigQ() >= -1));
   float q = (1.0 - total_children_weight) * node->GetOrigQ();
