@@ -44,6 +44,10 @@ float param_temperatureVisitOffset;
 float param_temperatureWinpctCutoff;
 float param_cpuct;
 
+  std::default_random_engine generator;
+  std::uniform_real_distribution<double> distribution(0.0,1.0);
+  
+
 void set_strategy_parameters(const SearchParams *params) {
 	param_temperature = params->GetTemperature();
 	param_fpuValue_false = params->GetFpuValue(false);
@@ -124,9 +128,6 @@ void set_strategy_parameters(const SearchParams *params) {
   // }
 
   std::valarray<double> matrix( n_samples * n );
-
-  std::default_random_engine generator;
-  std::uniform_real_distribution<double> distribution(0.0,1.0);
 
   int column = 0;
   for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
@@ -219,9 +220,11 @@ void set_strategy_parameters(const SearchParams *params) {
   // This is only necessary when there are unexpanded edges
   // if(normalise_to_sum_of_p & (node->GetNumChildren() < node->GetNumEdges())){
     for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
-      // i->SetW(i->GetW() * sum_of_P_of_expanded_nodes);
-      assert(0.0f <= i->GetW() * my_final_scaler && i->GetW() * my_final_scaler <= 1.0f);
-      i->SetW(i->GetW() * my_final_scaler);
+      // if((0.0f > i->GetW() * my_final_scaler) || (i->GetW() * my_final_scaler > 1.0f)){
+      // 	LOGFILE << "About to set W to " << i->GetW() * my_final_scaler;
+      // }
+      // assert(0.0f <= i->GetW() * my_final_scaler && i->GetW() * my_final_scaler <= 1.0f);
+      i->SetW(std::min(1.0f, i->GetW() * my_final_scaler)); // Hack should be removed when we get rid of sampling.
     }
   // }
 
@@ -232,10 +235,10 @@ void set_strategy_parameters(const SearchParams *params) {
 float compute_q_and_weights(NodeGlow *node) {
   int number_of_samples = 500; // use this many samples to derive weights
   float total_children_weight = computeChildWeights(node, number_of_samples);
-  if((total_children_weight > 1) | (total_children_weight < 0)){
-    LOGFILE << "total weight weird " << total_children_weight;
+  if((total_children_weight >= 1.00014) | (total_children_weight < 0)){
+    LOGFILE << "total weight is weird " << total_children_weight;
   }
-  assert((total_children_weight <= 1) & (total_children_weight >= 0));
+  assert((total_children_weight <= 1.00014) & (total_children_weight >= 0));
   // weighted average Q START
   assert((node->GetOrigQ() <= 1) & (node->GetOrigQ() >= -1));
   float q = (1.0 - total_children_weight) * node->GetOrigQ();

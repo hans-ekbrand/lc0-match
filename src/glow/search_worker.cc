@@ -42,10 +42,15 @@ namespace lczero {
 
 namespace {
 
+    std::random_device r;
+    std::default_random_engine eng{r()};
+    std::uniform_real_distribution<double> urd(0, 1);
+  
+
 // Alternatives:
 
 // int const MAX_NEW_SIBLINGS = 10000;
-  int const MAX_NEW_SIBLINGS = 3;
+  int const MAX_NEW_SIBLINGS = 2;
   // The maximum number of new siblings. If 1, then it's like old MULTIPLE_NEW_SIBLINGS = false, if >= maximum_number_of_legal_moves it's like MULTIPLE_NEW_SIBLINGS = true
 const int kUciInfoMinimumFrequencyMs = 5000;
 
@@ -61,34 +66,51 @@ bool const LOG_RUNNING_INFO = false;
 }  // namespace
 
 
-  NodeGlow* SearchWorkerGlow::GetInterestingChild(NodeGlow* node, int depth) {
+  NodeGlow* SearchWorkerGlow::GetInterestingChild(NodeGlow* node) {
     // pick an interesting child based on Weight and Policy.
 
-    std::vector<double> effective_weights(node->GetNumEdges(), 0.0f);
+    int num_children = node->GetNumChildren();
+    std::vector<double> effective_weights(num_children, 0.0f);
     double sum_of_effective_weights = 0;
-    std::vector<int> edges(node->GetNumEdges(), -1);
+    double sum_of_policy_of_extended_nodes = 0;
 
     // if there are less than two edges extended, return fast
-    if(node->GetNumChildren() == 0){
+    if(num_children == 0){
       return(nullptr);
     }
 
     if(node->GetNumEdges() == 1){
       // Only one legal move
-      if(node->GetNumChildren() == 1){
+      if(num_children == 1){
 	return(node->GetFirstChild());
       } else {
 	return(nullptr);
       }
     }
 
-    // Calculate weights for extended children:
+    // Sum the policy of extended children
     for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
-      edges[i->GetIndex()] = i->GetIndex();
+      float policy = node->GetEdges()[i->GetIndex()].GetP();
+      sum_of_policy_of_extended_nodes += policy;
+    }
+
+    double the_sample = urd(eng);
+
+    // If there are unextended children, then first compare the_sample to sum_of_policy_of_extended_nodes, and if the_sample is higher, then return nullptr.
+    if(num_children < node->GetNumEdges()){
+      if(the_sample > sum_of_policy_of_extended_nodes){
+	return(nullptr);
+      }
+    }
+
+    // ignore the unextended children, the winner must be an extended child.
+    // Calculate weights for extended children
+    for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
       // How strong should the policy prior be? That is an open question, for now just set it to some number. Since policy is trained on 800 nodes, some number in that ballpark is
       // probably fine. To make policy and weigh equally after 100 visits, simply set the policy_prior_strength to 100.
-      float policy_prior_strength = 100;
-      float alpha_policy_prior = policy_prior_strength * node->GetEdges()[i->GetIndex()].GetP();
+      float policy_prior_strength = 20;
+      float policy = node->GetEdges()[i->GetIndex()].GetP();
+      float alpha_policy_prior = policy_prior_strength * policy;
       float beta_policy_prior = policy_prior_strength - alpha_policy_prior;
       float alpha_weight = i->GetN() * i->GetW();
       float beta_weight = i->GetN() - alpha_weight;
@@ -99,57 +121,21 @@ bool const LOG_RUNNING_INFO = false;
       // LOGFILE << "at child " << i->GetIndex() << " with policy " << node->GetEdges()[i->GetIndex()].GetP() << " and weight " << i->GetW() << " and visits " << i->GetN() << " effective weight " << effective_weights[i->GetIndex()];
     }
 
-    // Set weights for unextended children too, This is only necessary when/if we implement extending nodes in non-policy order.
-    for (int k = 0; k < node->GetNumEdges(); k++){
-      if(edges[k] == -1){
-	// this means that the edge with index k is unextended
-	edges[k] = k;
-	effective_weights[k] = node->GetEdges()[k].GetP(); // The weight for unextended edges is simply the policy for that edge.
-	sum_of_effective_weights += effective_weights[k];
-	// LOGFILE << "at child " << k << " with policy " << node->GetEdges()[k].GetP() << " not yet extended" << " stored: " << effective_weights[k] ;
-      }
-    }
-    // LOGFILE << "Sum of effective weights: " << sum_of_effective_weights;
     double scaler = 1/sum_of_effective_weights;
     
     // scale weights so they sum to 1.
     std::transform(effective_weights.begin(), effective_weights.end(), effective_weights.begin(), [&scaler](auto& c){return c*scaler;});
 
-    // Let's introduce a bias towards promising branches, take this fair distribution of weights and sharpen it.
-    // This will make it play more optimistically (going for good but uncertain variations).
     sum_of_effective_weights = 0;
-    for(int k = 0; k < node->GetNumEdges(); k++){
-      effective_weights[k] = pow(effective_weights[k], 1.0f); // above 1 means reduce sharpness of the weight(s), below 1 means sharpen the weights.
-      sum_of_effective_weights += effective_weights[k];
-    }
-    scaler = 1/sum_of_effective_weights;
-    std::transform(effective_weights.begin(), effective_weights.end(), effective_weights.begin(), [&scaler](auto& c){return c*scaler;});
 
-    std::random_device r;
-    std::default_random_engine eng{r()};
-    std::uniform_real_distribution<double> urd(0, 1); // if this sum is just below 1, we could get into a situation where no edge won.
-    double the_sample = urd(eng);
-    // LOGFILE << "Sample drawn: " << the_sample;
-    sum_of_effective_weights = 0;
-    for (int k = 0; k < node->GetNumEdges(); k++){
-      sum_of_effective_weights += effective_weights[k];
-      if(sum_of_effective_weights >= the_sample){
-	  // Return a pointer to this child, if it is extended
-	  // This is a bit convoluted, there is no easy way to get a pointer to a node from its index. 
-	  for (NodeGlow *iC = node->GetFirstChild(); iC != nullptr; iC = iC->GetNextSibling()) {
-	    if(iC->GetIndex() == k){
-	      return(iC);
-	    }
-	  }
-	  // The sampled edge is not yet extended
-	  if(! (k >= node->GetNumChildren())){
-	    LOGFILE << "k is not greater than number of children, but no child had k as index, what is up?";
-	    abort();
-	  }
-	  // assert(k > node->GetNumChildren());
-	  return(nullptr);
+    for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
+      sum_of_effective_weights += effective_weights[i->GetIndex()];
+      // make sure one child is choosen, even if there are numerical problems (the sample is 1 and the sum of effective weights never quite reaches one.
+      if((sum_of_effective_weights >= the_sample) || (i->GetNextSibling() == nullptr)){
+	return(i);
       }
     }
+    
     LOGFILE << "No interesting child found!";
     abort();
   }
@@ -166,8 +152,8 @@ void SearchWorkerGlow::pickNodesToExtend() {
 
 		while (true) {
 			nodes_visited++;
-			best_child = node->GetBestChild();
-			// best_child = GetInterestingChild(node, depth);
+			// best_child = node->GetBestChild();
+			best_child = GetInterestingChild(node);
 			
 			if (best_child == nullptr) {
 				int nidx = node->GetNextUnexpandedEdge();
@@ -299,59 +285,11 @@ int SearchWorkerGlow::MaybeAddNodeToComputation(NodeGlow* node, PositionHistory 
   {
     NNCacheLock nneval(search_->cache_, hash);
     if (nneval) {  // it's cached
-			
-      //float q = -computation_->GetQVal(batchidx);
       float q = -nneval->q;
-      if (q < -1.0 || q > 1.0) {
-	std::cerr << "q = " << q << "\n";
-	abort();
-	//if (q < -1.0) q = -1.0;
-	//if (q > 1.0) q = 1.0;
-      }
       node->SetOrigQ(q);
-      
-      float total = 0.0;
       int nedge = node->GetNumEdges();
-
-      // Since this is a cache hit, why don't we just copy p and q as is?
-      
       for (int k = 0; k < nedge; k++) {
-	if (nneval->p[k].first != node->GetEdges()[k].move_.as_nn_index()) {std::cerr << "as_nn_index mismatch\n"; abort();};
-	float p = nneval->p[k].second;
-	if (p < 0.0) {
-	  std::cerr << "p value < 0\n";
-	  abort();
-	  //p = 0.0;
-	}
-	if (p > 1.0) {
-	  std::cerr << "p value > 1\n";
-	  abort();
-	}
-	pvals_.push_back(p);
-	total += p;
-      }
-      if (total > 0.0f) {
-	// this applies policy-softmax-temp, and make sure the sum of P is one, but isn't that already done in the node which we copy from?
-	pvals_.clear();
-	for (int k = 0; k < nedge; k++) {
-	  float p = node->GetEdges()[k].GetP();
-	  if(p_concentration_ != 1.0f){
-	    p = pow(p, p_concentration_);
-	  }
-	  pvals_.push_back(p);
-	  total += p;
-	}
-	float scale = 1 / total;
-	for (int k = 0; k < nedge; k++) {
-	  node->GetEdges()[k].SetPRaw(pvals_[k] * scale);
-	}
-	node->SortEdgesByPValue();		    
-      }
-      if (total == 0.0f){
-	float x = 1.0f / (float)nedge;
-	for (int k = 0; k < nedge; k++) {
-	  (node->GetEdges())[k].SetPRaw(x);
-	}
+	node->GetEdges()[k].SetP(nneval->p[k].second);
       }
       
       node->SetMaxW(node->GetEdges()[0].GetP()); // Why would Policy of the first node be the weight?
@@ -649,15 +587,7 @@ void SearchWorkerGlow::retrieveNNResult(NodeGlow* node, int batchidx) {
   pvals_.clear();
   for (int k = 0; k < nedge; k++) {
     float p = computation_->GetPVal(batchidx, (node->GetEdges())[k].move_.as_nn_index());
-    if (p < 0.0) {
-      std::cerr << "p value < 0\n";
-      abort();
-      //p = 0.0;
-    }
-    if (p > 1.0) {
-     std::cerr << "p value > 1\n";
-     abort();
-    }
+    assert((p >= 0.0) && (p <= 1.0));
     if (p_concentration_ != 1.0f) {
       p = pow(p, p_concentration_);
     }
@@ -666,7 +596,6 @@ void SearchWorkerGlow::retrieveNNResult(NodeGlow* node, int batchidx) {
   }
   if (total > 0.0f) {
     float scale = 1.0f / total;
-    scale = 1.0f; // debug
     for (int k = 0; k < nedge; k++) {
       (node->GetEdges())[k].SetP(pvals_[k] * scale);
     }
@@ -677,7 +606,7 @@ void SearchWorkerGlow::retrieveNNResult(NodeGlow* node, int batchidx) {
       (node->GetEdges())[k].SetP(x);
     }
   }
-	node->SetMaxW(node->GetEdges()[0].GetP());
+  node->SetMaxW(node->GetEdges()[0].GetP());
 }
 
 

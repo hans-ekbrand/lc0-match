@@ -94,8 +94,7 @@ private:
 
 	void picknextend(PositionHistory *history);
 
-        NodeGlow* GetInterestingChild(NodeGlow* node, int depth);
-        // int GetInterestingChild(NodeGlow* node);
+        NodeGlow* GetInterestingChild(NodeGlow* node);
 
 	SearchGlow *search_;
 
