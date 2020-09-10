@@ -52,6 +52,7 @@ public:
 	SearchWorkerGlow(SearchGlow *search) :
 		search_(search),
 		q_concentration_(search->params_.GetCpuct()),
+		max_new_siblings_(search->params_.GetMaxPrefetchBatch()),
 		p_concentration_(search->params_.GetPolicySoftmaxTemp()),
 		policy_weight_exponent_(search->params_.GetCpuctFactor()),
 		batch_size_(search->params_.GetMiniBatchSize()),
@@ -114,6 +115,7 @@ private:
 
 	const float q_concentration_;
 	const float p_concentration_;
+  	const float max_new_siblings_;
 	const float policy_weight_exponent_; // weight of policy relative to weight of q: pow(n, pwe)/n where n is the number of subnodes of the current node.	
 	const int batch_size_;
   const int new_nodes_amount_limit_;

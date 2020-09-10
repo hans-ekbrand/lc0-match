@@ -46,7 +46,8 @@ namespace {
 
 // Alternatives:
 
-  int const MAX_NEW_SIBLINGS = 3;
+//   int const MAX_NEW_SIBLINGS = 2;
+// replaced by max_new_siblings_ which is a parameter fetched by GetMaxPrefetchBatch()
   // The maximum number of new siblings. If 1, then it's like old MULTIPLE_NEW_SIBLINGS = false, if >= maximum_number_of_legal_moves it's like MULTIPLE_NEW_SIBLINGS = true
 const int kUciInfoMinimumFrequencyMs = 5000;
 
@@ -91,7 +92,7 @@ void SearchWorkerGlow::pickNodesToExtend() {
 			best_child = node->GetBestChild();
 			if (best_child == nullptr) {
 				int nidx = node->GetNextUnexpandedEdge();
-				if (nidx < node->GetNumEdges() && nidx - node->GetNumChildren() < MAX_NEW_SIBLINGS) {
+				if (nidx < node->GetNumEdges() && nidx - node->GetNumChildren() < max_new_siblings_) {
 					new_nodes_[new_nodes_size_] = {std::make_unique<NodeGlow>(node, nidx), node, 0xFFFF, -1};
 					new_nodes_size_++;
 					node->SetNextUnexpandedEdge(nidx + 1);
@@ -529,7 +530,7 @@ void SearchWorkerGlow::picknextend(PositionHistory *history) {
 		NodeGlow *node = root_node_;
 		if (node->GetMaxW() == 0.0) break;  // no more expandable node
 		NodeGlow *best_child = node->GetBestChild();
-//		if (best_child == nullptr && (node->GetNextUnexpandedEdge() == node->GetNumEdges() || node->GetNextUnexpandedEdge() - node->GetNumChildren() == MAX_NEW_SIBLINGS)) break;  // no more expandable node
+//		if (best_child == nullptr && (node->GetNextUnexpandedEdge() == node->GetNumEdges() || node->GetNextUnexpandedEdge() - node->GetNumChildren() == max_new_siblings_)) break;  // no more expandable node
 		
 		while (true) {
 			if (best_child == nullptr || node->GetN() <= MAX_SUBTREE_SIZE) break;
@@ -854,7 +855,7 @@ inline float SearchWorkerGlow::recalcMaxW_local(NodeGlow *node) {
 	NodeGlow *max_child = nullptr;
 	float max_w = 0.0;
 	int nidx = node->GetNextUnexpandedEdge();
-	if (nidx < node->GetNumEdges() && nidx - node->GetNumChildren() < MAX_NEW_SIBLINGS) {
+	if (nidx < node->GetNumEdges() && nidx - node->GetNumChildren() < max_new_siblings_) {
 		max_w = node->GetEdges()[nidx].GetP();
 	}
 	for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
