@@ -128,7 +128,7 @@ bool SearchGlow::IsSearchActive() const {
 
 namespace {
 
-  NodeGlow *indexOfHighestQEdge(NodeGlow* node, bool black_to_move) {
+  NodeGlow *indexOfHighestQEdge(NodeGlow* node) {
     float highestq = -2.0;
     NodeGlow *bestidx = nullptr;
     for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
@@ -262,7 +262,7 @@ void SearchGlow::SendUciInfo() {
     NodeGlow* n = bestidx;
     while (n && n->GetFirstChild() != nullptr) {
       flip = !flip;
-      NodeGlow *bestidx = indexOfHighestQEdge(n, played_history_.IsBlackToMove());
+      NodeGlow *bestidx = indexOfHighestQEdge(n);
       uci_info.pv.push_back(n->GetEdges()[bestidx->GetIndex()].GetMove(flip));
       n = bestidx;
     }
@@ -375,9 +375,9 @@ void SearchGlow::SendMovesStats() {
 }
 
 void SearchGlow::reportBestMove() {
-	NodeGlow *bestidx = indexOfHighestQEdge(root_node_, played_history_.IsBlackToMove());
+	NodeGlow *bestidx = indexOfHighestQEdge(root_node_);
 	Move best_move = root_node_->GetEdges()[bestidx->GetIndex()].GetMove(played_history_.IsBlackToMove());
-	NodeGlow *ponderidx = indexOfHighestQEdge(bestidx, played_history_.IsBlackToMove()); // harmless to report a bad pondermove.
+	NodeGlow *ponderidx = indexOfHighestQEdge(bestidx); // harmless to report a bad pondermove.
 	// If the move we make is terminal, then there is nothing to ponder about.
 	// Also, if the bestmove doesn't have any children, then don't report a ponder move.
 	if(!bestidx->IsTerminal() && ponderidx != nullptr){

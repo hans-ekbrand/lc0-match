@@ -50,7 +50,7 @@ namespace {
 // Alternatives:
 
 // int const MAX_NEW_SIBLINGS = 10000;
-  int const MAX_NEW_SIBLINGS = 2;
+  int const MAX_NEW_SIBLINGS = 1;
   // The maximum number of new siblings. If 1, then it's like old MULTIPLE_NEW_SIBLINGS = false, if >= maximum_number_of_legal_moves it's like MULTIPLE_NEW_SIBLINGS = true
 const int kUciInfoMinimumFrequencyMs = 5000;
 
@@ -108,7 +108,8 @@ bool const LOG_RUNNING_INFO = false;
     for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
       // How strong should the policy prior be? That is an open question, for now just set it to some number. Since policy is trained on 800 nodes, some number in that ballpark is
       // probably fine. To make policy and weigh equally after 100 visits, simply set the policy_prior_strength to 100.
-      float policy_prior_strength = 20;
+      // 800 nodes is per parent though, here we mix in that prior for each child, so must use a much lower number.
+      float policy_prior_strength = 2.2;
       float policy = node->GetEdges()[i->GetIndex()].GetP();
       float alpha_policy_prior = policy_prior_strength * policy;
       float beta_policy_prior = policy_prior_strength - alpha_policy_prior;
