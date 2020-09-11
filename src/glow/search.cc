@@ -128,18 +128,21 @@ bool SearchGlow::IsSearchActive() const {
 
 namespace {
 
-  NodeGlow *indexOfHighestQEdge(NodeGlow* node) {
+  NodeGlow *indexOfHighestQEdge(NodeGlow* node, bool filter_out_unsafe_moves) {
+    // This function must only be called in the move selection process, by SendUciInfo() and reportBestMove()
     float highestq = -2.0;
     NodeGlow *bestidx = nullptr;
     for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
       float q = i->GetQ();
-      if(q < -1 || q > 1){
-	LOGFILE << "Warning abs(Q) is above 1, q=" << q;
-      }
+      assert((q >= -1) && (q >= 1));
       if (q > highestq) {
 	highestq = q;
 	bestidx = i;
       }
+    }
+
+    if(!filter_out_unsafe_moves){
+      return bestidx;
     }
 
     // If bestidx is terminal, then just play it. Otherwise, play the move with the highest expected value.
@@ -149,7 +152,7 @@ namespace {
     }
 
     // Put a rather strong prior on q (rescaled to [0,1]), so that a move candidate really have quite some visits that backup the claim that it is good.
-    // Let's use the squary root of the total number of visits as a prior, so alpha=1, beta=sqrt(N).
+    // Let's use the squar root of the total number of visits as a prior, so alpha=1, beta=sqrt(N).
     // What we want to avoid is situations where the best q is, say 0.15 with 100 visits and next best q has 0.14 and 900 visits (of a total of 3000 visits).
     // In this situation, better go with 0.14.
     // The observational data is 100 visits, mean = 0.15, which we could express as: 100 = alpha + beta - 2; 0.15 = alpha / (alpha + beta);
@@ -175,10 +178,12 @@ namespace {
       }
     }
     
-    // if(really_bestidx != bestidx){
-    //   LOGFILE << "VETO against the uncertain move " << node->GetEdges()[bestidx->GetIndex()].GetMove(black_to_move).as_string() << " with only " << bestidx->GetN() << " visits and q = " << bestidx->GetQ() * -1;
-    //   LOGFILE << "Best expected value after applying the prior as move " << node->GetEdges()[really_bestidx->GetIndex()].GetMove(black_to_move).as_string() << " with " << really_bestidx->GetN() << " visits and q = " << really_bestidx->GetQ() * -1;
-    // }
+    if(really_bestidx != bestidx){
+      // We don't now if it is black or white to move, so print both and say it's one of them.
+      LOGFILE << "VETO against the uncertain move " << node->GetEdges()[bestidx->GetIndex()].GetMove(false).as_string() << " or " << node->GetEdges()[bestidx->GetIndex()].GetMove(true).as_string() << " with only " << bestidx->GetN() << " visits and q = " << bestidx->GetQ();
+      LOGFILE << "Best expected value after applying the prior as move " << node->GetEdges()[really_bestidx->GetIndex()].GetMove(false).as_string() << " or " << node->GetEdges()[really_bestidx->GetIndex()].GetMove(true).as_string() << " with " << really_bestidx->GetN() << " visits and q = " << really_bestidx->GetQ();
+      LOGFILE << "Beta prior applied for move selection: " << beta_prior << " based on " << node->GetN() << " visits at root";
+    }
     return really_bestidx;
   }
 }
@@ -262,11 +267,14 @@ void SearchGlow::SendUciInfo() {
     NodeGlow* n = bestidx;
     while (n && n->GetFirstChild() != nullptr) {
       flip = !flip;
-      NodeGlow *bestidx = indexOfHighestQEdge(n);
+      NodeGlow *bestidx = indexOfHighestQEdge(n, false);
       uci_info.pv.push_back(n->GetEdges()[bestidx->GetIndex()].GetMove(flip));
       n = bestidx;
     }
     uci_info.nodes = bestidx->GetN();
+
+    // LOGFILE << "nodes: " << bestidx->GetN() << " q: " << bestidx->GetQ() << " w: " << bestidx->GetW();
+    
   }
 
   // reverse the order
@@ -375,9 +383,9 @@ void SearchGlow::SendMovesStats() {
 }
 
 void SearchGlow::reportBestMove() {
-	NodeGlow *bestidx = indexOfHighestQEdge(root_node_);
+  NodeGlow *bestidx = indexOfHighestQEdge(root_node_, true);
 	Move best_move = root_node_->GetEdges()[bestidx->GetIndex()].GetMove(played_history_.IsBlackToMove());
-	NodeGlow *ponderidx = indexOfHighestQEdge(bestidx); // harmless to report a bad pondermove.
+	NodeGlow *ponderidx = indexOfHighestQEdge(bestidx, false); // harmless to report a bad pondermove.
 	// If the move we make is terminal, then there is nothing to ponder about.
 	// Also, if the bestmove doesn't have any children, then don't report a ponder move.
 	if(!bestidx->IsTerminal() && ponderidx != nullptr){
