@@ -49,8 +49,8 @@ namespace {
 
 // Alternatives:
 
- int const MAX_NEW_SIBLINGS = 1;
-  // int const MAX_NEW_SIBLINGS = 1;
+  // int const MAX_NEW_SIBLINGS = 1000;
+  int const MAX_NEW_SIBLINGS = 1;
   // The maximum number of new siblings. If 1, then it's like old MULTIPLE_NEW_SIBLINGS = false, if >= maximum_number_of_legal_moves it's like MULTIPLE_NEW_SIBLINGS = true
 const int kUciInfoMinimumFrequencyMs = 5000;
 
@@ -105,23 +105,21 @@ bool const LOG_RUNNING_INFO = false;
 
     // ignore the unextended children, the winner must be an extended child.
     // Calculate weights for extended children
-    // at n==1, let policy be almost 1; at n == 800 let policy be 0.
-    uint32_t n = 0;
+    
+    // Let policy influence which children are traversed and which leaves are extended, but make sure there is room for the q-signal to change the final distribution, or else we would
+    // get into self-reinforcement loops where policy drifts unboundedly to sharper and sharper distributions. Since we use approx 800 nodes per move in training, it sounds reasonable
+    // to let policy affect node selection only until one fourth of that budget is used. Note, however, that this is at root, in tree most nodes will have an substantial policy influence even
+    // after that. To make sure the q-signal will help the network to learn, cap the policy influence to 0.5 regardless of number of visits to the parent.
+    float n = 0.0f;
     float policy_weight_starting_point = 0.5; // Let policy weigh this much when visits is 1.
-    float policy_weight = std::max(n, (800 - node->GetN()))/800 * policy_weight_starting_point;
+    float policy_decay = 200.0; // after this number of visits, forget about policy.
+    float policy_weight = std::max(n, (policy_decay - node->GetN()))/policy_decay * policy_weight_starting_point;
+    float weight_weight = 1 - policy_weight;
+    // if(node->GetN() % 50 == 0){
+      // LOGFILE << "policy_weight: " << policy_weight << " visits: " << node->GetN();
+    // }
     for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
-      // How strong should the policy prior be? That is an open question, for now just set it to some number. Since policy is trained on 800 nodes, some number in that ballpark is
-      // probably fine. To make policy and weigh equally after 100 visits, simply set the policy_prior_strength to 100.
-      // 800 nodes is per parent though, here we mix in that prior for each child, so must use a much lower number.
-      // float policy_prior_strength = 3;
-      // float policy = node->GetEdges()[i->GetIndex()].GetP();
-      // float alpha_policy_prior = policy_prior_strength * policy;
-      // float beta_policy_prior = policy_prior_strength - alpha_policy_prior;
-      // float alpha = i->GetN() * i->GetW() + 1;
-      // float beta = i->GetN() - alpha + 1;
-      // effective_weights[i->GetIndex()] = alpha / (alpha + beta);
-      // effective_weights[i->GetIndex()] = alpha / (alpha + beta) + policy_weight * node->GetEdges()[i->GetIndex()].GetP();
-      effective_weights[i->GetIndex()] = i->GetW() / policy_weight + policy_weight * node->GetEdges()[i->GetIndex()].GetP();
+      effective_weights[i->GetIndex()] = i->GetW() * weight_weight + policy_weight * node->GetEdges()[i->GetIndex()].GetP();
       sum_of_effective_weights += effective_weights[i->GetIndex()];
       // LOGFILE << "at child " << i->GetIndex() << " with policy " << node->GetEdges()[i->GetIndex()].GetP() << " and weight " << i->GetW() << " and visits " << i->GetN() << " effective weight " << effective_weights[i->GetIndex()];
     }

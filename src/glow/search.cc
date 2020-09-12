@@ -162,7 +162,7 @@ namespace {
     // For the child with 900 visits, we get alpha = 126, beta = 774, add the prior and we have alpha = 127, beta = 913
     // E = 127 / (127 + 913) = 0.12
 
-    float beta_prior = pow(node->GetN(), 0.5);
+    float beta_prior = pow(node->GetN(), 0.3);
     float alpha_prior = 1.0f;
     float highest_E = -1.0f;
     NodeGlow *really_bestidx = nullptr;

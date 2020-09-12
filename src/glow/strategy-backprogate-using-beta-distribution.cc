@@ -138,8 +138,8 @@ void set_strategy_parameters(const SearchParams *params) {
     // float winrate = -0.5 * i->GetQ();
     int realvisits = i->GetN();
     int visits = 0;
-    if (realvisits > 120){
-      visits = 120;
+    if (realvisits > 100){
+      visits = 100;
     } else {
       visits = realvisits;
     }
@@ -176,10 +176,7 @@ void set_strategy_parameters(const SearchParams *params) {
   for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
     my_weights[j] = win_counts[j] * my_scaler;
 
-    float policy_decay_factor = 0.0f;
-    float alpha_prior = node->GetEdges()[i->GetIndex()].GetP() * policy_decay_factor;
-    float beta_prior = policy_decay_factor - alpha_prior;
-
+    // avoid numeric problem by caping n at 100.
     int realvisits = i->GetN();
     int visits = 0;
     if (realvisits > 100){
@@ -188,8 +185,9 @@ void set_strategy_parameters(const SearchParams *params) {
       visits = realvisits;
     }
     float alpha = my_weights[j] * visits;
-    float beta = visits - alpha;
-    float E = (alpha + alpha_prior) / (alpha + alpha_prior + beta + beta_prior);
+    float beta_prior = 0; // To start with something close to 0 set this to a high number. To get uniform, set it to 0.
+    float beta = beta_prior + visits - alpha;
+    float E = alpha / (alpha + beta);
 
     // I haven't thought through how to deal with weights for terminal nodes
     if(i->IsTerminal()){
