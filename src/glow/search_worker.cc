@@ -49,8 +49,8 @@ namespace {
 
 // Alternatives:
 
-// int const MAX_NEW_SIBLINGS = 10000;
-  int const MAX_NEW_SIBLINGS = 1;
+ int const MAX_NEW_SIBLINGS = 1;
+  // int const MAX_NEW_SIBLINGS = 1;
   // The maximum number of new siblings. If 1, then it's like old MULTIPLE_NEW_SIBLINGS = false, if >= maximum_number_of_legal_moves it's like MULTIPLE_NEW_SIBLINGS = true
 const int kUciInfoMinimumFrequencyMs = 5000;
 
@@ -105,19 +105,23 @@ bool const LOG_RUNNING_INFO = false;
 
     // ignore the unextended children, the winner must be an extended child.
     // Calculate weights for extended children
+    // at n==1, let policy be almost 1; at n == 800 let policy be 0.
+    uint32_t n = 0;
+    float policy_weight_starting_point = 0.5; // Let policy weigh this much when visits is 1.
+    float policy_weight = std::max(n, (800 - node->GetN()))/800 * policy_weight_starting_point;
     for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
       // How strong should the policy prior be? That is an open question, for now just set it to some number. Since policy is trained on 800 nodes, some number in that ballpark is
       // probably fine. To make policy and weigh equally after 100 visits, simply set the policy_prior_strength to 100.
       // 800 nodes is per parent though, here we mix in that prior for each child, so must use a much lower number.
-      float policy_prior_strength = 2.2;
-      float policy = node->GetEdges()[i->GetIndex()].GetP();
-      float alpha_policy_prior = policy_prior_strength * policy;
-      float beta_policy_prior = policy_prior_strength - alpha_policy_prior;
-      float alpha_weight = i->GetN() * i->GetW();
-      float beta_weight = i->GetN() - alpha_weight;
-      float alpha = alpha_policy_prior + alpha_weight;
-      float beta = beta_policy_prior + beta_weight;
-      effective_weights[i->GetIndex()] = alpha / (alpha + beta);
+      // float policy_prior_strength = 3;
+      // float policy = node->GetEdges()[i->GetIndex()].GetP();
+      // float alpha_policy_prior = policy_prior_strength * policy;
+      // float beta_policy_prior = policy_prior_strength - alpha_policy_prior;
+      // float alpha = i->GetN() * i->GetW() + 1;
+      // float beta = i->GetN() - alpha + 1;
+      // effective_weights[i->GetIndex()] = alpha / (alpha + beta);
+      // effective_weights[i->GetIndex()] = alpha / (alpha + beta) + policy_weight * node->GetEdges()[i->GetIndex()].GetP();
+      effective_weights[i->GetIndex()] = i->GetW() / policy_weight + policy_weight * node->GetEdges()[i->GetIndex()].GetP();
       sum_of_effective_weights += effective_weights[i->GetIndex()];
       // LOGFILE << "at child " << i->GetIndex() << " with policy " << node->GetEdges()[i->GetIndex()].GetP() << " and weight " << i->GetW() << " and visits " << i->GetN() << " effective weight " << effective_weights[i->GetIndex()];
     }
