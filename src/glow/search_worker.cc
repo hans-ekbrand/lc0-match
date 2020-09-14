@@ -46,7 +46,6 @@ namespace {
 
 // Alternatives:
 
-int const MAX_NEW_SIBLINGS = 1;
 // replaced by max_new_siblings_ which is a parameter fetched by GetMaxPrefetchBatch()
   // The maximum number of new siblings. If 1, then it's like old MULTIPLE_NEW_SIBLINGS = false, if >= maximum_number_of_legal_moves it's like MULTIPLE_NEW_SIBLINGS = true
 const int kUciInfoMinimumFrequencyMs = 5000;
