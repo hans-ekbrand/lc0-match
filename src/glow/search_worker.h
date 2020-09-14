@@ -87,7 +87,7 @@ private:
 	void recalcPropagatedQ(NodeGlow* node);
 	void pickNodesToExtend();
 	int appendHistoryFromTo(std::vector<Move> *movestack, PositionHistory *history, NodeGlow* from, NodeGlow* to);
-	float computeChildWeights(NodeGlow* node, bool evalution_weights);
+	//float computeChildWeights(NodeGlow* node, bool evalution_weights);
 	int propagate();
 	int extendTree(std::vector<Move> *movestack, PositionHistory *history);
 	void buildJunctionRTree();

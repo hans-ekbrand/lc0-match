@@ -28,10 +28,7 @@
 #include "glow/strategy.h"
 
 #include <iostream>
-#include <valarray> // for easily finding winners from the beta sampling
-
-// use kumaraswamy instead of beta, sample from uniform [0,1]
-#include <random>
+#include <math.h>
 
 #include <cassert>  // assert() used for debugging during development
 
@@ -43,9 +40,6 @@ int param_maxCollisionVisitsId;
 float param_temperatureVisitOffset;
 float param_temperatureWinpctCutoff;
 float param_cpuct;
-
-  std::default_random_engine generator;
-  std::uniform_real_distribution<double> distribution(0.0,1.0);
   
 
 void set_strategy_parameters(const SearchParams *params) {
@@ -90,164 +84,179 @@ void set_strategy_parameters(const SearchParams *params) {
 
   // Tree traversing is sufficiently different from backpropagating that we can have two different functions. computeChildWeight() is for backpropagating and could be analytical (or use sampling)
 
-  float computeChildWeights(NodeGlow* node, int n_samples) {
 
-    // LOGFILE << "Entered computeChildweights";
 
-  // 1. find out the sum of P for all extended nodes (return this)
-  // 2. Obtain the probability of each node have the highest <true value>/<generating rate>
-  // 2a. Set up a matrix with m rows and n columns, where n is the number of extended nodes and m is the number of samples you can afford.
-  // 2b. Fill in the matrix column by column with samples
-  // 2c. count number of wins row by row.
-  // 2d. calculate the proportion of wins for each edge.
-  // 3. Set each node's weight to that probability (normalised to the sum of P for all extended nodes, if used with glow, not normalised if used with a mcmc tree traverser).
 
-  // Todo: make sure the use the random number generator is thread safe.
+// calculates approximate probability for each of a set beta distributed random variables to have the highest value
+// constant parameter: MAX_INTERVALS is the maximum number of intervals used for the computation
+// input:
+// qnw.size() is the number of random variables
+// qnw[i].first is the q for variable i, i.e. 2 * mu - 1
+// qnw[i].second is the n for variable i, i.e. nu
+// beta distributions have prior (1,1)
+// qnw.size() >= 0
+// for each q, -1 <= q <= 1
+// foe each n, 0 <= n or n = +infinity
+// output:
+// qnw[i].first is relative probability of variable i to be highest
+//  0 <= qnw[i].first <= 1
+// qnw[i].second is unchanged
+// return value is sum of probabilities
+//  0 < sum <= 1 when qnw.size() > 0, typically 0.95-0.98
+//  sum = 0 when qnw.size() = 0
+// time complexity: O(qnw.size() * min(qnw.size(), MAX_INTERVALS))
+// error: mean error per variable probability is typically 0.02 for 5 variables, 0.01 for 10 variables
+//  (provided MAX_INTERVALS >= 10)
+
+#define MAX_INTERVALS 20
+
+int compare_doubles(const void* a, const void* b)
+{
+    double arg1 = *(const double*)a;
+    double arg2 = *(const double*)b;
+ 
+    if (arg1 < arg2) return -1;
+    if (arg1 > arg2) return 1;
+    return 0;
+}
+
+struct sortunit {
+ double v;
+ int idx;
+};
+
+double calc_beta_distr_pwin(std::vector<std::pair<double, double>> &qnw) {
+
+ const int nvar = qnw.size();
+
+ struct sortunit maxs[nvar];
+ double logmaxs[nvar][2];
+ double albes[nvar][2];
+
+ for (int j = 0; j < nvar; j++) {
+  const double q = ldexp(qnw[j].first + 1.0, -1);
+  maxs[j].v = q;
+  maxs[j].idx = j;
+
+  logmaxs[j][0] = log2(q);
+  logmaxs[j][1] = log2(1.0 - q);
+  const double size = qnw[j].second;
+  albes[j][0] = q * size;
+  albes[j][1] = size - albes[j][0];
+ }
+
+ qsort(maxs, nvar, sizeof(struct sortunit), compare_doubles);
+
+ const int nintval = MAX_INTERVALS < nvar ? MAX_INTERVALS : nvar;
+
+ double p[nvar][nintval];
+
+ const int maxsoff = nvar - nintval;
+
+ for (int j = 0; j < nvar; j++) {
+  double sum = 0.0;
+  double llim = 0.0;
+  const int idxj = maxs[j].idx;
+  if (isinf(qnw[idxj].second)) {
+   for (int k = 0; k < nintval; k++) {
+    const double rlim = (k == nintval - 1) ? 1.0 : (0.5 * (maxs[maxsoff + k].v + maxs[maxsoff + k + 1].v));
+    const int idxk = maxs[maxsoff + k].idx;
+    if (k == 0 && j <= maxsoff || idxk == idxj) {
+     p[j][k] = rlim - llim;
+    } else {
+     p[j][k] = qnw[idxj].first == qnw[idxk].first ? (rlim - llim) : 0.0;
+    }
+    sum += p[j][k];
+    llim = rlim;
+   }
+  } else {
+   for (int k = 0; k < nintval; k++) {
+    const double rlim = (k == nintval - 1) ? 1.0 : (0.5 * (maxs[maxsoff + k].v + maxs[maxsoff + k + 1].v));
+    const int idxk = maxs[maxsoff + k].idx;
+    if (k == 0 && j <= maxsoff || idxk == idxj) {
+     p[j][k] = rlim - llim;
+    } else {
+     p[j][k] =
+      exp2(
+       (albes[idxj][0] == 0.0 ? 0.0 : ((logmaxs[idxk][0] - logmaxs[idxj][0]) * albes[idxj][0])) +
+       (albes[idxj][1] == 0.0 ? 0.0 : ((logmaxs[idxk][1] - logmaxs[idxj][1]) * albes[idxj][1]))
+      ) * (rlim - llim);
+    }
+    sum += p[j][k];
+    llim = rlim;
+   }
+  }
+  for (int k = 0; k < nintval; k++) {
+   p[j][k] /= sum;
+  }
+ }
+
+ for (int j = 0; j < nvar; j++) {
+  albes[j][0] = 0.0;
+  albes[j][1] = 0.0;
+ }
+ 
+ for (int k = 0; k < nintval; k++) {
+  double factor = 1.0;
+  for (int j = 0; j < nvar; j++) {
+   albes[j][0] += 0.5 * p[j][k];
+   factor *= albes[j][0];
+  }
+  for (int j = 0; j < nvar; j++) {
+   if (albes[j][0] > 0.0) albes[j][1] += p[j][k] * factor / albes[j][0];
+   albes[j][0] += 0.5 * p[j][k];
+  }
+ }
+
+ double sum = 0.0;
+ for (int j = 0; j < nvar; j++) {
+  qnw[maxs[j].idx].first = albes[j][1];
+  sum += albes[j][1];
+ }
+ return sum;
+}
+
+
+double computeChildWeights(NodeGlow* node) {
 
   int n = node->GetNumChildren();
 
-  // If there is only one expanded child, this child has the weight of policy.
-  if(n == 1){
-    float policy = node->GetEdges()[0].GetP();
-    assert(0.0f <= policy && policy <= 1.0f);
-    node->GetFirstChild()->SetW(policy);
-    return(policy);
-  }
-
-  // // Be faster
-  // if(node->GetN() > 20 && node->GetN() % 2 == 0){ // Return without updating the weights if the parent has a number visits that is divisible with 2.
-  //   // Just make sure that any new child gets it's first weight
-  //   float sum_of_P_of_expanded_nodes = 0.0;
-  //   for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
-  //     sum_of_P_of_expanded_nodes += node->GetEdges()[i->GetIndex()].GetP();
-  //     if(i->GetN() == 1){
-  // 	i->SetW(node->GetEdges()[0].GetP());
-  //     }
-  //   }
-  //   return(sum_of_P_of_expanded_nodes);
-  // }
-
-  std::valarray<double> matrix( n_samples * n );
-
-  int column = 0;
-  for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
-    // Set alpha and beta so that
-    // alpha + beta = number of visits + 2
-    // alpha / (alpha + beta) == q
-    float winrate = (i->GetQ() + 1) * 0.5;
-    // float winrate = -0.5 * i->GetQ();
-    int realvisits = i->GetN();
-    int visits = 0;
-    if (realvisits > 100){
-      visits = 100;
-    } else {
-      visits = realvisits;
-    }
-    float alpha = winrate * visits + 1;
-    float beta = visits - alpha + 1;
-    int row = 0;
-    for(row = 0; row < n_samples; row++) {
-      double foo = pow(1 - pow((1 - distribution(generator)), (1/beta)), (1/alpha));
-      matrix[column + row * n] = foo;
-      // LOGFILE << "At edge " << i->GetIndex() << " row " << row << " column " << column << "(position " << column + row * n << ") generating samples using alpha=" << alpha << ", beta=" << beta << " result: " << foo << " like a boss";
-    }
-    column++;
-  }
-
-  // Derive weights, by counting the number of wins for each edge (column).
-  std::vector<int> win_counts(n);
-  int my_winner;
+  std::vector<std::pair<double, double>> qnw(n);
+  
+  double sum_of_P_of_expanded_nodes = 0.0;
   int j = 0;
-  for(j = 0; j < n_samples * n; j = j + n) {
-    // Set up a slice: j=start, n_samples=size, n=stride
-    std::valarray<double> my_row_val = matrix[std::slice(j,n,1)];
-    std::vector<double> my_row_vector(begin(my_row_val), end(my_row_val));
-    my_winner = std::distance(my_row_vector.begin(), std::max_element(my_row_vector.begin(), my_row_vector.end()));
-    // if(n == 3){
-    //   LOGFILE << "competition: " << my_row_vector[0] << " "<< my_row_vector[1] << " "<< my_row_vector[2] << " The winner is " << my_winner;
-    // }
-    win_counts[my_winner]++;
-  }
-
-  // rescale win_counts to win_rates (weights)
-  float my_scaler = 1.0f / n_samples;
-  std::vector<float> my_weights(n);
-  j = 0;
-  for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
-    my_weights[j] = win_counts[j] * my_scaler;
-
-    // avoid numeric problem by caping n at 100.
-    int realvisits = i->GetN();
-    int visits = 0;
-    if (realvisits > 100){
-      visits = 100;
-    } else {
-      visits = realvisits;
-    }
-    float alpha = my_weights[j] * visits;
-    float beta_prior = 0; // To start with something close to 0 set this to a high number. To get uniform, set it to 0.
-    float beta = beta_prior + visits - alpha;
-    float E = alpha / (alpha + beta);
-
-    // I haven't thought through how to deal with weights for terminal nodes
-    if(i->IsTerminal()){
-      // If it is winning weight is one.
-      // Otherwise, let's leave it at policy for now. TODO fix this here and in search.
-      if(i->GetOrigQ() == 1){
-	i->SetW(1);
-      } else {
-	i->SetW(node->GetEdges()[i->GetIndex()].GetP());
-      }
-    } else {
-      // Node was not terminal
-      i->SetW(E);
-    }
-    // LOGFILE << "Child " << node->GetEdges()[i->GetIndex()].GetMove(false).as_string()  << " has policy " << node->GetEdges()[i->GetIndex()].GetP() << " and " << i->GetN() << " true visits and " << win_counts[j] << " out of " << n_samples << " trials and would have got weight " << my_weights[j] << " but with the policy prior the weight becomes: " << E;
-    j++;
-  }
-
-  float sum_of_P_of_expanded_nodes = 0.0;
-  float sum_of_weights = 0.0;
-  for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
+  for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling(), j++) {
+    qnw[j].first = (double)i->GetQ();
+    qnw[j].second = i->IsTerminal() ? INFINITY : (double)i->GetN();
     sum_of_P_of_expanded_nodes += node->GetEdges()[i->GetIndex()].GetP();
-    sum_of_weights += i->GetW();
-    n++;
   }
-  float my_final_scaler = sum_of_P_of_expanded_nodes / sum_of_weights;
+  double sumw = calc_beta_distr_pwin(qnw);
+  double normf = sum_of_P_of_expanded_nodes / sumw;
+  j = 0;
+  for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling(), j++) {
+    i->SetW((float)(normf * qnw[j].first));
+  }
 
-  // This is only necessary when there are unexpanded edges
-  // if(normalise_to_sum_of_p & (node->GetNumChildren() < node->GetNumEdges())){
-    for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
-      // if((0.0f > i->GetW() * my_final_scaler) || (i->GetW() * my_final_scaler > 1.0f)){
-      // 	LOGFILE << "About to set W to " << i->GetW() * my_final_scaler;
-      // }
-      // assert(0.0f <= i->GetW() * my_final_scaler && i->GetW() * my_final_scaler <= 1.0f);
-      i->SetW(std::min(1.0f, i->GetW() * my_final_scaler)); // Hack should be removed when we get rid of sampling.
-    }
-  // }
-
-  return(sum_of_P_of_expanded_nodes); // with this, parent immediatly get q of first child.
-
+  return sum_of_P_of_expanded_nodes;
 }
 
 float compute_q_and_weights(NodeGlow *node) {
-  int number_of_samples = 500; // use this many samples to derive weights
-  float total_children_weight = computeChildWeights(node, number_of_samples);
+  double total_children_weight = computeChildWeights(node);
   if((total_children_weight >= 1.00014) | (total_children_weight < 0)){
     LOGFILE << "total weight is weird " << total_children_weight;
   }
   assert((total_children_weight <= 1.00014) & (total_children_weight >= 0));
   // weighted average Q START
   assert((node->GetOrigQ() <= 1) & (node->GetOrigQ() >= -1));
-  float q = (1.0 - total_children_weight) * node->GetOrigQ();
+  double q = (1.0 - total_children_weight) * (double)node->GetOrigQ();
   for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
     assert((i->GetW() <= 1) & (i->GetW() >= 0));
     assert((i->GetQ() <= 1) & (i->GetQ() >= -1));
-    q -= i->GetW() * i->GetQ();
+    q -= (double)i->GetW() * (double)i->GetQ();
   }
   // weighted average Q STOP
   assert((q <= 1) & (q >=-1));
-  return q;
+  return (float)q;
 }
 
 }  // namespace lczero
