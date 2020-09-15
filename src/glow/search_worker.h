@@ -51,10 +51,16 @@ class SearchWorkerGlow {
 public:
 	SearchWorkerGlow(SearchGlow *search) :
 		search_(search),
-		q_concentration_(search->params_.GetCpuct()),
-		p_concentration_(search->params_.GetPolicySoftmaxTemp()),
-		policy_weight_exponent_(search->params_.GetCpuctFactor()),
+		// common
 		batch_size_(search->params_.GetMiniBatchSize()),
+		max_new_siblings_(search->params_.GetMaxPrefetchBatch()), // 1 is probably good, MaxPrefetch
+		p_concentration_(search->params_.GetPolicySoftmaxTemp()), // 1.0 means no sharpening, 2.2 is the old default, PolicyTemperature
+		// only for beta, ignored for GLOW
+		policy_decay_(search->params_.GetCpuctBase()), // float CPuctBase
+		max_policy_weight_(search->params_.GetCpuct()), // float set it 0.5 CPuct
+		// only for GLOW, ignored for beta
+		q_concentration_(search->params_.GetTemperatureWinpctCutoff()), // float set it to 36.2 TempValueCutoff
+		policy_weight_exponent_(search->params_.GetCpuctFactor()), // float set it to 0.6 CPuctFactor
     new_nodes_amount_limit_(batch_size_ * 2),
 		history_fill_(search->params_.GetHistoryFill()),
 		played_history_length_(search_->played_history_.GetLength()),
@@ -100,6 +106,9 @@ private:
 
 	const float q_concentration_;
 	const float p_concentration_;
+  	const float max_new_siblings_;
+        const float max_policy_weight_;
+        const int policy_decay_;
 	const float policy_weight_exponent_; // weight of policy relative to weight of q: pow(n, pwe)/n where n is the number of subnodes of the current node.	
 	const int batch_size_;
   const int new_nodes_amount_limit_;

@@ -40,7 +40,6 @@ int param_maxCollisionVisitsId;
 float param_temperatureVisitOffset;
 float param_temperatureWinpctCutoff;
 float param_cpuct;
-  
 
 void set_strategy_parameters(const SearchParams *params) {
 	param_temperature = params->GetTemperature();
