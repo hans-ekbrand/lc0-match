@@ -158,8 +158,8 @@ void SearchWorkerGlow::pickNodesToExtend() {
 
 		while (true) {
 			nodes_visited++;
-			// best_child = node->GetBestChild();
-			best_child = GetInterestingChild(node);
+			best_child = node->GetBestChild();
+			// best_child = GetInterestingChild(node);
 			
 			if (best_child == nullptr) {
 				int nidx = node->GetNextUnexpandedEdge();

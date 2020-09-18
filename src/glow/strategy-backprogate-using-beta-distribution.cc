@@ -50,41 +50,7 @@ void set_strategy_parameters(const SearchParams *params) {
 	param_cpuct = params->GetCpuct();
 }
 
-  // What is the intuition behind the ChildWeight and what is the intended use case?
-  // ChildWeight for an edge should reflect the probability that this edge represents the best move.
-
-  // As such it serves the purpose of weight when Q is backpropagated
-  // to the parent. In this usage, we want the precision of the weight
-  // to as high as possible, since errors would multiplicate upwards,
-  // ie. we optimise for exploitation and use a rather high n_samples,
-  // (or even an exact analytical solution, if that is faster) and
-  // ignore all other parameters.
-
-  // For the purpose of tree-traversing, we need exploration and in particular we need mechanisms that depend on
-  // 1. Policy
-  // 2. Number of visits (After many visits, additional visits does not bring the same amount of information, so some decay function is reasonable here).
-
-  // 1. Policy
-  // High policy should be reflected in a high number of visits - until the absolute number of visits predicted by policy is reached. One way of advancing edges with high P is a two-stage sampling procedure:
-  //   1. Use policy to sample the first finalist
-  //   2. Use Q to sample the second finalist
-  //   Draw a winner from the two finalist using the beta distribution of q (with a rather low n).
-
-  // a decay of concentration of visits on the best path as the number
-  // of visits to the best path grow, since the additional nodes will
-  // have a diminishing affect on the move selection.
-
-  // n_samples how many samples to draw from each extended edge using the beta distribution
-
-  // The use Policy: Treat P as a priori distribution of visits and add the real visits to it as they come. When traversing the tree,
-  // policy_predicts_k_nodes Should roughly reflect the average number nodes per move in training games, e.g. 800
-
-  // int share_visits_after_m_visits, int x0, float spare_L_proportion_to_self, float steepness
-
-  // Tree traversing is sufficiently different from backpropagating that we can have two different functions. computeChildWeight() is for backpropagating and could be analytical (or use sampling)
-
-
-
+  // Near the leaves, use GLOW, as the number of subnodes grow, increase the policy weight exponent, or mix in more GetInterestingChild() instead of GetBestChild().
 
 // calculates approximate probability for each of a set beta distributed random variables to have the highest value
 // constant parameter: MAX_INTERVALS is the maximum number of intervals used for the computation
@@ -298,7 +264,8 @@ float computeChildWeightsGLOW(NodeGlow* node, bool evaluation_weights, int node_
   // parts from GLOW STOP
 
 float compute_q_and_weights(NodeGlow *node) {
-  double total_children_weight = computeChildWeights(node);
+  // double total_children_weight = computeChildWeights(node);
+  double total_children_weight = computeChildWeightsGLOW(node);
   if((total_children_weight >= 1.00014) | (total_children_weight < 0)){
     LOGFILE << "total weight is weird " << total_children_weight;
   }
