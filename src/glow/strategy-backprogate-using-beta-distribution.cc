@@ -239,6 +239,64 @@ double computeChildWeights(NodeGlow* node) {
   return sum_of_P_of_expanded_nodes;
 }
 
+  // parts from GLOW START
+
+inline float q_to_prob(const float q, const float max_q, const float q_concentration, int n, int parent_n) {
+      return exp(q_concentration * (q - abs(max_q)/2)); // reduce the overflow risk.
+      // However, with the default q_concentration 36.2, overflow isn't possible since
+      // exp(36.2 * 1) is less than max float. TODO restrict the parameter so that it
+      // cannot overflow and remove this division.
+}
+
+float computeChildWeightsGLOW(NodeGlow* node, bool evaluation_weights, int node_n) {
+  int n = 0;
+  float maxq = -2.0;
+	for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
+    float q = i->GetQ();
+    if (q > maxq) maxq = q;
+		n++;
+  }
+
+  float sum_of_P_of_expanded_nodes = 0.0;
+  float sum_of_w_of_expanded_nodes = 0.0;
+  float sum_of_weighted_p_and_q = 0.0;
+  for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
+    float w = q_to_prob(i->GetQ(), maxq, param_temperature, i->GetN(), node_n);
+    i->SetW(w);
+    sum_of_w_of_expanded_nodes += w;
+    sum_of_P_of_expanded_nodes += node->GetEdges()[i->GetIndex()].GetP();
+  }
+  float normalise_to_sum_of_p = sum_of_P_of_expanded_nodes / sum_of_w_of_expanded_nodes; // Avoid division in the loop, multiplication should be faster.
+  std::vector<float> weighted_p_and_q(n);
+  float relative_weight_of_p = 0;
+  float relative_weight_of_q = 0;
+  int ii = 0;
+  float heighest_weight = 0;
+  for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling(), ii++) {
+    i->SetW(i->GetW() * normalise_to_sum_of_p); // Normalise sum of Q to sum of P
+
+    relative_weight_of_p = pow(i->GetN(), param_fpuValue_false) / (0.05 + i->GetN()); // 0.05 is here to make Q have some influence after 1 visit.
+    relative_weight_of_q = 1 - relative_weight_of_p;
+
+    weighted_p_and_q[ii] = relative_weight_of_q * i->GetW() + relative_weight_of_p * node->GetEdges()[i->GetIndex()].GetP();
+    sum_of_weighted_p_and_q += weighted_p_and_q[ii];
+    if(weighted_p_and_q[ii] > heighest_weight){
+      heighest_weight = weighted_p_and_q[ii];
+    }
+  }
+
+  // Normalise the weighted sum Q + P to sum of P
+  float normalise_weighted_sum = sum_of_P_of_expanded_nodes / sum_of_weighted_p_and_q;
+  ii = 0;
+  for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling(), ii++) {
+    i->SetW(weighted_p_and_q[ii] * normalise_weighted_sum);
+  }
+
+  return(sum_of_P_of_expanded_nodes);
+}
+
+  // parts from GLOW STOP
+
 float compute_q_and_weights(NodeGlow *node) {
   double total_children_weight = computeChildWeights(node);
   if((total_children_weight >= 1.00014) | (total_children_weight < 0)){
