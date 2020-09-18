@@ -211,7 +211,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<BoolOption>(kOutOfOrderEvalId) = true;
   options->Add<BoolOption>(kSyzygyFastPlayId) = true;
   options->Add<IntOption>(kMultiPvId, 1, 500) = 1;
-  std::vector<std::string> score_type = {"centipawn", "win_percentage", "Q"};
+  std::vector<std::string> score_type = {"centipawn", "win_percentage", "Q", "centipawn_2018"};
   options->Add<ChoiceOption>(kScoreTypeId, score_type) = "centipawn";
   std::vector<std::string> history_fill_opt{"no", "fen_only", "always"};
   options->Add<ChoiceOption>(kHistoryFillId, history_fill_opt) = "fen_only";
