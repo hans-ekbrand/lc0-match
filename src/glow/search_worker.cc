@@ -641,10 +641,10 @@ void SearchWorkerGlow::recalcPropagatedQ(NodeGlow* node) {
   }
   node->SetN(n);
 
-  float q = compute_q_and_weights(node);
-	node->SetQ(q);
+  float q = compute_q_and_weights(node, n);
+  node->SetQ(q);
 
-	recalcMaxW(node);
+  recalcMaxW(node);
 }
 
 

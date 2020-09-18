@@ -34,21 +34,36 @@
 
 namespace lczero {
 
-float param_temperature;
-float param_fpuValue_false;
-int param_maxCollisionVisitsId;
-float param_temperatureVisitOffset;
-float param_temperatureWinpctCutoff;
-float param_cpuct;
+// float param_temperature;
+// float param_fpuValue_false;
+// int param_maxCollisionVisitsId;
+// float param_temperatureVisitOffset;
+// float param_temperatureWinpctCutoff;
+// float param_cpuct;
 
+  float param_q_concentration;
+  float param_policy_weight_exponent;
+  
 void set_strategy_parameters(const SearchParams *params) {
-	param_temperature = params->GetTemperature();
-	param_fpuValue_false = params->GetFpuValue(false);
-	param_maxCollisionVisitsId = params->GetMaxCollisionVisitsId();
-	param_temperatureVisitOffset = params->GetTemperatureVisitOffset();
-	param_temperatureWinpctCutoff = params->GetTemperatureWinpctCutoff();
-	param_cpuct = params->GetCpuct();
+	param_q_concentration = params->GetCpuctBase();
+	// param_temperature = params->GetTemperature();	
+	param_policy_weight_exponent = params->GetCpuct();
+	// param_fpuValue_false = params->GetFpuValue(false);	
+	// param_maxCollisionVisitsId = params->GetMaxCollisionVisitsId();
+	// param_temperatureVisitOffset = params->GetTemperatureVisitOffset();
+	// param_temperatureWinpctCutoff = params->GetTemperatureWinpctCutoff();
+	// param_cpuct = params->GetCpuct();
 }
+  
+
+// void set_strategy_parameters(const SearchParams *params) {
+//   param_temperature = params->GetTemperature();
+//   param_fpuValue_false = params->GetFpuValue(false);
+//   param_maxCollisionVisitsId = params->GetMaxCollisionVisitsId();
+//   param_temperatureVisitOffset = params->GetTemperatureVisitOffset();
+//   param_temperatureWinpctCutoff = params->GetTemperatureWinpctCutoff();
+//   param_cpuct = params->GetCpuct();
+// }
 
   // Near the leaves, use GLOW, as the number of subnodes grow, increase the policy weight exponent, or mix in more GetInterestingChild() instead of GetBestChild().
 
@@ -227,7 +242,7 @@ float computeChildWeightsGLOW(NodeGlow* node, bool evaluation_weights, int node_
   float sum_of_w_of_expanded_nodes = 0.0;
   float sum_of_weighted_p_and_q = 0.0;
   for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
-    float w = q_to_prob(i->GetQ(), maxq, param_temperature, i->GetN(), node_n);
+    float w = q_to_prob(i->GetQ(), maxq, param_q_concentration, i->GetN(), node_n);
     i->SetW(w);
     sum_of_w_of_expanded_nodes += w;
     sum_of_P_of_expanded_nodes += node->GetEdges()[i->GetIndex()].GetP();
@@ -241,7 +256,7 @@ float computeChildWeightsGLOW(NodeGlow* node, bool evaluation_weights, int node_
   for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling(), ii++) {
     i->SetW(i->GetW() * normalise_to_sum_of_p); // Normalise sum of Q to sum of P
 
-    relative_weight_of_p = pow(i->GetN(), param_fpuValue_false) / (0.05 + i->GetN()); // 0.05 is here to make Q have some influence after 1 visit.
+    relative_weight_of_p = pow(i->GetN(), param_policy_weight_exponent) / (0.05 + i->GetN()); // 0.05 is here to make Q have some influence after 1 visit.
     relative_weight_of_q = 1 - relative_weight_of_p;
 
     weighted_p_and_q[ii] = relative_weight_of_q * i->GetW() + relative_weight_of_p * node->GetEdges()[i->GetIndex()].GetP();
@@ -263,9 +278,9 @@ float computeChildWeightsGLOW(NodeGlow* node, bool evaluation_weights, int node_
 
   // parts from GLOW STOP
 
-float compute_q_and_weights(NodeGlow *node) {
+  float compute_q_and_weights(NodeGlow *node, int node_n) {
   // double total_children_weight = computeChildWeights(node);
-  double total_children_weight = computeChildWeightsGLOW(node);
+  double total_children_weight = computeChildWeightsGLOW(node, true, node_n);
   if((total_children_weight >= 1.00014) | (total_children_weight < 0)){
     LOGFILE << "total weight is weird " << total_children_weight;
   }
