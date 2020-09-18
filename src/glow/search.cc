@@ -245,9 +245,11 @@ void SearchGlow::SendUciInfo() {
     auto& uci_info = uci_infos.back();
 
     if (score_type == "centipawn") {
-      uci_info.score = 290.680623072 * tan(1.548090806 * bestq);
+      uci_info.score = 90 * tan(1.5637541897 * bestq);
     } else if (score_type == "win_percentage") {
       uci_info.score = bestq * 5000 + 5000;
+    } else if (score_type == "centipawn_2018") {
+      uci_info.score = 290.680623072 * tan(1.548090806 * bestq);
     } else if (score_type == "Q") {
       uci_info.score = bestq * 10000;
     }
