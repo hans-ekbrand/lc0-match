@@ -52,7 +52,6 @@ class EdgeGlow {
   // (but can be changed by adding Dirichlet noise). Must be in [0,1].
   float GetP() const;
   void SetP(float val);
-  void SetPRaw(float val);
 
   // Debug information about the edge.
   std::string DebugString() const;
@@ -160,6 +159,10 @@ class NodeGlow {
 
   // Debug information about the node.
   std::string DebugString() const;
+
+
+	void checkTree(PositionHistory* history);
+	void show(bool is_black_to_move);
 
 private:
 	// To minimize the number of padding bytes and to avoid having unnecessary
