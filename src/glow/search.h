@@ -74,7 +74,8 @@ public:
 	// search iteration is needed.
 	bool IsSearchActive() const;
 
-	NodeGlow *indexOfHighestQEdge(NodeGlow* node, bool filter_uncertain_moves);
+	// NodeGlow *indexOfHighestQEdge(NodeGlow* node, bool filter_uncertain_moves);
+  NodeGlow *indexOfHighestQEdge(NodeGlow* node, bool black_to_move, bool filter_uncertain_moves);
 
 private:
 

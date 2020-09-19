@@ -126,67 +126,122 @@ bool SearchGlow::IsSearchActive() const {
 	return active;
 }
 
-namespace {
+// namespace {
 
-  NodeGlow *indexOfHighestQEdge(NodeGlow* node, bool filter_out_unsafe_moves) {
-    // This function must only be called in the move selection process, by SendUciInfo() and reportBestMove()
-    float highestq = -2.0;
-    NodeGlow *bestidx = nullptr;
-    for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
-      float q = i->GetQ();
-      assert((q >= -1) && (q >= 1));
-      if (q > highestq) {
-	highestq = q;
-	bestidx = i;
-      }
-    }
+//   NodeGlow *indexOfHighestQEdge(NodeGlow* node, bool filter_out_unsafe_moves) {
+//     // This function must only be called in the move selection process, by SendUciInfo() and reportBestMove()
+//     float highestq = -2.0;
+//     NodeGlow *bestidx = nullptr;
+//     for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
+//       float q = i->GetQ();
+//       assert((q >= -1) && (q >= 1));
+//       if (q > highestq) {
+// 	highestq = q;
+// 	bestidx = i;
+//       }
+//     }
 
-    if(!filter_out_unsafe_moves){
-      return bestidx;
-    }
+//     if(!filter_out_unsafe_moves){
+//       return bestidx;
+//     }
 
-    // If bestidx is terminal, then just play it. Otherwise, play the move with the highest expected value.
-    if(bestidx != nullptr && bestidx->IsTerminal()){
-      LOGFILE << "Bestmove is terminal ";
-      return bestidx;
-    }
+//     // If bestidx is terminal, then just play it. Otherwise, play the move with the highest expected value.
+//     if(bestidx != nullptr && bestidx->IsTerminal()){
+//       LOGFILE << "Bestmove is terminal ";
+//       return bestidx;
+//     }
 
-    // Put a rather strong prior on q (rescaled to [0,1]), so that a move candidate really have quite some visits that backup the claim that it is good.
-    // Let's use the squar root of the total number of visits as a prior, so alpha=1, beta=sqrt(N).
-    // What we want to avoid is situations where the best q is, say 0.15 with 100 visits and next best q has 0.14 and 900 visits (of a total of 3000 visits).
-    // In this situation, better go with 0.14.
-    // The observational data is 100 visits, mean = 0.15, which we could express as: 100 = alpha + beta - 2; 0.15 = alpha / (alpha + beta);
-    // that would give alpha = 15; beta = 85. Now add the prior
-    // alpha = 16, beta = sqrt(3000) + 85 = 139.9
-    // E = 16 / (16 + 139.9) = 0.10
-    // For the child with 900 visits, we get alpha = 126, beta = 774, add the prior and we have alpha = 127, beta = 913
-    // E = 127 / (127 + 913) = 0.12
+//     // Put a rather strong prior on q (rescaled to [0,1]), so that a move candidate really have quite some visits that backup the claim that it is good.
+//     // Let's use the squar root of the total number of visits as a prior, so alpha=1, beta=sqrt(N).
+//     // What we want to avoid is situations where the best q is, say 0.15 with 100 visits and next best q has 0.14 and 900 visits (of a total of 3000 visits).
+//     // In this situation, better go with 0.14.
+//     // The observational data is 100 visits, mean = 0.15, which we could express as: 100 = alpha + beta - 2; 0.15 = alpha / (alpha + beta);
+//     // that would give alpha = 15; beta = 85. Now add the prior
+//     // alpha = 16, beta = sqrt(3000) + 85 = 139.9
+//     // E = 16 / (16 + 139.9) = 0.10
+//     // For the child with 900 visits, we get alpha = 126, beta = 774, add the prior and we have alpha = 127, beta = 913
+//     // E = 127 / (127 + 913) = 0.12
 
-    float beta_prior = pow(node->GetN(), 0.3);
-    float alpha_prior = 1.0f;
-    float highest_E = -1.0f;
-    NodeGlow *really_bestidx = nullptr;
-    for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
-      float winrate = (i->GetQ() + 1) * 0.5;
-      int visits = i->GetN();
-      float alpha = winrate * visits + alpha_prior;
-      float beta = visits - alpha + beta_prior;
-      float E = alpha / (alpha + beta);
-      if(E > highest_E){
-	highest_E = E;
-	really_bestidx = i;
-      }
-    }
+//     float beta_prior = pow(node->GetN(), 0.3);
+//     float alpha_prior = 1.0f;
+//     float highest_E = -1.0f;
+//     NodeGlow *really_bestidx = nullptr;
+//     for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
+//       float winrate = (i->GetQ() + 1) * 0.5;
+//       int visits = i->GetN();
+//       float alpha = winrate * visits + alpha_prior;
+//       float beta = visits - alpha + beta_prior;
+//       float E = alpha / (alpha + beta);
+//       if(E > highest_E){
+// 	highest_E = E;
+// 	really_bestidx = i;
+//       }
+//     }
     
-    if(really_bestidx != bestidx){
-      // We don't now if it is black or white to move, so print both and say it's one of them.
-      LOGFILE << "VETO against the uncertain move " << node->GetEdges()[bestidx->GetIndex()].GetMove(false).as_string() << " or " << node->GetEdges()[bestidx->GetIndex()].GetMove(true).as_string() << " with only " << bestidx->GetN() << " visits and q = " << bestidx->GetQ();
-      LOGFILE << "Best expected value after applying the prior as move " << node->GetEdges()[really_bestidx->GetIndex()].GetMove(false).as_string() << " or " << node->GetEdges()[really_bestidx->GetIndex()].GetMove(true).as_string() << " with " << really_bestidx->GetN() << " visits and q = " << really_bestidx->GetQ();
-      LOGFILE << "Beta prior applied for move selection: " << beta_prior << " based on " << node->GetN() << " visits at root";
-    }
-    return really_bestidx;
-  }
+//     if(really_bestidx != bestidx){
+//       // We don't now if it is black or white to move, so print both and say it's one of them.
+//       LOGFILE << "VETO against the uncertain move " << node->GetEdges()[bestidx->GetIndex()].GetMove(false).as_string() << " or " << node->GetEdges()[bestidx->GetIndex()].GetMove(true).as_string() << " with only " << bestidx->GetN() << " visits and q = " << bestidx->GetQ();
+//       LOGFILE << "Best expected value after applying the prior as move " << node->GetEdges()[really_bestidx->GetIndex()].GetMove(false).as_string() << " or " << node->GetEdges()[really_bestidx->GetIndex()].GetMove(true).as_string() << " with " << really_bestidx->GetN() << " visits and q = " << really_bestidx->GetQ();
+//       LOGFILE << "Beta prior applied for move selection: " << beta_prior << " based on " << node->GetN() << " visits at root";
+//     }
+//     return really_bestidx;
+//   }
+// }
+
+NodeGlow *SearchGlow::indexOfHighestQEdge(NodeGlow* node, bool black_to_move, bool filter_uncertain_moves) {
+	float highestq = -2.0;
+	NodeGlow *bestidx = nullptr;
+	for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
+		float q = i->GetQ();
+		if(q < -1 || q > 1){
+LOGFILE << "Warning abs(Q) is above 1, q=" << q;
+		}
+		if (q > highestq) {
+highestq = q;
+bestidx = i;
+		}
+	}
+	// return bestidx;
+	// This is mostly relevant for games played with very low nodecounts.
+	// Veto moves with too high uncertainty in Q, by requiring at least 3 * log(n) visits if number of subnodes is above n, and the suggested move is not a terminal node. TODO use some lookup table for log here
+	// This can fail if a candidate move leads to a position where the opponent only has a single move that draws and where that move is terminal, by repetition or move 50 rule.
+	// The solution would be to backpropagate the draw result and treat our as terminal too.
+	unsigned int threshold = ceil(3 * log(node->GetN()));
+	if (! filter_uncertain_moves ||
+		node->GetN() < 1000 ||
+		bestidx->GetN() >= threshold ||
+			bestidx->IsTerminal())
+			{
+				return bestidx;
+	}
+
+	// Search until an acceptable move is found. Should be a rare event to even end up here, so no point in optimising the code below.
+	std::vector<NodeGlow *> bad_moves(1);
+	bad_moves[0] = bestidx;
+	while(true){
+		LOGFILE << "VETO against the uncertain move " << node->GetEdges()[bestidx->GetIndex()].GetMove(black_to_move).as_string() << " with only " << bestidx->GetN() << " visits. Not acceptable.";
+		highestq = -2.0;
+		for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
+		if ( std::find(bad_moves.begin(), bad_moves.end(), i) == bad_moves.end() ){ // no match
+			float q = i->GetQ();
+			if (q > highestq) {
+				highestq = q;
+				bestidx = i;
+			}
+		}
+		}
+		if (bestidx->GetN() >= threshold ||
+			bestidx->IsTerminal()) {
+		return bestidx;
+		} else {
+		// add bestidx to the list of unacceptable moves
+		LOGFILE << "So many bad moves. Sad.";
+		bad_moves.push_back(bestidx);
+		LOGFILE << "Storing succeeded.";	
+		}
+	}
 }
+  
 
 void SearchGlow::Wait() {
 	threads_list_mutex_.lock();
@@ -267,7 +322,7 @@ void SearchGlow::SendUciInfo() {
     NodeGlow* n = bestidx;
     while (n && n->GetFirstChild() != nullptr) {
       flip = !flip;
-      NodeGlow *bestidx = NodeGlow::indexOfHighestQEdge(n, false);
+      NodeGlow *bestidx = indexOfHighestQEdge(n, flip, false);
       uci_info.pv.push_back(n->GetEdges()[bestidx->GetIndex()].GetMove(flip));
       n = bestidx;
     }
@@ -383,9 +438,9 @@ void SearchGlow::SendMovesStats() {
 }
 
 void SearchGlow::reportBestMove() {
-  NodeGlow *bestidx = indexOfHighestQEdge(root_node_, true);
+  NodeGlow *bestidx = indexOfHighestQEdge(root_node_, played_history_.IsBlackToMove(), true);
 	Move best_move = root_node_->GetEdges()[bestidx->GetIndex()].GetMove(played_history_.IsBlackToMove());
-	NodeGlow *ponderidx = indexOfHighestQEdge(bestidx, false); // harmless to report a bad pondermove.
+	NodeGlow *ponderidx = indexOfHighestQEdge(bestidx, played_history_.IsBlackToMove(), false); // harmless to report a bad pondermove.
 	// If the move we make is terminal, then there is nothing to ponder about.
 	// Also, if the bestmove doesn't have any children, then don't report a ponder move.
 	if(!bestidx->IsTerminal() && ponderidx != nullptr){

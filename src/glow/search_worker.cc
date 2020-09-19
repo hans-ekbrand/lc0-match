@@ -1440,10 +1440,10 @@ void SearchWorkerGlow::ThreadLoop(int thread_id) {
       LOGFILE << "Elapsed time for " << root_node_->GetN() << " nodes: " << elapsed_time << "ms";
       LOGFILE << "#helper threads pre: " << N_HELPER_THREADS_PRE << ", #helper threads post: " << N_HELPER_THREADS_POST;
 
-			// const bool is_black_to_move = search_->played_history_.IsBlackToMove();
-			// root_node_->show(is_black_to_move);
-			// NodeGlow *bestmovenode = search_->indexOfHighestQEdge(root_node_, true);
-			// bestmovenode->show(!is_black_to_move);
+			const bool is_black_to_move = search_->played_history_.IsBlackToMove();
+			root_node_->show(is_black_to_move);
+			NodeGlow *bestmovenode = search_->indexOfHighestQEdge(root_node_, is_black_to_move, true);
+			bestmovenode->show(!is_black_to_move);
 
       if (search_->count_iterations_ > 0) {
         int divisor = search_->count_iterations_ * 1000;
