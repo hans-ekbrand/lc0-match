@@ -74,6 +74,8 @@ public:
 	// search iteration is needed.
 	bool IsSearchActive() const;
 
+	NodeGlow *indexOfHighestQEdge(NodeGlow* node, bool filter_uncertain_moves);
+
 private:
 
 	int64_t GetTimeSinceStart() const;

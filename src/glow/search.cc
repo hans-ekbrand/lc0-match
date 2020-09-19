@@ -267,7 +267,7 @@ void SearchGlow::SendUciInfo() {
     NodeGlow* n = bestidx;
     while (n && n->GetFirstChild() != nullptr) {
       flip = !flip;
-      NodeGlow *bestidx = indexOfHighestQEdge(n, false);
+      NodeGlow *bestidx = NodeGlow::indexOfHighestQEdge(n, false);
       uci_info.pv.push_back(n->GetEdges()[bestidx->GetIndex()].GetMove(flip));
       n = bestidx;
     }
