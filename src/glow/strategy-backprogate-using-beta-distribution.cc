@@ -241,8 +241,14 @@ float computeChildWeightsGLOW(NodeGlow* node, bool evaluation_weights, int node_
   float sum_of_P_of_expanded_nodes = 0.0;
   float sum_of_w_of_expanded_nodes = 0.0;
   float sum_of_weighted_p_and_q = 0.0;
+
   for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
-    float w = q_to_prob(i->GetQ(), maxq, param_q_concentration, i->GetN(), node_n);
+    float w;
+    if(node_n < 800){ // override the parameters, 36.2 is a known good value here
+      w = q_to_prob(i->GetQ(), maxq, 36.2, i->GetN(), node_n);
+    } else {
+      w = q_to_prob(i->GetQ(), maxq, param_q_concentration, i->GetN(), node_n); 
+    }
     i->SetW(w);
     sum_of_w_of_expanded_nodes += w;
     sum_of_P_of_expanded_nodes += node->GetEdges()[i->GetIndex()].GetP();
@@ -255,10 +261,8 @@ float computeChildWeightsGLOW(NodeGlow* node, bool evaluation_weights, int node_
   float heighest_weight = 0;
   for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling(), ii++) {
     i->SetW(i->GetW() * normalise_to_sum_of_p); // Normalise sum of Q to sum of P
-
     relative_weight_of_p = pow(i->GetN(), param_policy_weight_exponent) / (0.05 + i->GetN()); // 0.05 is here to make Q have some influence after 1 visit.
     relative_weight_of_q = 1 - relative_weight_of_p;
-
     weighted_p_and_q[ii] = relative_weight_of_q * i->GetW() + relative_weight_of_p * node->GetEdges()[i->GetIndex()].GetP();
     sum_of_weighted_p_and_q += weighted_p_and_q[ii];
     if(weighted_p_and_q[ii] > heighest_weight){
