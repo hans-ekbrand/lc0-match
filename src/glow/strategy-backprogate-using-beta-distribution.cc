@@ -141,7 +141,7 @@ double calc_beta_distr_pwin(std::vector<std::pair<double, double>> &qnw) {
   logmaxs[j][0] = log2(q);
   logmaxs[j][1] = log2(1.0 - q);
   // const double size = qnw[j].second;
-  const double size = param_maxCollisionVisitsId * qnw[j].second;
+  const double size = param_maxCollisionVisitsId + qnw[j].second;
   albes[j][0] = q * size;
   albes[j][1] = size - albes[j][0];
  }
