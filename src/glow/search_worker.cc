@@ -107,7 +107,11 @@ bool const LOG_RUNNING_INFO = false;
     // Calculate weights for extended children
     
     for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
-      effective_weights[i->GetIndex()] = i->GetW();
+      // mix in w in p, set P to (P * k + W * (k - 1)) / 2
+      // where k is policy_weight_exponent_
+      // imported as CPuctFactor
+      node->GetEdges()[i->GetIndex()].SetP((node->GetEdges()[i->GetIndex()].GetP() * policy_weight_exponent_ + i->GetW() * (1 - policy_weight_exponent_)) / 2);
+      effective_weights[i->GetIndex()] = node->GetEdges()[i->GetIndex()].GetP();
       sum_of_effective_weights += effective_weights[i->GetIndex()];
       // LOGFILE << "at child " << i->GetIndex() << " with policy " << node->GetEdges()[i->GetIndex()].GetP() << " and weight " << i->GetW() << " and visits " << i->GetN() << " effective weight " << effective_weights[i->GetIndex()];
     }
