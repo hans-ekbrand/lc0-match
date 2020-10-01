@@ -34,21 +34,10 @@
 
 namespace lczero {
 
-float param_temperature;
-float param_fpuValue_false;
 int param_maxCollisionVisitsId;
-float param_temperatureVisitOffset;
-float param_temperatureWinpctCutoff;
-float param_cpuct;
-  
 
 void set_strategy_parameters(const SearchParams *params) {
-	param_temperature = params->GetTemperature();
-	param_fpuValue_false = params->GetFpuValue(false);
 	param_maxCollisionVisitsId = params->GetMaxCollisionVisitsId();
-	param_temperatureVisitOffset = params->GetTemperatureVisitOffset();
-	param_temperatureWinpctCutoff = params->GetTemperatureWinpctCutoff();
-	param_cpuct = params->GetCpuct();
 }
 
   // What is the intuition behind the ChildWeight and what is the intended use case?
@@ -141,7 +130,7 @@ double calc_beta_distr_pwin(std::vector<std::pair<double, double>> &qnw) {
   logmaxs[j][0] = log2(q);
   logmaxs[j][1] = log2(1.0 - q);
   // const double size = qnw[j].second;
-  const double size = param_maxCollisionVisitsId + param_cpuct * qnw[j].second;
+  const double size = param_maxCollisionVisitsId + qnw[j].second;
   albes[j][0] = q * size;
   albes[j][1] = size - albes[j][0];
  }
