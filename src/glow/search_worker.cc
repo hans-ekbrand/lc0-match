@@ -491,7 +491,14 @@ void SearchWorkerGlow::picknextend_reference(std::vector<Move> *movestack, Posit
 	while (new_nodes_size_ < new_nodes_amount_target_) {  // repeat this until minibatch_size amount of non terminal, non cache hit nodes have been found (or reached a predefined limit larger than minibatch size)
 		NodeGlow *node = root_node_;
 		if (node->GetMaxW() == 0.0) break;  // no more expandable node
-		NodeGlow *best_child = node->GetBestChild();
+		// NodeGlow *best_child = node->GetBestChild();
+		NodeGlow *best_child;
+		if(node->GetN() > 6000){
+		  best_child = node->GetBestChild();
+		} else {
+		  best_child = GetInterestingChild(node);
+		}
+
 		
 		while (true) {
 			if (best_child == nullptr || node->GetN() <= MAX_SUBTREE_SIZE) break;
@@ -1005,7 +1012,23 @@ void SearchWorkerGlow::recalcPropagatedQ(NodeGlow* node) {
 	}
   node->SetN(n);
 
-	float q = compute_q_and_weights(node, n);
+  float orig_q = node->GetQ();
+  float q = compute_q_and_weights(node, n);
+  float fluctuation = abs(orig_q - q);
+  if(node->GetParent() != nullptr){
+    LOGFILE << "fluctuation: " << fluctuation << " for move " << node->GetParent()->GetEdges()[node->GetIndex()].GetMove(search_->played_history_.IsBlackToMove()).as_string() ;
+    // mix in the new fluctuation
+    if(node->GetFluctuation() == 0.0){
+      // Either no previus value set or a very low value, in which case we would want
+      // attention here.
+      node->SetFluctuation(fluctuation);
+    } else {
+      // let the existing value decay
+      node->SetFluctuation((node->GetFluctuation() * 4 + fluctuation) / 5);
+    }
+  }
+
+	
 // 	if (isnan(q)) {
 // 		std::cerr << "q is nan\n";
 // 		abort();

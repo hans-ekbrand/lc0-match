@@ -36,25 +36,30 @@ namespace lczero {
 
 // float param_temperature;
 // float param_fpuValue_false;
-// int param_maxCollisionVisitsId;
 // float param_temperatureVisitOffset;
 // float param_temperatureWinpctCutoff;
-// float param_cpuct;
 
+  // BETA
+int param_maxCollisionVisitsId;
+float param_cpuctFactor;
+float param_cpuct;
+
+  // GLOW
   float param_q_concentration;
   float param_policy_weight_exponent;
-  
+
 void set_strategy_parameters(const SearchParams *params) {
-	param_q_concentration = params->GetCpuctBase();
-	// param_temperature = params->GetTemperature();	
-	param_policy_weight_exponent = params->GetCpuct();
-	// param_fpuValue_false = params->GetFpuValue(false);	
-	// param_maxCollisionVisitsId = params->GetMaxCollisionVisitsId();
+	param_maxCollisionVisitsId = params->GetMaxCollisionVisitsId();
+	param_cpuctFactor = params->GetCpuctFactor();	
+	param_cpuct = params->GetCpuct();
+
+	param_q_concentration = params->GetFpuValue(false); // -100.00 .. 100.00
+	param_policy_weight_exponent = params->GetTemperatureWinpctCutoff(); // 0.00 .. 100.0
+	
+	// param_temperature = params->GetTemperature();
 	// param_temperatureVisitOffset = params->GetTemperatureVisitOffset();
-	// param_temperatureWinpctCutoff = params->GetTemperatureWinpctCutoff();
-	// param_cpuct = params->GetCpuct();
+
 }
-  
 
 // void set_strategy_parameters(const SearchParams *params) {
 //   param_temperature = params->GetTemperature();
@@ -120,7 +125,8 @@ double calc_beta_distr_pwin(std::vector<std::pair<double, double>> &qnw) {
 
   logmaxs[j][0] = log2(q);
   logmaxs[j][1] = log2(1.0 - q);
-  const double size = qnw[j].second;
+  // const double size = qnw[j].second;
+  const double size = param_maxCollisionVisitsId + pow(param_cpuctFactor * qnw[j].second, param_cpuct);
   albes[j][0] = q * size;
   albes[j][1] = size - albes[j][0];
  }
@@ -283,22 +289,36 @@ float computeChildWeightsGLOW(NodeGlow* node, bool evaluation_weights, int node_
   // parts from GLOW STOP
 
   float compute_q_and_weights(NodeGlow *node, int node_n) {
-  // double total_children_weight = computeChildWeights(node);
-  double total_children_weight = computeChildWeightsGLOW(node, true, node_n);
-  if((total_children_weight >= 1.00014) | (total_children_weight < 0)){
+
+    // 1. Compute and set weights in the children
+    double total_children_weight;
+    if(node_n > 1600){
+      total_children_weight = computeChildWeights(node);
+    } else {
+      total_children_weight = computeChildWeightsGLOW(node, true, node_n);
+    }
+  if((total_children_weight >= 1.0002) | (total_children_weight < 0)){
     LOGFILE << "total weight is weird " << total_children_weight;
   }
-  assert((total_children_weight <= 1.00014) & (total_children_weight >= 0));
+  assert((total_children_weight <= 1.0002) & (total_children_weight >= 0));
+      // 2. Set backpropagated Q and derive fluctuation
   // weighted average Q START
   assert((node->GetOrigQ() <= 1) & (node->GetOrigQ() >= -1));
   double q = (1.0 - total_children_weight) * (double)node->GetOrigQ();
   for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
-    assert((i->GetW() <= 1) & (i->GetW() >= 0));
-    assert((i->GetQ() <= 1) & (i->GetQ() >= -1));
+    assert((i->GetW() <= 1.0002) & (i->GetW() >= -.0002));
+    LOGFILE << q;
+    assert((i->GetQ() <= 1.0002) & (i->GetQ() >= -1.0002));
     q -= (double)i->GetW() * (double)i->GetQ();
   }
   // weighted average Q STOP
   assert((q <= 1) & (q >=-1));
+  if(q < -1.0f){
+    return -1.0f;
+  }
+  if(q > 1.0f){
+    return 1.0f;
+  }
   return (float)q;
 }
 

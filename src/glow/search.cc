@@ -133,7 +133,10 @@ NodeGlow *SearchGlow::indexOfHighestQEdge(NodeGlow* node, bool black_to_move, bo
   NodeGlow *bestidx = nullptr;
   for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
     float q = i->GetQ();
-    assert((q >= -1) && (q >= 1));
+    // if((q < -1) || (q > 1)){
+    //   LOGFILE << "weird q: " << q;
+    // }
+    assert((q >= -1) && (q <= 1));
     if (q > highestq) {
       highestq = q;
       bestidx = i;
@@ -390,7 +393,7 @@ void SearchGlow::reportBestMove() {
 	  Move ponder_move = bestidx->GetEdges()[ponderidx->GetIndex()].GetMove(!played_history_.IsBlackToMove());
 	  best_move_callback_({best_move, ponder_move});
 	} else {
- 	  LOGFILE << "in reportBestMove, Do not set a pondermove since the move we played was terminal.";	
+ 	  LOGFILE << "in reportBestMove, Do not set a pondermove since the move we played was terminal or it had no expanded children.";	
 	  best_move_callback_(best_move);
  	  LOGFILE << "in reportBestMove, Survived callback";
 	}

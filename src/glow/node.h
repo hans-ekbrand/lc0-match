@@ -124,6 +124,10 @@ class NodeGlow {
   void SetW(float w) { w_ = w; }
   float GetMaxW() const { return max_w_; }
   void SetMaxW(float w) { max_w_ = w; }
+
+  float GetFluctuation() const { return fluctuation_; }
+  void SetFluctuation(float fluctuation) { fluctuation_ = fluctuation; }
+  
   uint16_t GetBranchingInFlight() const { return branching_in_flight_; }
   void SetBranchingInFlight(uint16_t b) { branching_in_flight_ = b; }
 
@@ -191,6 +195,8 @@ private:
 	float orig_q_ = 0.0f;
 	float w_ = 0.0f;
 	float max_w_ = 0.0f;
+
+  float fluctuation_ = 0.0f;
 
 	uint32_t n_ = 1;
 	//uint32_t n_extendable_ = 0;
