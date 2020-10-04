@@ -71,7 +71,9 @@ bool const LOG_RUNNING_INFO = false;
 
     int num_children = node->GetNumChildren();
     std::vector<double> effective_weights(num_children, 0.0f);
+    std::vector<double> effective_weights_alternative(num_children, 0.0f);
     double sum_of_effective_weights = 0;
+    double sum_of_effective_weights_alternative = 0;
     double sum_of_policy_of_extended_nodes = 0;
 
     // if there are less than two edges extended, return fast
@@ -107,26 +109,44 @@ bool const LOG_RUNNING_INFO = false;
     // Calculate weights for extended children
     
     for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
-      // mix in w in p, set P to (P * k + W * (k - 1)) / 2
+      // mix in w in p, set P to P * k + W * (k - 1)
       // where k is policy_weight_exponent_
       // imported as CPuctFactor
-      node->GetEdges()[i->GetIndex()].SetP((node->GetEdges()[i->GetIndex()].GetP() * policy_weight_exponent_ + i->GetW() * (1 - policy_weight_exponent_)) / 2);
-      effective_weights[i->GetIndex()] = node->GetEdges()[i->GetIndex()].GetP();
+      node->GetEdges()[i->GetIndex()].SetP(node->GetEdges()[i->GetIndex()].GetP() * policy_weight_exponent_ + i->GetW() * (1 - policy_weight_exponent_));
+      effective_weights[i->GetIndex()] = node->GetEdges()[i->GetIndex()].GetP();      
+      // Add a exploration bonus accoring to the CPUCT formula q + sqrt((2 * log(N))/n) which makes sure children with low n get visits as parent visits (N) increase
+      if(node->GetN() > 400){
+	effective_weights_alternative[i->GetIndex()] = node->GetEdges()[i->GetIndex()].GetP() + q_concentration_ * sqrt((2 * log(node->GetN())) / i->GetN());
+      } else {
+	effective_weights_alternative[i->GetIndex()] = node->GetEdges()[i->GetIndex()].GetP();
+      }
       sum_of_effective_weights += effective_weights[i->GetIndex()];
+      sum_of_effective_weights_alternative  += effective_weights_alternative[i->GetIndex()];
       // LOGFILE << "at child " << i->GetIndex() << " with policy " << node->GetEdges()[i->GetIndex()].GetP() << " and weight " << i->GetW() << " and visits " << i->GetN() << " effective weight " << effective_weights[i->GetIndex()];
     }
 
     double scaler = 1/sum_of_effective_weights;
+    double scaler_alternative = 1/sum_of_effective_weights_alternative;    
     
     // scale weights so they sum to 1.
     std::transform(effective_weights.begin(), effective_weights.end(), effective_weights.begin(), [&scaler](auto& c){return c*scaler;});
+    std::transform(effective_weights_alternative.begin(), effective_weights_alternative.end(), effective_weights_alternative.begin(), [&scaler_alternative](auto& c){return c*scaler_alternative;});    
 
     sum_of_effective_weights = 0;
+    sum_of_effective_weights_alternative = 0;    
 
     for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
       sum_of_effective_weights += effective_weights[i->GetIndex()];
+      sum_of_effective_weights_alternative  += effective_weights_alternative[i->GetIndex()];      
       // make sure one child is choosen, even if there are numerical problems (the sample is 1 and the sum of effective weights never quite reaches one.
-      if((sum_of_effective_weights >= the_sample) || (i->GetNextSibling() == nullptr)){
+      if(
+	 (i->GetNextSibling() != nullptr) &&
+	 (sum_of_effective_weights >= the_sample) && (sum_of_effective_weights_alternative < the_sample) ||
+	 (sum_of_effective_weights_alternative >= the_sample) && (sum_of_effective_weights < the_sample)
+	 ){
+	LOGFILE << "would have choosen another edge if not for exploration bonus";
+      }
+      if((sum_of_effective_weights_alternative >= the_sample) || (i->GetNextSibling() == nullptr)){
 	return(i);
       }
     }

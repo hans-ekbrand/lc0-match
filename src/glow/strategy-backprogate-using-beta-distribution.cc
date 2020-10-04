@@ -234,6 +234,9 @@ float compute_q_and_weights(NodeGlow *node) {
   double total_children_weight = computeChildWeights(node);
   if((total_children_weight >= 1.00014) | (total_children_weight < 0)){
     LOGFILE << "total weight is weird " << total_children_weight;
+    for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
+      i->SetW(i->GetW()/total_children_weight);
+    }
   }
   assert((total_children_weight <= 1.00014) & (total_children_weight >= 0));
   // weighted average Q START
