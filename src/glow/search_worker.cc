@@ -115,7 +115,7 @@ bool const LOG_RUNNING_INFO = false;
       node->GetEdges()[i->GetIndex()].SetP(node->GetEdges()[i->GetIndex()].GetP() * policy_weight_exponent_ + i->GetW() * (1 - policy_weight_exponent_));
       effective_weights[i->GetIndex()] = node->GetEdges()[i->GetIndex()].GetP();      
       // Add a exploration bonus accoring to the CPUCT formula q + sqrt((2 * log(N))/n) which makes sure children with low n get visits as parent visits (N) increase
-      if(node->GetN() > 400){
+      if(node->GetN() > 300){
 	effective_weights_alternative[i->GetIndex()] = node->GetEdges()[i->GetIndex()].GetP() + q_concentration_ * sqrt((2 * log(node->GetN())) / i->GetN());
       } else {
 	effective_weights_alternative[i->GetIndex()] = node->GetEdges()[i->GetIndex()].GetP();
