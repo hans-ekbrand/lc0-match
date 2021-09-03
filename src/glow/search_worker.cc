@@ -94,11 +94,11 @@ bool const LOG_RUNNING_INFO = false;
       sum_of_policy_of_extended_nodes += policy;
     }
 
-    double the_sample = urd(eng);
+    double the_extend_sample = urd(eng);
 
     // If there are unextended children, then first compare the_sample to sum_of_policy_of_extended_nodes, and if the_sample is higher, then return nullptr.
     if(num_children < node->GetNumEdges()){
-      if(the_sample > sum_of_policy_of_extended_nodes){
+      if(the_extend_sample > sum_of_policy_of_extended_nodes){
 	return(nullptr);
       }
     }
@@ -131,10 +131,12 @@ bool const LOG_RUNNING_INFO = false;
 
     sum_of_effective_weights = 0;
 
+    double the_select_child_sample = urd(eng);
+
     for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
       sum_of_effective_weights += effective_weights[i->GetIndex()];
       // make sure one child is choosen, even if there are numerical problems (the sample is 1 and the sum of effective weights never quite reaches one.
-      if((sum_of_effective_weights >= the_sample) || (i->GetNextSibling() == nullptr)){
+      if((sum_of_effective_weights >= the_select_child_sample) || (i->GetNextSibling() == nullptr)){
 	return(i);
       }
     }
