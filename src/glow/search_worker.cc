@@ -137,7 +137,7 @@ bool const LOG_RUNNING_INFO = false;
 
     // exploitation or exploration?
     double exploitation_sample = urd(eng);
-    if(exploitation_sample > 0.5){
+    if(node->GetN() > 200 & exploitation_sample > 0.5){
       // Just go with best child
       j = 0;
       for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
