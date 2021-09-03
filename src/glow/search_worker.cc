@@ -131,6 +131,7 @@ bool const LOG_RUNNING_INFO = false;
       j += 1;
       // LOGFILE << "at child " << i->GetIndex() << " with policy " << node->GetEdges()[i->GetIndex()].GetP() << " and weight " << i->GetW() << " and visits " << i->GetN() << " effective weight " << effective_weights[i->GetIndex()];
     }
+    LOGFILE << "Q of best child: " << highest_weight_weight;
 
     // exploitation or exploration?
     double exploitation_sample = urd(eng);
@@ -140,6 +141,7 @@ bool const LOG_RUNNING_INFO = false;
       for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
 	// make sure one child is choosen, even if there are numerical problems (the sample is 1 and the sum of effective weights never quite reaches one.
 	if(j == index_of_node_with_highest_weight_weight){
+	  LOGFILE << "Greedy: returning node" << j << " with Q: " << i->GetW();
 	  return(i);
 	}
 	j += 1;
@@ -159,6 +161,7 @@ bool const LOG_RUNNING_INFO = false;
       sum_of_effective_weights += effective_weights[i->GetIndex()];
       // make sure one child is choosen, even if there are numerical problems (the sample is 1 and the sum of effective weights never quite reaches one.
       if((sum_of_effective_weights >= the_select_child_sample) || (i->GetNextSibling() == nullptr)){
+	LOGFILE << "Not Greedy: returning node with Q: " << i->GetW();
 	return(i);
       }
     }
