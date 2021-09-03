@@ -120,7 +120,7 @@ bool const LOG_RUNNING_INFO = false;
 
     // Softmax https://en.wikipedia.org/wiki/Softmax_function#Reinforcement_learning
     // Apply a softmax on the Q weights
-    float temperature = 0.5f;
+    float temperature = 0.1f;
     float softmax_sum = 0.0f;
     for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
       softmax_sum += exp(i->GetW()/temperature);
@@ -148,7 +148,7 @@ bool const LOG_RUNNING_INFO = false;
 
     for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
       // sum_of_effective_weights += effective_weights[i->GetIndex()];
-      sum_of_effective_weights += softmaxed_weights[i->GetIndex()];      
+      sum_of_effective_weights += effective_weights[i->GetIndex()];      
       // make sure one child is choosen, even if there are numerical problems (the sample is 1 and the sum of effective weights never quite reaches one.
       if((sum_of_effective_weights >= the_select_child_sample) || (i->GetNextSibling() == nullptr)){
 	// LOGFILE << "Not Greedy: returning node with Q: " << i->GetW();
