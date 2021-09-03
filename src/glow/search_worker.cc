@@ -120,7 +120,7 @@ bool const LOG_RUNNING_INFO = false;
 
     // Softmax https://en.wikipedia.org/wiki/Softmax_function#Reinforcement_learning
     // Apply a softmax on the Q weights
-    float temperature = 0.1f;
+    float temperature = 0.2f;
     float softmax_sum = 0.0f;
     for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
       softmax_sum += exp(i->GetW()/temperature);
