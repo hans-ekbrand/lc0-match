@@ -114,7 +114,7 @@ bool const LOG_RUNNING_INFO = false;
     // after that. To make sure the q-signal will help the network to learn, cap the policy influence to 0.5 regardless of number of visits to the parent.
     float n = 0.0f;
     float policy_weight_starting_point = 0.5; // Let policy weigh this much when visits is 1.
-    float policy_decay = 60.0; // after this number of visits, forget about policy.
+    float policy_decay = 800.0; // after this number of visits, forget about policy.
     float policy_weight = std::max(n, (policy_decay - node->GetN()))/policy_decay * policy_weight_starting_point;
     float weight_weight = 1 - policy_weight;
 
