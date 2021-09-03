@@ -111,8 +111,10 @@ bool const LOG_RUNNING_INFO = false;
     // to let policy affect node selection only until one fourth of that budget is used. Note, however, that this is at root, in tree most nodes will have an substantial policy influence even
     // after that. To make sure the q-signal will help the network to learn, cap the policy influence to 0.5 regardless of number of visits to the parent.
     float n = 0.0f;
-    float policy_weight_starting_point = 0.5; // Let policy weigh this much when visits is 1.
-    float policy_decay = 200.0; // after this number of visits, forget about policy.
+    float policy_weight_starting_point = 0.95; // Let policy weigh this much when visits is 1.
+    /* float policy_decay = 200.0; // after this number of visits, forget about policy. */
+    int param_maxCollisionVisitsId = 10;
+    float policy_decay = param_maxCollisionVisitsId; // after this number of visits, forget about policy.      
     float policy_weight = std::max(n, (policy_decay - node->GetN()))/policy_decay * policy_weight_starting_point;
     float weight_weight = 1 - policy_weight;
     // if(node->GetN() % 50 == 0){
