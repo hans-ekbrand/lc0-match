@@ -124,8 +124,9 @@ bool const LOG_RUNNING_INFO = false;
     for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
       effective_weights[i->GetIndex()] = i->GetW() * weight_weight + policy_weight * node->GetEdges()[i->GetIndex()].GetP();
       sum_of_effective_weights += effective_weights[i->GetIndex()];
-      if(i->GetW() >= index_of_node_with_highest_weight_weight){
+      if(i->GetW() >= highest_weight_weight){
 	index_of_node_with_highest_weight_weight = j;
+	index_of_node_with_highest_weight_weight = i->GetW();
       }
       j += 1;
       // LOGFILE << "at child " << i->GetIndex() << " with policy " << node->GetEdges()[i->GetIndex()].GetP() << " and weight " << i->GetW() << " and visits " << i->GetN() << " effective weight " << effective_weights[i->GetIndex()];
