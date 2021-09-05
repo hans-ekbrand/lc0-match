@@ -68,21 +68,17 @@ bool const LOG_RUNNING_INFO = false;
 
   NodeGlow* SearchWorkerGlow::GetInterestingChild(NodeGlow* node) {
     // pick an interesting child based on Weight and Policy.
+    // If this function returns nullptr, a new edge will be extended and evaluated by the NN.
 
-    // LOGFILE << "At GetInterestingChild: ";
+    /* LOGFILE << "At GetInterestingChild: cpuct=" << search_->params_.GetCpuct() ; */
 
+    
+    // If no child is extended, or if there is only one legal move, return fast.
     int num_children = node->GetNumChildren();
-    std::vector<double> effective_weights(num_children, 0.0f);
-    double sum_of_effective_weights = 0;
-    double sum_of_policy_of_extended_nodes = 0;
-
-    // if there are less than two edges extended, return fast
     if(num_children == 0){
       return(nullptr);
     }
-
     if(node->GetNumEdges() == 1){
-      // Only one legal move
       if(num_children == 1){
 	return(node->GetFirstChild());
       } else {
@@ -90,20 +86,24 @@ bool const LOG_RUNNING_INFO = false;
       }
     }
 
-    // Sum the policy of extended children
+    double sum_of_policy_of_extended_nodes = 0;
     for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
       float policy = node->GetEdges()[i->GetIndex()].GetP();
       sum_of_policy_of_extended_nodes += policy;
     }
-
     double the_extend_sample = urd(eng);
-
-    // If there are unextended children, then first compare the_sample to sum_of_policy_of_extended_nodes, and if the_sample is higher, then return nullptr.
+    // If there are unextended children, then first compare
+    // the_extend_sample to sum_of_policy_of_extended_nodes, and if
+    // the_sample is higher, then return nullptr.
     if(num_children < node->GetNumEdges()){
       if(the_extend_sample > sum_of_policy_of_extended_nodes){
 	return(nullptr);
       }
     }
+
+    std::vector<double> effective_weights(num_children, 0.0f);
+    double sum_of_effective_weights = 0;
+
 
     // ignore the unextended children, the winner must be an extended child.
     // Calculate weights for extended children
@@ -112,6 +112,7 @@ bool const LOG_RUNNING_INFO = false;
     // get into self-reinforcement loops where policy drifts unboundedly to sharper and sharper distributions. Since we use approx 800 nodes per move in training, it sounds reasonable
     // to let policy affect node selection only until one fourth of that budget is used. Note, however, that this is at root, in tree most nodes will have an substantial policy influence even
     // after that. To make sure the q-signal will help the network to learn, cap the policy influence to 0.5 regardless of number of visits to the parent.
+     
     float n = 0.0f;
     float policy_weight_starting_point = 0.5; // Let policy weigh this much when visits is 1.
     float policy_decay = 800.0; // after this number of visits, forget about policy.
@@ -119,8 +120,8 @@ bool const LOG_RUNNING_INFO = false;
     float weight_weight = 1 - policy_weight;
 
     // Softmax https://en.wikipedia.org/wiki/Softmax_function#Reinforcement_learning
-    // Apply a softmax on the Q weights
-    float temperature = 0.1f;
+    // Apply a softmax on the Q weights, 0.2 is a reasonable value.
+    float temperature = search_->params_.GetCpuct(); 
     float softmax_sum = 0.0f;
     for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
       softmax_sum += exp(i->GetW()/temperature);

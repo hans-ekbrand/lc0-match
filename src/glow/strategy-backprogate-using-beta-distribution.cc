@@ -51,6 +51,8 @@ void set_strategy_parameters(const SearchParams *params) {
 	param_cpuct = params->GetCpuct();
 }
 
+  // LOGFILE << "param: " << param_maxCollisionVisitsId;
+
   // What is the intuition behind the ChildWeight and what is the intended use case?
   // ChildWeight for an edge should reflect the probability that this edge represents the best move.
 
@@ -233,9 +235,23 @@ double computeChildWeights(NodeGlow* node) {
   double sumw = calc_beta_distr_pwin(qnw);
   double normf = sum_of_P_of_expanded_nodes / sumw;
   j = 0;
+
+  // Softmax START
+  float softmax_sum = 0.0f;
   for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling(), j++) {
-    i->SetW((float)(normf * qnw[j].first));
+    softmax_sum += exp(normf * qnw[j].first/param_temperature);
   }
+  j = 0;
+  for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling(), j++) {
+    i->SetW((float)(exp(normf * qnw[j].first/param_temperature)/softmax_sum));
+  }
+  // Softmax STOP
+
+  // Old version START
+  // for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling(), j++) {
+  //   i->SetW((float)(normf * qnw[j].first));
+  // }
+  // Old version STOP
 
   return sum_of_P_of_expanded_nodes;
 }
