@@ -236,6 +236,8 @@ double computeChildWeights(NodeGlow* node) {
   double normf = sum_of_P_of_expanded_nodes / sumw;
   j = 0;
 
+  if(param_temperature != 1.0f){
+    // LOGFILE << "temperature for backpropagating " << param_temperature;
   // Softmax START
   float softmax_sum = 0.0f;
   for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling(), j++) {
@@ -247,11 +249,15 @@ double computeChildWeights(NodeGlow* node) {
   }
   // Softmax STOP
 
+  } else {
+
   // Old version START
-  // for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling(), j++) {
-  //   i->SetW((float)(normf * qnw[j].first));
-  // }
+  for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling(), j++) {
+    i->SetW((float)(normf * qnw[j].first));
+  }
   // Old version STOP
+
+  }
 
   return sum_of_P_of_expanded_nodes;
 }

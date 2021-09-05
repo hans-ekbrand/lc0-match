@@ -121,7 +121,8 @@ bool const LOG_RUNNING_INFO = false;
 
     // Softmax https://en.wikipedia.org/wiki/Softmax_function#Reinforcement_learning
     // Apply a softmax on the Q weights, 0.2 is a reasonable value.
-    float temperature = search_->params_.GetCpuct(); 
+    float temperature = search_->params_.GetCpuct();
+    /* LOGFILE << "temperature for traversing " << temperature; */
     float softmax_sum = 0.0f;
     for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling()) {
       softmax_sum += exp(i->GetW()/temperature);
