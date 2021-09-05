@@ -232,31 +232,27 @@ double computeChildWeights(NodeGlow* node) {
     qnw[j].second = i->IsTerminal() ? INFINITY : (double)i->GetN();
     sum_of_P_of_expanded_nodes += node->GetEdges()[i->GetIndex()].GetP();
   }
-  double sumw = calc_beta_distr_pwin(qnw);
-  double normf = sum_of_P_of_expanded_nodes / sumw;
-  j = 0;
+  double old_sumw = calc_beta_distr_pwin(qnw);
+  double sumw = 0.0;
 
-  if(param_temperature != 1.0f){
-    // LOGFILE << "temperature for backpropagating " << param_temperature;
+  // Apply softmax on the outcome which is in qnw[i].first
   // Softmax START
   float softmax_sum = 0.0f;
   for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling(), j++) {
-    softmax_sum += exp(normf * qnw[j].first/param_temperature);
+    softmax_sum += exp(qnw[j].first/param_temperature);
   }
   j = 0;
   for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling(), j++) {
-    i->SetW((float)(exp(normf * qnw[j].first/param_temperature)/softmax_sum));
+    qnw[j].first = exp(qnw[j].first/param_temperature)/softmax_sum;
+    sumw += qnw[j].first;
   }
   // Softmax STOP
+  
+  double normf = sum_of_P_of_expanded_nodes / sumw;
+  j = 0;
 
-  } else {
-
-  // Old version START
   for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling(), j++) {
     i->SetW((float)(normf * qnw[j].first));
-  }
-  // Old version STOP
-
   }
 
   return sum_of_P_of_expanded_nodes;
