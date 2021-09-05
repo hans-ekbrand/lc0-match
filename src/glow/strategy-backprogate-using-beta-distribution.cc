@@ -238,6 +238,7 @@ double computeChildWeights(NodeGlow* node) {
   // Apply softmax on the outcome which is in qnw[i].first
   // Softmax START
   float softmax_sum = 0.0f;
+  j = 0;  
   for (NodeGlow *i = node->GetFirstChild(); i != nullptr; i = i->GetNextSibling(), j++) {
     softmax_sum += exp(qnw[j].first/param_temperature);
   }
